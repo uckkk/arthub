@@ -1,5 +1,5 @@
 # ========================================
-# 掼蛋ArtHub - 自动构建 Windows + macOS
+# 掼蛋ArtHub - 自动构建 Windows + macOS + Web
 # ========================================
 # 
 # 触发方式：
@@ -32,6 +32,43 @@ on:
   #   branches: [ main ]
 
 jobs:
+  # ========================================
+  # Web 版本构建
+  # ========================================
+  build-web:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build Web version
+        run: npm run build
+
+      - name: Create Web artifact
+        run: |
+          cd dist
+          zip -r ../ArtHub-Web.zip .
+          cd ..
+
+      - name: Upload Web artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ArtHub-Web
+          path: ArtHub-Web.zip
+
+  # ========================================
+  # 桌面版本构建 (Windows + macOS)
+  # ========================================
   build:
     strategy:
       fail-fast: false
