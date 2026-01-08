@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, lazy, Suspense } from 'react';
 import { 
-  LayoutGrid, Type, Menu, User, LogOut, Settings, 
-  Image, Video, Mic, Box, Code, Users, Star, Zap, HardDrive
+  LayoutGrid, Type, Menu, User, Settings, 
+  Image, Video, Mic, Box, Code, Star, HardDrive
 } from 'lucide-react';
 import { getStorageConfig, saveStorageConfig } from './services/fileStorageService';
 import { getUserInfo, clearUserInfo, UserInfo } from './services/userAuthService';
@@ -33,7 +33,6 @@ const createMenuGroups = (): MenuGroup[] => [
   {
     items: [
       { id: 'all', label: '所有模板', icon: LayoutGrid },
-      { id: 'quick', label: '快速开始', icon: Zap },
     ],
   },
   {
@@ -52,7 +51,6 @@ const createMenuGroups = (): MenuGroup[] => [
       { id: 'naming', label: '资产命名', icon: Type },
       { id: 'paths', label: '路径管理', icon: Menu },
       { id: 'api', label: 'AI盒子', icon: Code },
-      { id: 'partners', label: '合作伙伴节点', icon: Users },
     ],
   },
 ];
@@ -128,7 +126,6 @@ const App: React.FC = () => {
     // 将多个 ID 映射到实际的标签
     const tabMapping: Record<string, string> = {
       'all': 'ai',
-      'quick': 'ai',
       'favorites': 'ai',
       'ai': 'ai',
       'video': 'ai',
@@ -137,7 +134,6 @@ const App: React.FC = () => {
       'naming': 'naming',
       'paths': 'paths',
       'api': 'ai',
-      'partners': 'ai',
     };
     setActiveTab(tabMapping[id] || 'ai');
   };
@@ -187,14 +183,6 @@ const App: React.FC = () => {
         <div className="h-screen flex bg-[#0a0a0a] text-white overflow-hidden">
           {/* 左侧边栏 */}
           <Sidebar
-            logo={
-              <img 
-                src="./icon.ico" 
-                alt="掼蛋ArtHub" 
-                className="w-8 h-8 rounded-lg"
-              />
-            }
-            title="掼蛋ArtHub"
             groups={menuGroups}
             activeId={activeTab === 'naming' ? 'naming' : activeTab === 'paths' ? 'paths' : 'ai'}
             onSelect={handleMenuSelect}
