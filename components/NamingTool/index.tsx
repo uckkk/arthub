@@ -3,8 +3,8 @@
  * 负责路由分发到不同的模板组件
  */
 
-import React, { useState, useEffect } from 'react';
-import { RefreshCw, Settings2, HelpCircle, Wand2, X } from 'lucide-react';
+import React, { useState, useEffect, useRef } from 'react';
+import { RefreshCw, Settings2, HelpCircle, Wand2, X, ChevronDown, Check } from 'lucide-react';
 import { fetchNamingData, getPresetLabel } from '../../services/namingDataService';
 import { parseDanmakuCsv } from '../../services/danmakuNamingService';
 import { DanmakuResourceType, DanmakuDictionary } from '../../types';
@@ -13,6 +13,110 @@ import { FormatSelector } from './FormatSelector';
 import DanmakuNamingTool from './DanmakuNamingTool';
 import TraditionalNamingTool from './TraditionalNamingTool';
 import DanmakuNamingRulesPanel from '../DanmakuNamingRulesPanel';
+
+// 预设下拉框组件（与 FilterDropdown 样式一致）
+interface PresetDropdownProps {
+  value: string;
+  onChange: (value: string) => void;
+  options: { value: string; label: string }[];
+  disabled?: boolean;
+  onRefresh?: () => void;
+  isRefreshing?: boolean;
+}
+
+const PresetDropdown: React.FC<PresetDropdownProps> = ({
+  value,
+  onChange,
+  options,
+  disabled,
+  onRefresh,
+  isRefreshing,
+}) => {
+  const [isOpen, setIsOpen] = useState(false);
+  const dropdownRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+        setIsOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  const selectedOption = options.find(opt => opt.value === value);
+
+  return (
+    <div ref={dropdownRef} className="relative flex items-center gap-2 bg-[#1a1a1a] px-3 py-2 rounded-lg border border-[#2a2a2a]">
+      {onRefresh && (
+        <button
+          onClick={onRefresh}
+          disabled={disabled || isRefreshing}
+          className="p-1.5 hover:bg-[#252525] rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+          title="刷新数据"
+        >
+          <RefreshCw 
+            size={14} 
+            className={`text-[#666666] ${isRefreshing ? 'animate-spin' : ''}`} 
+          />
+        </button>
+      )}
+      <Settings2 size={14} className="text-[#555555]" />
+      <button
+        type="button"
+        onClick={() => !disabled && setIsOpen(!isOpen)}
+        disabled={disabled}
+        className={`
+          flex items-center gap-2
+          text-sm text-white
+          ${disabled ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}
+        `}
+      >
+        <span>{selectedOption?.label || '选择'}</span>
+        <ChevronDown 
+          size={14} 
+          className={`text-[#666666] transition-transform duration-150 ${isOpen ? 'rotate-180' : ''}`}
+        />
+      </button>
+
+      {isOpen && (
+        <div className="
+          absolute top-full left-0 mt-1 w-full min-w-[180px]
+          bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg
+          shadow-lg shadow-black/50
+          z-50 overflow-hidden
+          animate-scale-in
+        ">
+          {options.map((option) => (
+            <button
+              key={option.value}
+              type="button"
+              onClick={() => {
+                onChange(option.value);
+                setIsOpen(false);
+              }}
+              className={`
+                w-full flex items-center gap-2 px-4 py-2.5
+                text-sm text-left
+                transition-colors duration-150
+                ${option.value === value 
+                  ? 'bg-[#252525] text-white' 
+                  : 'text-[#a0a0a0] hover:bg-[#222222] hover:text-white'
+                }
+              `}
+            >
+              <span className="flex-1">{option.label}</span>
+              {option.value === value && (
+                <Check size={14} className="text-blue-400" />
+              )}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+};
 
 const NamingTool: React.FC = () => {
   const [currentPresetId, setCurrentPresetId] = useState<string>(() => {
@@ -141,32 +245,14 @@ const NamingTool: React.FC = () => {
           />
           
           {/* 预设切换器 */}
-          <div className="flex items-center gap-2 bg-[#1a1a1a] px-3 py-2 rounded-lg border border-[#2a2a2a]">
-            <button
-              onClick={() => isDanmaku ? loadDanmakuPreset(true) : undefined}
-              disabled={isLoadingPreset || !isDanmaku}
-              className="p-1.5 hover:bg-[#252525] rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-              title="刷新数据"
-            >
-              <RefreshCw 
-                size={14} 
-                className={`text-[#666666] ${isLoadingPreset ? 'animate-spin' : ''}`} 
-              />
-            </button>
-            <Settings2 size={14} className="text-[#555555]" />
-            <select 
-              value={currentPresetId}
-              onChange={(e) => setCurrentPresetId(e.target.value)}
-              disabled={isLoadingPreset}
-              className="bg-transparent text-sm text-white focus:outline-none py-0.5 pr-2 cursor-pointer disabled:opacity-50"
-            >
-              {PRESET_IDS.map(presetId => (
-                <option key={presetId} value={presetId} className="bg-[#1a1a1a] text-white">
-                  {getPresetLabel(presetId)}
-                </option>
-              ))}
-            </select>
-          </div>
+          <PresetDropdown
+            value={currentPresetId}
+            onChange={setCurrentPresetId}
+            options={PRESET_IDS.map(id => ({ value: id, label: getPresetLabel(id) }))}
+            disabled={isLoadingPreset}
+            onRefresh={isDanmaku ? () => loadDanmakuPreset(true) : undefined}
+            isRefreshing={isLoadingPreset}
+          />
         </div>
       </div>
 

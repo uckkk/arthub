@@ -541,7 +541,18 @@ const PathManager: React.FC = () => {
 
                   {/* 分组内容 */}
                   {!collapsedGroups.has(groupName) && (
-                    <div className="space-y-1.5 ml-2">
+                    <div 
+                      className="space-y-1.5 ml-2"
+                      onDragOver={(e) => {
+                        e.preventDefault();
+                        e.dataTransfer.dropEffect = 'move';
+                        if (draggedItem) {
+                          setDragOverGroup(groupName);
+                          setDragOverIndex(groupedPaths[groupName].length);
+                        }
+                      }}
+                      onDrop={(e) => handleDrop(groupName, groupedPaths[groupName].length, e)}
+                    >
                       {groupedPaths[groupName].map((item, index) => (
                         <div 
                           key={item.id} 
