@@ -1,6 +1,8 @@
 // 备注服务 - 管理备注内容，保存到文件存储路径
 
-import { getStorageConfig, getSavedDirectoryHandle, autoSyncToFile } from './fileStorageService';
+import { getStorageConfig, getSavedStoragePath, autoSyncToFile } from './fileStorageService';
+import { readTextFile, writeTextFile, exists } from '@tauri-apps/api/fs';
+import { join } from '@tauri-apps/api/path';
 
 const NOTES_LOCAL_STORAGE_KEY = 'arthub_notes_content';
 
@@ -19,6 +21,24 @@ function getNotesKey(presetId?: string): string {
 function getNotesFileName(presetId?: string): string {
   const id = presetId || getCurrentPresetId();
   return `arthub_notes_${id}.txt`;
+}
+
+// 获取备注文件完整路径
+async function getNotesFilePath(presetId?: string): Promise<string | null> {
+  const storagePath = await getSavedStoragePath();
+  if (!storagePath) {
+    return null;
+  }
+
+  try {
+    const fileName = getNotesFileName(presetId);
+    const filePath = await join(storagePath, fileName);
+    return filePath;
+  } catch (error) {
+    console.error('获取备注文件路径失败:', error);
+    const fileName = getNotesFileName(presetId);
+    return `${storagePath}/${fileName}`;
+  }
 }
 
 // 从 localStorage 加载备注内容（与模板关联）
@@ -40,19 +60,18 @@ export async function saveNotesToFile(content: string, presetId?: string): Promi
     return false;
   }
 
+  // 检查是否在 Tauri 环境中
+  if (typeof window === 'undefined' || !('__TAURI_INTERNALS__' in window)) {
+    return false;
+  }
+
   try {
-    const directoryHandle = await getSavedDirectoryHandle();
-    if (!directoryHandle) {
+    const filePath = await getNotesFilePath(presetId);
+    if (!filePath) {
       return false;
     }
 
-    // 使用模板相关的文件名
-    const fileName = getNotesFileName(presetId);
-    const fileHandle = await directoryHandle.getFileHandle(fileName, { create: true });
-    const writable = await fileHandle.createWritable();
-    await writable.write(content);
-    await writable.close();
-
+    await writeTextFile(filePath, content);
     return true;
   } catch (error) {
     console.error('保存备注到文件失败:', error);
@@ -67,20 +86,27 @@ export async function loadNotesFromFile(presetId?: string): Promise<string | nul
     return null;
   }
 
+  // 检查是否在 Tauri 环境中
+  if (typeof window === 'undefined' || !('__TAURI_INTERNALS__' in window)) {
+    return null;
+  }
+
   try {
-    const directoryHandle = await getSavedDirectoryHandle();
-    if (!directoryHandle) {
+    const filePath = await getNotesFilePath(presetId);
+    if (!filePath) {
       return null;
     }
 
-    // 使用模板相关的文件名
-    const fileName = getNotesFileName(presetId);
-    const fileHandle = await directoryHandle.getFileHandle(fileName);
-    const file = await fileHandle.getFile();
-    const text = await file.text();
+    // 检查文件是否存在
+    const fileExists = await exists(filePath);
+    if (!fileExists) {
+      return null;
+    }
+
+    const text = await readTextFile(filePath);
     return text;
   } catch (error: any) {
-    if (error.name === 'NotFoundError') {
+    if (error.message?.includes('未找到') || error.message?.includes('NotFound')) {
       return null; // 文件不存在
     }
     console.error('从文件加载备注失败:', error);
@@ -99,4 +125,3 @@ export async function autoSaveNotes(content: string, presetId?: string): Promise
     await saveNotesToFile(content, presetId);
   }
 }
-
