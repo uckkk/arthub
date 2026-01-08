@@ -2,12 +2,12 @@ import React, { useState, useEffect, useRef } from 'react';
 import { Settings, Save, ExternalLink, AlertCircle, PlayCircle, Loader2, Folder, X } from 'lucide-react';
 import { testApiConnection } from '../services/translationService';
 import { 
-  isFileSystemAccessSupported, 
+  isTauriEnvironment, 
   selectStorageDirectory,
   getStorageConfig,
   saveStorageConfig,
   formatSyncTime,
-  getSavedDirectoryHandle,
+  getSavedStoragePath,
   autoSyncToFile
 } from '../services/fileStorageService';
 
@@ -44,7 +44,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ isOpen, onClose, triggerR
     setLastSyncTime(config.lastSyncTime);
     
     if (config.enabled) {
-      getSavedDirectoryHandle().catch(() => {});
+      getSavedStoragePath().catch(() => {});
     }
     
     const interval = setInterval(() => {
@@ -327,17 +327,17 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ isOpen, onClose, triggerR
           {/* 组2：本地存储路径设置 */}
           {activeGroup === 'storage' && (
             <>
-              {!isFileSystemAccessSupported() && (
+              {!isTauriEnvironment() && (
                 <div className="
                   p-3 rounded-lg
                   bg-yellow-500/10 border border-yellow-500/20
                   text-xs text-yellow-300
                 ">
-                  <p>您的浏览器不支持文件系统访问 API，请使用 Chrome 86+、Edge 86+ 或 Opera 72+</p>
+                  <p>此功能仅在桌面应用中可用</p>
                 </div>
               )}
 
-              {isFileSystemAccessSupported() && (
+              {isTauriEnvironment() && (
                 <div className="space-y-4">
                   {/* 启用开关 */}
                   <div className="flex items-center justify-between">

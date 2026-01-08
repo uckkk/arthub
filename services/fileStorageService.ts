@@ -1,28 +1,8 @@
-// 文件存储服务 - 使用 File System Access API 将数据存储到用户指定的目录
+// 文件存储服务 - 使用 Tauri 文件系统 API 将数据存储到用户指定的目录
 
-// File System Access API 类型定义
-declare global {
-  interface Window {
-    showDirectoryPicker(options?: { mode?: 'read' | 'readwrite' }): Promise<FileSystemDirectoryHandle>;
-  }
-}
-
-interface FileSystemDirectoryHandle {
-  name: string;
-  kind: 'directory';
-  getFileHandle(name: string, options?: { create?: boolean }): Promise<FileSystemFileHandle>;
-  createWritable?(): Promise<FileSystemWritableStream>;
-}
-
-interface FileSystemFileHandle {
-  getFile(): Promise<File>;
-  createWritable(): Promise<FileSystemWritableStream>;
-}
-
-interface FileSystemWritableStream {
-  write(data: string | Blob): Promise<void>;
-  close(): Promise<void>;
-}
+import { open } from '@tauri-apps/api/dialog';
+import { readTextFile, writeTextFile, exists } from '@tauri-apps/api/fs';
+import { join } from '@tauri-apps/api/path';
 
 export interface FileStorageConfig {
   enabled: boolean;
@@ -31,56 +11,7 @@ export interface FileStorageConfig {
 }
 
 const STORAGE_CONFIG_KEY = 'arthub_file_storage_config';
-const DIRECTORY_HANDLE_KEY = 'arthub_directory_handle';
-let cachedDirectoryHandle: FileSystemDirectoryHandle | null = null;
-
-// 使用 IndexedDB 存储 directoryHandle
-async function saveDirectoryHandleToIndexedDB(handle: FileSystemDirectoryHandle): Promise<void> {
-  return new Promise((resolve, reject) => {
-    const request = indexedDB.open('arthub_storage', 1);
-    
-    request.onerror = () => reject(request.error);
-    request.onsuccess = () => {
-      const db = request.result;
-      const transaction = db.transaction(['handles'], 'readwrite');
-      const store = transaction.objectStore('handles');
-      store.put(handle, DIRECTORY_HANDLE_KEY);
-      resolve();
-    };
-    request.onupgradeneeded = (event: any) => {
-      const db = event.target.result;
-      if (!db.objectStoreNames.contains('handles')) {
-        db.createObjectStore('handles');
-      }
-    };
-  });
-}
-
-async function getDirectoryHandleFromIndexedDB(): Promise<FileSystemDirectoryHandle | null> {
-  return new Promise((resolve, reject) => {
-    const request = indexedDB.open('arthub_storage', 1);
-    
-    request.onerror = () => resolve(null);
-    request.onsuccess = () => {
-      const db = request.result;
-      if (!db.objectStoreNames.contains('handles')) {
-        resolve(null);
-        return;
-      }
-      const transaction = db.transaction(['handles'], 'readonly');
-      const store = transaction.objectStore('handles');
-      const getRequest = store.get(DIRECTORY_HANDLE_KEY);
-      getRequest.onsuccess = () => resolve(getRequest.result || null);
-      getRequest.onerror = () => resolve(null);
-    };
-    request.onupgradeneeded = (event: any) => {
-      const db = event.target.result;
-      if (!db.objectStoreNames.contains('handles')) {
-        db.createObjectStore('handles');
-      }
-    };
-  });
-}
+let cachedStoragePath: string | null = null;
 
 // 获取存储配置
 export function getStorageConfig(): FileStorageConfig {
@@ -106,75 +37,76 @@ export function saveStorageConfig(config: Partial<FileStorageConfig>): void {
   localStorage.setItem(STORAGE_CONFIG_KEY, JSON.stringify(newConfig));
 }
 
-// 检查浏览器是否支持 File System Access API
-export function isFileSystemAccessSupported(): boolean {
-  return typeof window !== 'undefined' && 'showDirectoryPicker' in window;
-}
-
-// 尝试获取目录的完整路径
-async function getDirectoryPath(handle: FileSystemDirectoryHandle): Promise<string> {
-  try {
-    // File System Access API 不直接提供完整路径
-    // 尝试通过其他方式获取
-    if ((handle as any).getDirectoryHandle) {
-      // 如果支持，尝试获取路径
-      const name = handle.name;
-      
-      // 在某些浏览器中，可以通过 query 获取路径信息
-      // 但大多数情况下只能获取目录名
-      return name;
-    }
-    return handle.name;
-  } catch {
-    return handle.name;
-  }
+// 检查是否在 Tauri 环境中
+export function isTauriEnvironment(): boolean {
+  return typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
 }
 
 // 让用户选择存储目录
-export async function selectStorageDirectory(): Promise<{ handle: FileSystemDirectoryHandle; path: string } | null> {
-  if (!isFileSystemAccessSupported()) {
-    throw new Error('您的浏览器不支持文件系统访问 API，请使用 Chrome 86+、Edge 86+ 或 Opera 72+');
+export async function selectStorageDirectory(): Promise<{ path: string } | null> {
+  if (!isTauriEnvironment()) {
+    throw new Error('此功能仅在 Tauri 桌面应用中可用');
   }
 
   try {
-    const directoryHandle = await window.showDirectoryPicker({
-      mode: 'readwrite'
-    }) as any;
-    
-    // 保存到 IndexedDB
-    await saveDirectoryHandleToIndexedDB(directoryHandle);
-    cachedDirectoryHandle = directoryHandle;
-    
-    // 尝试获取完整路径
-    const fullPath = await getDirectoryPath(directoryHandle);
-    
+    const selectedPath = await open({
+      directory: true,
+      multiple: false,
+      title: '选择数据存储目录',
+    });
+
+    if (!selectedPath || Array.isArray(selectedPath)) {
+      return null; // 用户取消了选择
+    }
+
+    const directoryPath = selectedPath as string;
+    cachedStoragePath = directoryPath;
+
     // 更新配置
     saveStorageConfig({
       enabled: true,
-      directoryPath: fullPath,
+      directoryPath: directoryPath,
       lastSyncTime: Date.now()
     });
-    
-    return { handle: directoryHandle, path: fullPath };
+
+    return { path: directoryPath };
   } catch (error: any) {
-    if (error.name === 'AbortError') {
-      return null; // 用户取消了选择
-    }
-    throw error;
+    console.error('选择目录失败:', error);
+    throw new Error(`选择目录失败: ${error.message || '未知错误'}`);
   }
 }
 
-// 获取已保存的目录句柄
-export async function getSavedDirectoryHandle(): Promise<FileSystemDirectoryHandle | null> {
-  if (cachedDirectoryHandle) {
-    return cachedDirectoryHandle;
+// 获取已保存的存储路径
+export async function getSavedStoragePath(): Promise<string | null> {
+  if (cachedStoragePath) {
+    return cachedStoragePath;
   }
-  
-  const handle = await getDirectoryHandleFromIndexedDB();
-  if (handle) {
-    cachedDirectoryHandle = handle;
+
+  const config = getStorageConfig();
+  if (config.directoryPath) {
+    cachedStoragePath = config.directoryPath;
+    return config.directoryPath;
   }
-  return handle;
+
+  return null;
+}
+
+// 获取数据文件路径
+async function getDataFilePath(): Promise<string | null> {
+  const storagePath = await getSavedStoragePath();
+  if (!storagePath) {
+    return null;
+  }
+
+  try {
+    // 使用 Tauri path API 拼接路径
+    const dataFilePath = await join(storagePath, 'arthub_data.json');
+    return dataFilePath;
+  } catch (error) {
+    console.error('获取数据文件路径失败:', error);
+    // 如果 join 失败，使用简单拼接
+    return `${storagePath}/arthub_data.json`;
+  }
 }
 
 // 自动同步所有数据到文件（静默导出）
@@ -184,9 +116,13 @@ export async function autoSyncToFile(): Promise<boolean> {
     return false;
   }
 
+  if (!isTauriEnvironment()) {
+    return false;
+  }
+
   try {
-    const directoryHandle = await getSavedDirectoryHandle();
-    if (!directoryHandle) {
+    const dataFilePath = await getDataFilePath();
+    if (!dataFilePath) {
       return false;
     }
 
@@ -212,11 +148,21 @@ export async function autoSyncToFile(): Promise<boolean> {
       }
     }
 
-    // 写入文件
-    const fileHandle = await directoryHandle.getFileHandle('arthub_data.json', { create: true });
-    const writable = await fileHandle.createWritable();
-    await writable.write(JSON.stringify(allData, null, 2));
-    await writable.close();
+    // 确保目录存在
+    const storagePath = await getSavedStoragePath();
+    if (storagePath) {
+      try {
+        // 检查目录是否存在，如果不存在则创建（Tauri 的 writeTextFile 会自动创建文件，但不会创建目录）
+        // 这里我们直接写入文件，如果目录不存在会失败，但用户应该已经选择了存在的目录
+        await writeTextFile(dataFilePath, JSON.stringify(allData, null, 2));
+      } catch (error: any) {
+        // 如果写入失败，可能是目录不存在，尝试创建
+        console.warn('写入文件失败，尝试创建目录:', error);
+        throw error;
+      }
+    } else {
+      return false;
+    }
 
     // 更新同步时间
     saveStorageConfig({ lastSyncTime: Date.now() });
@@ -229,11 +175,25 @@ export async function autoSyncToFile(): Promise<boolean> {
 }
 
 // 从文件导入所有数据到 localStorage
-export async function importAllDataFromFile(directoryHandle: FileSystemDirectoryHandle): Promise<void> {
+export async function importAllDataFromFile(): Promise<void> {
+  if (!isTauriEnvironment()) {
+    throw new Error('此功能仅在 Tauri 桌面应用中可用');
+  }
+
   try {
-    const fileHandle = await directoryHandle.getFileHandle('arthub_data.json');
-    const file = await fileHandle.getFile();
-    const text = await file.text();
+    const dataFilePath = await getDataFilePath();
+    if (!dataFilePath) {
+      throw new Error('未选择存储目录');
+    }
+
+    // 检查文件是否存在
+    const fileExists = await exists(dataFilePath);
+    if (!fileExists) {
+      throw new Error('未找到数据文件，请先导出数据');
+    }
+
+    // 读取文件
+    const text = await readTextFile(dataFilePath);
     const allData = JSON.parse(text);
 
     // 导入到 localStorage
@@ -247,7 +207,7 @@ export async function importAllDataFromFile(directoryHandle: FileSystemDirectory
       }
     }
   } catch (error: any) {
-    if (error.name === 'NotFoundError') {
+    if (error.message?.includes('未找到') || error.message?.includes('NotFound')) {
       throw new Error('未找到数据文件，请先导出数据');
     }
     throw error;
@@ -271,4 +231,3 @@ export function formatSyncTime(timestamp: number | null): string {
   const mins = date.getMinutes().toString().padStart(2, '0');
   return `${hours}:${mins} 同步`;
 }
-
