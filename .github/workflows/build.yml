@@ -1,0 +1,201 @@
+# ========================================
+# 掼蛋ArtHub - 自动构建 Windows + macOS
+# ========================================
+# 
+# 触发方式：
+#   1. 手动触发：GitHub 仓库 → Actions → Build → Run workflow
+#   2. 打标签触发：git tag v1.0.0 && git push origin v1.0.0
+#   3. 推送到 main 分支触发（可选，默认关闭）
+
+name: Build
+
+on:
+  # 手动触发（推荐）
+  workflow_dispatch:
+    inputs:
+      release:
+        description: '是否发布到 Releases'
+        required: false
+        default: 'false'
+        type: choice
+        options:
+          - 'false'
+          - 'true'
+  
+  # 打标签时自动构建并发布
+  push:
+    tags:
+      - 'v*'
+  
+  # 可选：推送到 main 分支时构建（取消下面的注释启用）
+  # push:
+  #   branches: [ main ]
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Windows 构建
+          - platform: windows-latest
+            target: x86_64-pc-windows-msvc
+            name: Windows
+            ext: '.exe'
+          
+          # macOS Intel 构建
+          - platform: macos-latest
+            target: x86_64-apple-darwin
+            name: macOS-Intel
+            ext: '.dmg'
+          
+          # macOS Apple Silicon 构建
+          - platform: macos-latest
+            target: aarch64-apple-darwin
+            name: macOS-ARM
+            ext: '.dmg'
+
+    runs-on: ${{ matrix.platform }}
+    
+    steps:
+      # 1. 检出代码
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # 2. 安装 Node.js
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      # 3. 安装 Rust
+      - name: Setup Rust
+        uses: dtolnay/rust-action@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      # 4. 安装系统依赖（Linux 需要，macOS/Windows 不需要）
+      - name: Install dependencies (Linux)
+        if: matrix.platform == 'ubuntu-latest'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.0-dev libappindicator3-dev librsvg2-dev patchelf
+
+      # 5. 安装 npm 依赖
+      - name: Install npm dependencies
+        run: npm ci
+
+      # 6. 生成 macOS 图标
+      - name: Generate macOS icons
+        if: startsWith(matrix.platform, 'macos')
+        run: |
+          cd src-tauri/icons
+          
+          # 如果没有 icns 文件，从 ico 生成
+          if [ ! -f "icon.icns" ] && [ -f "icon.ico" ]; then
+            echo "生成 macOS 图标..."
+            mkdir -p icon.iconset
+            
+            # 转换 ico 为 png
+            sips -s format png icon.ico --out icon_source.png 2>/dev/null || cp ../../icon.ico icon_source.png
+            
+            if [ -f "icon_source.png" ]; then
+              # 生成各尺寸图标
+              sips -z 16 16 icon_source.png --out icon.iconset/icon_16x16.png
+              sips -z 32 32 icon_source.png --out icon.iconset/icon_16x16@2x.png
+              sips -z 32 32 icon_source.png --out icon.iconset/icon_32x32.png
+              sips -z 64 64 icon_source.png --out icon.iconset/icon_32x32@2x.png
+              sips -z 128 128 icon_source.png --out icon.iconset/icon_128x128.png
+              sips -z 256 256 icon_source.png --out icon.iconset/icon_128x128@2x.png
+              sips -z 256 256 icon_source.png --out icon.iconset/icon_256x256.png
+              sips -z 512 512 icon_source.png --out icon.iconset/icon_256x256@2x.png
+              sips -z 512 512 icon_source.png --out icon.iconset/icon_512x512.png
+              sips -z 1024 1024 icon_source.png --out icon.iconset/icon_512x512@2x.png
+              
+              # 生成 icns
+              iconutil -c icns icon.iconset -o icon.icns
+              
+              # 复制常用尺寸
+              cp icon.iconset/icon_32x32.png 32x32.png
+              cp icon.iconset/icon_128x128.png 128x128.png
+              cp icon.iconset/icon_128x128@2x.png 128x128@2x.png
+              cp icon.iconset/icon_256x256.png 256x256.png
+              
+              # 清理
+              rm -rf icon.iconset icon_source.png
+              
+              echo "macOS 图标生成完成"
+            fi
+          fi
+
+      # 7. 构建前端
+      - name: Build frontend
+        run: npm run build
+
+      # 8. 构建 Tauri 应用
+      - name: Build Tauri app
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          args: --target ${{ matrix.target }}
+
+      # 9. 上传构建产物
+      - name: Upload artifacts (Windows MSI)
+        if: matrix.platform == 'windows-latest'
+        uses: actions/upload-artifact@v4
+        with:
+          name: ArtHub-${{ matrix.name }}-MSI
+          path: src-tauri/target/${{ matrix.target }}/release/bundle/msi/*.msi
+          if-no-files-found: ignore
+
+      - name: Upload artifacts (Windows EXE)
+        if: matrix.platform == 'windows-latest'
+        uses: actions/upload-artifact@v4
+        with:
+          name: ArtHub-${{ matrix.name }}-EXE
+          path: src-tauri/target/${{ matrix.target }}/release/bundle/nsis/*.exe
+          if-no-files-found: ignore
+
+      - name: Upload artifacts (macOS DMG)
+        if: startsWith(matrix.platform, 'macos')
+        uses: actions/upload-artifact@v4
+        with:
+          name: ArtHub-${{ matrix.name }}-DMG
+          path: src-tauri/target/${{ matrix.target }}/release/bundle/dmg/*.dmg
+          if-no-files-found: ignore
+
+      - name: Upload artifacts (macOS App)
+        if: startsWith(matrix.platform, 'macos')
+        uses: actions/upload-artifact@v4
+        with:
+          name: ArtHub-${{ matrix.name }}-App
+          path: src-tauri/target/${{ matrix.target }}/release/bundle/macos/*.app
+          if-no-files-found: ignore
+
+  # 可选：自动发布到 GitHub Releases
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v') || github.event.inputs.release == 'true'
+    
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Display structure
+        run: ls -R artifacts
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
+        with:
+          draft: true
+          files: |
+            artifacts/**/*.msi
+            artifacts/**/*.exe
+            artifacts/**/*.dmg
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -1,0 +1,35 @@
+﻿分类 (Category),细分 (Sub-Cat),前缀 (Prefix),   ,词典分类,中文 (CN),缩写 (Abbr),备注 (Note)
+子弹,子弹本体,blt,   ||   ,物理 (Element),物理,phy,Physical
+子弹,子弹爆点,vfx_hit,   ||   ,元素 (Element),火,fire,Fire/Burn
+子弹,子弹buff,vfx_buff,   ||   ,元素 (Element),冰,ice,Ice/Freeze
+子弹,子弹dbuff,vfx_debuff,   ||   ,元素 (Element),毒,psn,Poison
+子弹,特效-状态,vfx_state,   ||   ,元素 (Element),雷,ltg,Lightning (缩写)
+怪物,小怪,mon_s,   ||   ,元素 (Element),风,wnd,Wind
+怪物,精英,mon_e,   ||   ,元素 (Element),风,wnd,Wind
+怪物,BOSS,mon_b,   ||   ,元素 (Element),融合,mix,Combination
+角色,主角本体,chr_hero,   ||   ,怪物体型 (Body),人形,hum,Humanoid
+角色,武器挂件,chr_wpn,   ||   ,怪物体型 (Body),四足,4leg,Quadruped (犬/狼)
+角色,载具/座驾,chr_veh,   ||   ,怪物体型 (Body),六足,6leg,Hexapod (甲虫)
+界面,技能图标,ico_skill,   ||   ,怪物体型 (Body),八足,8leg,Octopod (蜘蛛)
+界面,通用组件,ui_com,   ||   ,怪物体型 (Body),无关节,noj,No-Joint (史莱姆)
+界面,系统面板,ui_sys,   ||   ,怪物体型 (Body),飞行,fly,Flying
+图标,子弹图标,ico_blt,   ||   ,怪物职业 (Job),近战-剑盾,sd,Sword & Shield
+场景,地图,env_map,   ||   ,怪物职业 (Job),近战-单手,1h,One-Handed
+场景,地图装饰物,env_prop,   ||   ,怪物职业 (Job),近战-双手,2h,Two-Handed
+,,,   ||   ,怪物职业 (Job),近战-棍棒,clb,Club/Stick
+,,,   ||   ,怪物职业 (Job),远程-弓手,bow,Archer
+,,,   ||   ,怪物职业 (Job),远程-法师,mag,Mage
+,,,   ||   ,怪物职业 (Job),远程-召唤,sum,Summoner
+,,,   ||   ,怪物阶级 (Rank),小怪,s,Small/Minion
+,,,   ||   ,怪物阶级 (Rank),精英,e,Elite
+,,,   ||   ,怪物阶级 (Rank),BOSS,b,Boss
+,,,   ||   ,动作 (Action),待机,idle,
+,,,   ||   ,动作 (Action),攻击,atk,
+,,,   ||   ,动作 (Action),死亡,die,
+,,,   ||   ,动作 (Action),移动,irun,
+,,,   ||   ,动作 (Action),受击,hit,
+,,,   ||   ,动作 (Action),施法,cast,
+,,,   ||   ,UI控件 (Control),按钮,btn,Button
+,,,   ||   ,UI控件 (Control),图标,ico,Icon
+,,,   ||   ,UI控件 (Control),进度条,bar,Progress Bar
+,,,   ||   ,UI控件 (Control),背景,bg,Background

@@ -1,0 +1,203 @@
+/* ComfyUI 风格全局样式 */
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* CSS 变量定义 */
+:root {
+  /* 背景色 */
+  --comfy-bg-primary: #0a0a0a;
+  --comfy-bg-secondary: #0f0f0f;
+  --comfy-bg-tertiary: #151515;
+  --comfy-bg-card: #1a1a1a;
+  --comfy-bg-hover: #222222;
+  --comfy-bg-elevated: #252525;
+  
+  /* 边框色 */
+  --comfy-border: #2a2a2a;
+  --comfy-border-light: #333333;
+  --comfy-border-focus: #3b82f6;
+  
+  /* 文字色 */
+  --comfy-text-primary: #ffffff;
+  --comfy-text-secondary: #a0a0a0;
+  --comfy-text-muted: #666666;
+  --comfy-text-accent: #3b82f6;
+  
+  /* 圆角 */
+  --comfy-radius: 8px;
+  --comfy-radius-lg: 12px;
+  --comfy-radius-xl: 16px;
+  
+  /* 过渡 */
+  --comfy-transition: 150ms ease;
+  --comfy-transition-slow: 300ms ease;
+}
+
+/* 基础样式重置 */
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+html {
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Microsoft YaHei', 'PingFang SC', sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  background-color: var(--comfy-bg-primary);
+  color: var(--comfy-text-primary);
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  background-color: var(--comfy-bg-primary);
+}
+
+/* 窗口圆角效果 */
+body, #root {
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+/* 滚动条样式 */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--comfy-bg-secondary);
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--comfy-border-light);
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #444444;
+}
+
+/* 选中文字样式 */
+::selection {
+  background: rgba(59, 130, 246, 0.3);
+  color: white;
+}
+
+/* 通用组件层样式 */
+@layer components {
+  /* 卡片基础样式 */
+  .comfy-card {
+    @apply bg-comfy-bg-card border border-comfy-border rounded-comfy-lg;
+    @apply transition-all duration-150;
+  }
+  
+  .comfy-card:hover {
+    @apply bg-comfy-bg-hover border-comfy-border-light;
+  }
+  
+  /* 按钮基础样式 */
+  .comfy-btn {
+    @apply px-4 py-2 rounded-comfy font-medium;
+    @apply transition-all duration-150;
+    @apply focus:outline-none focus:ring-2 focus:ring-comfy-accent-blue/50;
+  }
+  
+  .comfy-btn-primary {
+    @apply comfy-btn bg-comfy-accent-blue text-white;
+    @apply hover:bg-blue-600 active:bg-blue-700;
+  }
+  
+  .comfy-btn-secondary {
+    @apply comfy-btn bg-comfy-bg-elevated text-comfy-text-secondary border border-comfy-border;
+    @apply hover:bg-comfy-bg-hover hover:text-comfy-text-primary;
+  }
+  
+  /* 输入框基础样式 */
+  .comfy-input {
+    @apply w-full px-4 py-2.5 rounded-comfy;
+    @apply bg-comfy-bg-tertiary border border-comfy-border;
+    @apply text-comfy-text-primary placeholder-comfy-text-muted;
+    @apply transition-all duration-150;
+    @apply focus:outline-none focus:border-comfy-border-focus focus:ring-1 focus:ring-comfy-accent-blue/30;
+  }
+  
+  /* 标签样式 */
+  .comfy-tag {
+    @apply inline-flex items-center px-2 py-0.5 rounded text-xs font-medium;
+  }
+  
+  /* 侧边栏菜单项 */
+  .comfy-menu-item {
+    @apply flex items-center gap-3 px-4 py-2.5 rounded-comfy;
+    @apply text-comfy-text-secondary cursor-pointer;
+    @apply transition-all duration-150;
+  }
+  
+  .comfy-menu-item:hover {
+    @apply bg-comfy-bg-hover text-comfy-text-primary;
+  }
+  
+  .comfy-menu-item.active {
+    @apply bg-comfy-bg-elevated text-comfy-text-primary;
+  }
+  
+  /* 分组标题 */
+  .comfy-section-title {
+    @apply text-xs font-medium text-comfy-text-muted uppercase tracking-wider px-4 py-2;
+  }
+}
+
+/* 动画 */
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes slideUp {
+  from { 
+    opacity: 0; 
+    transform: translateY(10px); 
+  }
+  to { 
+    opacity: 1; 
+    transform: translateY(0); 
+  }
+}
+
+@keyframes scaleIn {
+  from { 
+    opacity: 0; 
+    transform: scale(0.95); 
+  }
+  to { 
+    opacity: 1; 
+    transform: scale(1); 
+  }
+}
+
+.animate-fade-in {
+  animation: fadeIn 0.2s ease-out;
+}
+
+.animate-slide-up {
+  animation: slideUp 0.3s ease-out;
+}
+
+.animate-scale-in {
+  animation: scaleIn 0.2s ease-out;
+}
+
+/* 工具类 */
+.line-clamp-2 {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+code {
+  font-family: 'Fira Code', 'Source Code Pro', Menlo, Monaco, Consolas, 'Courier New', monospace;
+}

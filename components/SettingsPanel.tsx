@@ -1,0 +1,429 @@
+import React, { useState, useEffect, useRef } from 'react';
+import { Settings, Save, ExternalLink, AlertCircle, PlayCircle, Loader2, Folder, X } from 'lucide-react';
+import { testApiConnection } from '../services/translationService';
+import { 
+  isFileSystemAccessSupported, 
+  selectStorageDirectory,
+  getStorageConfig,
+  saveStorageConfig,
+  formatSyncTime,
+  getSavedDirectoryHandle,
+  autoSyncToFile
+} from '../services/fileStorageService';
+
+interface SettingsPanelProps {
+  isOpen: boolean;
+  onClose: () => void;
+  triggerRef?: React.RefObject<HTMLButtonElement>;
+}
+
+const SettingsPanel: React.FC<SettingsPanelProps> = ({ isOpen, onClose, triggerRef }) => {
+  const [activeGroup, setActiveGroup] = useState<'api' | 'storage'>('api');
+  
+  // API 配置状态
+  const [geminiKey, setGeminiKey] = useState('');
+  const [baiduAppId, setBaiduAppId] = useState('');
+  const [baiduSecret, setBaiduSecret] = useState('');
+  
+  // 存储配置状态
+  const [storageEnabled, setStorageEnabled] = useState(false);
+  const [selectedDirectory, setSelectedDirectory] = useState<string | null>(null);
+  const [lastSyncTime, setLastSyncTime] = useState<number | null>(null);
+  
+  const [statusMsg, setStatusMsg] = useState<{type: 'success' | 'error' | 'info', text: string} | null>(null);
+  const [isTesting, setIsTesting] = useState(false);
+
+  useEffect(() => {
+    setGeminiKey(localStorage.getItem('arthub_gemini_key') || '');
+    setBaiduAppId(localStorage.getItem('arthub_baidu_appid') || '');
+    setBaiduSecret(localStorage.getItem('arthub_baidu_secret') || '');
+    
+    const config = getStorageConfig();
+    setStorageEnabled(config.enabled);
+    setSelectedDirectory(config.directoryPath);
+    setLastSyncTime(config.lastSyncTime);
+    
+    if (config.enabled) {
+      getSavedDirectoryHandle().catch(() => {});
+    }
+    
+    const interval = setInterval(() => {
+      const currentConfig = getStorageConfig();
+      setLastSyncTime(currentConfig.lastSyncTime);
+    }, 60000);
+    
+    return () => clearInterval(interval);
+  }, []);
+
+  const showStatus = (type: 'success' | 'error' | 'info', text: string) => {
+    setStatusMsg({ type, text });
+    setTimeout(() => setStatusMsg(null), 3000);
+  };
+
+  const handleSave = () => {
+    localStorage.setItem('arthub_gemini_key', geminiKey.trim());
+    localStorage.setItem('arthub_baidu_appid', baiduAppId.trim());
+    localStorage.setItem('arthub_baidu_secret', baiduSecret.trim());
+    localStorage.removeItem('arthub_translation_service');
+    showStatus('success', 'API 配置已保存');
+  };
+
+  useEffect(() => {
+    if (activeGroup === 'storage') {
+      saveStorageConfig({ 
+        enabled: storageEnabled,
+        directoryPath: selectedDirectory,
+        lastSyncTime: lastSyncTime
+      });
+    }
+  }, [storageEnabled, selectedDirectory, lastSyncTime, activeGroup]);
+
+  const handleSelectDirectory = async () => {
+    try {
+      const result = await selectStorageDirectory();
+      if (result) {
+        setSelectedDirectory(result.path);
+        await autoSyncToFile();
+        const config = getStorageConfig();
+        setLastSyncTime(config.lastSyncTime);
+        showStatus('success', `已选择目录: ${result.path}`);
+      }
+    } catch (error: any) {
+      showStatus('error', error.message || '选择目录失败');
+    }
+  };
+
+  const handleTest = async () => {
+    setIsTesting(true);
+    setStatusMsg(null);
+    
+    const baiduConfig = (baiduAppId && baiduSecret) ? { appId: baiduAppId, secretKey: baiduSecret } : undefined;
+    
+    try {
+      const result = await testApiConnection(geminiKey || undefined, baiduConfig);
+      if (result.success) {
+        showStatus('success', result.message);
+      } else {
+        showStatus('error', result.message);
+      }
+    } catch {
+      showStatus('error', '测试过程中发生未知错误');
+    } finally {
+      setIsTesting(false);
+    }
+  };
+
+  const panelRef = useRef<HTMLDivElement>(null);
+
+  // 点击外部关闭
+  useEffect(() => {
+    if (!isOpen) return;
+
+    const handleClickOutside = (event: MouseEvent) => {
+      const target = event.target as Node;
+      if (
+        panelRef.current && 
+        !panelRef.current.contains(target) &&
+        triggerRef?.current &&
+        !triggerRef.current.contains(target)
+      ) {
+        onClose();
+      }
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [isOpen, onClose, triggerRef]);
+
+  if (!isOpen) return null;
+
+  return (
+    <>
+      {/* 遮罩层 */}
+      <div 
+        className="fixed inset-0 z-40 bg-black/50 backdrop-blur-sm"
+        onClick={onClose}
+      />
+      
+      {/* 设置面板 - 居中显示 */}
+      <div 
+        ref={panelRef}
+        className="
+          fixed z-50 
+          top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2
+          w-[420px] max-w-[90vw]
+          bg-[#151515] border border-[#2a2a2a] rounded-xl 
+          shadow-2xl shadow-black/50 
+          overflow-hidden
+          animate-scale-in
+        "
+      >
+        {/* 标题栏 */}
+        <div className="flex items-center justify-between px-5 py-4 border-b border-[#2a2a2a]">
+          <div className="flex items-center gap-3">
+            <Settings size={18} className="text-blue-400" />
+            <h3 className="font-semibold text-white">系统设置</h3>
+          </div>
+          <button
+            onClick={onClose}
+            className="p-1.5 rounded-lg text-[#666666] hover:text-white hover:bg-[#252525] transition-colors"
+          >
+            <X size={18} />
+          </button>
+        </div>
+        
+        {/* 分组切换 */}
+        <div className="flex gap-2 px-5 py-3 border-b border-[#2a2a2a]">
+          <button
+            onClick={() => setActiveGroup('api')}
+            className={`
+              flex-1 px-4 py-2 rounded-lg text-sm font-medium transition-colors
+              ${activeGroup === 'api'
+                ? 'bg-blue-500/20 text-blue-400 border border-blue-500/30'
+                : 'bg-[#1a1a1a] text-[#808080] border border-[#2a2a2a] hover:border-[#3a3a3a]'
+              }
+            `}
+          >
+            翻译 API
+          </button>
+          <button
+            onClick={() => setActiveGroup('storage')}
+            className={`
+              flex-1 px-4 py-2 rounded-lg text-sm font-medium transition-colors
+              ${activeGroup === 'storage'
+                ? 'bg-blue-500/20 text-blue-400 border border-blue-500/30'
+                : 'bg-[#1a1a1a] text-[#808080] border border-[#2a2a2a] hover:border-[#3a3a3a]'
+              }
+            `}
+          >
+            本地存储
+          </button>
+        </div>
+        
+        {/* 内容区域 */}
+        <div className="p-5 space-y-5 max-h-[60vh] overflow-y-auto">
+          {/* 组1：翻译 API 配置 */}
+          {activeGroup === 'api' && (
+            <>
+              {/* Gemini Section */}
+              <div className="space-y-2">
+                <div className="flex justify-between items-center">
+                  <label className="text-sm font-medium text-[#a0a0a0]">Google Gemini API</label>
+                  <a 
+                    href="https://aistudio.google.com/app/apikey" 
+                    target="_blank" 
+                    rel="noreferrer" 
+                    className="text-xs text-blue-400 hover:text-blue-300 flex items-center gap-1"
+                  >
+                    申请 Key <ExternalLink size={10} />
+                  </a>
+                </div>
+                <input 
+                  type="password"
+                  value={geminiKey}
+                  onChange={(e) => setGeminiKey(e.target.value)}
+                  className="
+                    w-full px-4 py-2.5 rounded-lg
+                    bg-[#0f0f0f] border border-[#2a2a2a]
+                    text-white placeholder-[#555555]
+                    text-sm
+                    focus:outline-none focus:border-blue-500
+                    transition-colors
+                  "
+                  placeholder="AI Studio API Key"
+                />
+              </div>
+
+              <div className="h-px bg-[#2a2a2a]"></div>
+
+              {/* Baidu Section */}
+              <div className="space-y-2">
+                <div className="flex justify-between items-center">
+                  <label className="text-sm font-medium text-[#a0a0a0]">百度翻译 API</label>
+                  <a 
+                    href="https://api.fanyi.baidu.com/manage/developer" 
+                    target="_blank" 
+                    rel="noreferrer" 
+                    className="text-xs text-blue-400 hover:text-blue-300 flex items-center gap-1"
+                  >
+                    申请 ID <ExternalLink size={10} />
+                  </a>
+                </div>
+                <div className="space-y-2">
+                  <input 
+                    type="text"
+                    value={baiduAppId}
+                    onChange={(e) => setBaiduAppId(e.target.value)}
+                    className="
+                      w-full px-4 py-2.5 rounded-lg
+                      bg-[#0f0f0f] border border-[#2a2a2a]
+                      text-white placeholder-[#555555]
+                      text-sm
+                      focus:outline-none focus:border-blue-500
+                      transition-colors
+                    "
+                    placeholder="APP ID"
+                  />
+                  <input 
+                    type="password"
+                    value={baiduSecret}
+                    onChange={(e) => setBaiduSecret(e.target.value)}
+                    className="
+                      w-full px-4 py-2.5 rounded-lg
+                      bg-[#0f0f0f] border border-[#2a2a2a]
+                      text-white placeholder-[#555555]
+                      text-sm
+                      focus:outline-none focus:border-blue-500
+                      transition-colors
+                    "
+                    placeholder="密钥 (Secret Key)"
+                  />
+                </div>
+              </div>
+
+              <div className="
+                p-3 rounded-lg
+                bg-blue-500/10 border border-blue-500/20
+                text-xs text-blue-300
+                flex gap-2
+              ">
+                <AlertCircle size={14} className="shrink-0 mt-0.5" />
+                <p>优先使用 Gemini，失败时自动降级到百度翻译。</p>
+              </div>
+
+              <div className="flex gap-3">
+                <button 
+                  onClick={handleTest}
+                  disabled={isTesting}
+                  className="
+                    flex-1 py-2.5 rounded-lg
+                    bg-[#1a1a1a] border border-[#2a2a2a]
+                    text-[#a0a0a0] hover:text-white hover:border-[#3a3a3a]
+                    text-sm font-medium
+                    flex items-center justify-center gap-2
+                    transition-colors
+                    disabled:opacity-50
+                  "
+                >
+                  {isTesting ? <Loader2 size={16} className="animate-spin" /> : <PlayCircle size={16} />}
+                  测试连接
+                </button>
+                <button 
+                  onClick={handleSave}
+                  className="
+                    flex-1 py-2.5 rounded-lg
+                    bg-blue-600 hover:bg-blue-700
+                    text-white text-sm font-medium
+                    flex items-center justify-center gap-2
+                    transition-colors
+                  "
+                >
+                  <Save size={16} /> 保存
+                </button>
+              </div>
+            </>
+          )}
+
+          {/* 组2：本地存储路径设置 */}
+          {activeGroup === 'storage' && (
+            <>
+              {!isFileSystemAccessSupported() && (
+                <div className="
+                  p-3 rounded-lg
+                  bg-yellow-500/10 border border-yellow-500/20
+                  text-xs text-yellow-300
+                ">
+                  <p>您的浏览器不支持文件系统访问 API，请使用 Chrome 86+、Edge 86+ 或 Opera 72+</p>
+                </div>
+              )}
+
+              {isFileSystemAccessSupported() && (
+                <div className="space-y-4">
+                  {/* 启用开关 */}
+                  <div className="flex items-center justify-between">
+                    <label className="text-sm font-medium text-[#a0a0a0]">启用文件存储</label>
+                    <label className="relative inline-flex items-center cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={storageEnabled}
+                        onChange={(e) => setStorageEnabled(e.target.checked)}
+                        className="sr-only peer"
+                      />
+                      <div className="
+                        w-11 h-6 rounded-full
+                        bg-[#2a2a2a] peer-checked:bg-blue-600
+                        peer-focus:outline-none
+                        after:content-[''] after:absolute after:top-[2px] after:left-[2px]
+                        after:bg-white after:rounded-full after:h-5 after:w-5
+                        after:transition-all
+                        peer-checked:after:translate-x-full
+                      "></div>
+                    </label>
+                  </div>
+
+                  {/* 路径选择 */}
+                  {storageEnabled && (
+                    <div className="space-y-3">
+                      <button
+                        onClick={handleSelectDirectory}
+                        className="
+                          w-full p-4 rounded-lg text-left
+                          bg-[#0f0f0f] border border-[#2a2a2a]
+                          hover:bg-[#1a1a1a] hover:border-blue-500/50
+                          transition-all group
+                        "
+                      >
+                        <div className="flex items-start gap-3">
+                          <Folder 
+                            size={20} 
+                            className="text-[#666666] group-hover:text-blue-400 transition-colors mt-0.5 shrink-0" 
+                          />
+                          <div className="flex-1 min-w-0">
+                            <div className="text-xs font-medium text-[#666666] mb-1.5">
+                              {selectedDirectory ? '存储路径' : '选择存储路径'}
+                            </div>
+                            {selectedDirectory ? (
+                              <div className="text-sm text-[#e0e0e0] break-all font-mono leading-relaxed">
+                                {selectedDirectory}
+                              </div>
+                            ) : (
+                              <div className="text-sm text-[#555555]">点击选择目录</div>
+                            )}
+                          </div>
+                        </div>
+                      </button>
+                      
+                      {/* 同步时间 */}
+                      {selectedDirectory && (
+                        <div className="text-center">
+                          <div className="text-xs text-[#555555]">
+                            {formatSyncTime(lastSyncTime)}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
+            </>
+          )}
+        </div>
+
+        {/* 状态提示 */}
+        {statusMsg && (
+          <div className={`
+            mx-5 mb-5 p-3 rounded-lg text-sm
+            ${statusMsg.type === 'success' 
+              ? 'bg-green-500/10 border border-green-500/20 text-green-400' 
+              : 'bg-red-500/10 border border-red-500/20 text-red-400'
+            }
+          `}>
+            {statusMsg.text}
+          </div>
+        )}
+      </div>
+    </>
+  );
+};
+
+export default SettingsPanel;

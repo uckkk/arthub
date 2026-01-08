@@ -1,0 +1,44 @@
+[package]
+name = "arthub"
+version = "1.0.0"
+description = "ArtHub - 游戏美术工作台"
+authors = ["ArtHub Team"]
+license = ""
+repository = ""
+edition = "2021"
+
+[build-dependencies]
+tauri-build = { version = "1.5", features = [] }
+
+[dependencies]
+tauri = { version = "1.5", features = [ "dialog-ask", "dialog-message", "dialog-confirm",
+    "shell-open",
+    "window-all",
+    "dialog-open",
+    "dialog-save",
+    "dialog-message",
+    "fs-copy-file",
+    "fs-create-dir",
+    "fs-exists",
+    "fs-read-dir",
+    "fs-read-file",
+    "fs-remove-dir",
+    "fs-remove-file",
+    "fs-rename-file",
+    "fs-write-file",
+    "path-all"
+] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+tokio = { version = "1", features = ["time"] }
+base64 = "0.21"
+reqwest = { version = "0.11", features = ["json"] }
+
+[target.'cfg(windows)'.dependencies]
+winapi = { version = "0.3", features = ["winuser", "windef", "synchapi", "handleapi", "errhandlingapi"] }
+
+[features]
+# 默认启用所有功能
+default = ["custom-protocol"]
+custom-protocol = ["tauri/custom-protocol"]
+
