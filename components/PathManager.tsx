@@ -256,29 +256,35 @@ const PathManager: React.FC = () => {
     setEditGroup('');
   };
 
-  const handleJump = (item: PathItem) => {
+  const handleJump = async (item: PathItem) => {
     try {
       if (item.type === 'web') {
+        // 网页类型：直接在新标签页打开
         window.open(item.path, '_blank');
       } else if (item.type === 'local' || item.type === 'network') {
+        // 本地和局域网路径：使用 Tauri shell.open 打开资源管理器
         try {
-          let pathToOpen = item.path;
-          
-          if (item.type === 'local') {
-            pathToOpen = 'file:///' + item.path.replace(/\\/g, '/').replace(/^([A-Za-z]):/, '$1:');
-          } else {
-            pathToOpen = 'file:///' + item.path.replace(/\\/g, '/');
-          }
-          
-          const w = window.open(pathToOpen);
-          
-          setTimeout(() => {
-            if (!w || w.closed || typeof w.closed === 'undefined') {
-              copyToClipboard(item.path, item.id);
+          const { open } = await import('@tauri-apps/api/shell');
+          await open(item.path);
+        } catch (shellError) {
+          console.warn('shell.open failed, trying file:// protocol:', shellError);
+          // 如果 shell.open 失败，尝试 file:// 协议
+          try {
+            let pathToOpen = item.path;
+            if (item.type === 'local') {
+              pathToOpen = 'file:///' + item.path.replace(/\\/g, '/');
+            } else {
+              pathToOpen = 'file:' + item.path.replace(/\\/g, '/');
             }
-          }, 100);
-        } catch {
-          copyToClipboard(item.path, item.id);
+            const w = window.open(pathToOpen);
+            setTimeout(() => {
+              if (!w || w.closed) {
+                copyToClipboard(item.path, item.id);
+              }
+            }, 100);
+          } catch {
+            copyToClipboard(item.path, item.id);
+          }
         }
       }
     } catch {
