@@ -1,6 +1,6 @@
 # 掼蛋ArtHub - GitHub Actions 自动构建指南
 
-## 一键构建 Windows + macOS 双平台应用
+## 一键构建 Windows + macOS + Web 全平台应用
 
 ---
 
@@ -55,6 +55,7 @@ git push origin v1.0.0
 2. 在 **Actions** 页面点击完成的构建
 3. 滚动到底部 **Artifacts** 区域
 4. 下载你需要的文件：
+   - `ArtHub-Web` - **网页版**（可部署到任何服务器）
    - `ArtHub-Windows-MSI` - Windows 安装包
    - `ArtHub-Windows-EXE` - Windows 便携版
    - `ArtHub-macOS-Intel-DMG` - Intel Mac 安装包
@@ -84,11 +85,31 @@ git push origin v1.0.1
 
 ### 构建内容
 
-| 平台 | 架构 | 输出文件 |
-|------|------|----------|
-| Windows | x64 | `.msi` 安装包, `.exe` 安装程序 |
-| macOS | Intel (x64) | `.dmg` 安装包, `.app` 应用 |
-| macOS | Apple Silicon (ARM) | `.dmg` 安装包, `.app` 应用 |
+| 平台 | 架构 | 输出文件 | 说明 |
+|------|------|----------|------|
+| **Web** | 通用 | `.zip` 压缩包 | 解压后部署到任意 Web 服务器 |
+| Windows | x64 | `.msi` 安装包, `.exe` 安装程序 | 桌面应用 |
+| macOS | Intel (x64) | `.dmg` 安装包, `.app` 应用 | 桌面应用 |
+| macOS | Apple Silicon (ARM) | `.dmg` 安装包, `.app` 应用 | 桌面应用 |
+
+### Web 版本部署
+
+下载 `ArtHub-Web.zip` 后：
+
+```bash
+# 解压
+unzip ArtHub-Web.zip -d arthub-web
+
+# 方式1：使用 Python 快速启动本地服务器
+cd arthub-web
+python -m http.server 8080
+# 访问 http://localhost:8080
+
+# 方式2：部署到任意 Web 服务器
+# 将 arthub-web 文件夹内容上传到服务器即可
+```
+
+支持部署到：GitHub Pages、Vercel、Netlify、阿里云 OSS、腾讯云 COS 等
 
 ### 自动发布
 
