@@ -31,12 +31,19 @@ on:
   # push:
   #   branches: [ main ]
 
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+
 jobs:
   # ========================================
   # Web 版本构建
   # ========================================
   build-web:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     
     steps:
       - name: Checkout
@@ -115,7 +122,7 @@ jobs:
 
       # 3. 安装 Rust
       - name: Setup Rust
-        uses: dtolnay/rust-action@stable
+        uses: dtolnay/rust-toolchain@stable
         with:
           targets: ${{ matrix.target }}
 
