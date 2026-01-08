@@ -66,6 +66,13 @@ jobs:
           name: ArtHub-Web
           path: ArtHub-Web.zip
 
+      - name: Deploy to GitHub Pages
+        uses: peaceiris/actions-gh-pages@v3
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./dist
+          cname: ''  # 如果有自定义域名，在这里填写
+
   # ========================================
   # 桌面版本构建 (Windows + macOS)
   # ========================================
