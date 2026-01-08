@@ -89,7 +89,6 @@ fn create_icon_window(app: &tauri::AppHandle) -> Result<tauri::Window, Box<dyn s
         icon_url
     )
     .decorations(false)
-    .transparent(true)
     .always_on_top(true)
     .skip_taskbar(true)
     .resizable(false)
