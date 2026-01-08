@@ -17,6 +17,7 @@ const NamingHistory = lazy(() => import('./components/NamingHistory'));
 const SettingsPanel = lazy(() => import('./components/SettingsPanel'));
 const UserAuthModal = lazy(() => import('./components/UserAuthModal'));
 const AITool = lazy(() => import('./components/AITool'));
+const UpdateNotification = lazy(() => import('./components/UpdateNotification'));
 
 // 加载占位符组件
 const LoadingPlaceholder = () => (
@@ -195,19 +196,24 @@ const App: React.FC = () => {
             onSelect={handleMenuSelect}
             footer={
               <div className="space-y-2">
-                {/* 设置按钮 */}
-                <button
-                  ref={settingsButtonRef}
-                  onClick={() => setShowSettings(!showSettings)}
-                  className="
-                    w-full flex items-center gap-3 px-3 py-2 rounded-lg
-                    text-[#808080] hover:text-white hover:bg-[#151515]
-                    transition-colors duration-150 text-sm
-                  "
-                >
-                  <Settings size={16} />
-                  <span>设置</span>
-                </button>
+                {/* 设置和更新按钮行 */}
+                <div className="flex items-center gap-2">
+                  <button
+                    ref={settingsButtonRef}
+                    onClick={() => setShowSettings(!showSettings)}
+                    className="
+                      flex-1 flex items-center gap-3 px-3 py-2 rounded-lg
+                      text-[#808080] hover:text-white hover:bg-[#151515]
+                      transition-colors duration-150 text-sm
+                    "
+                  >
+                    <Settings size={16} />
+                    <span>设置</span>
+                  </button>
+                  <Suspense fallback={null}>
+                    <UpdateNotification />
+                  </Suspense>
+                </div>
 
                 {/* 本地存储快捷开关 */}
                 <div className="
