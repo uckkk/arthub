@@ -14,14 +14,21 @@
     html, body {
       width: 64px;
       height: 64px;
+      margin: 0;
+      padding: 0;
       background: transparent !important;
+      background-color: transparent !important;
       display: flex;
       align-items: center;
       justify-content: center;
       cursor: move;
       user-select: none;
-      -webkit-app-region: no-drag;
+      -webkit-app-region: drag;
       overflow: hidden;
+    }
+
+    body {
+      background: rgba(0, 0, 0, 0) !important;
     }
 
     #icon {
@@ -30,6 +37,8 @@
       object-fit: contain;
       pointer-events: none;
       border-radius: 12px;
+      -webkit-app-region: no-drag;
+      background: transparent;
     }
   </style>
 </head>

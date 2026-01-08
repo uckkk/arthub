@@ -83,7 +83,7 @@ fn create_icon_window(app: &tauri::AppHandle) -> Result<tauri::Window, Box<dyn s
     };
     
     // 先创建窗口（使用临时位置）
-    let icon_window = WindowBuilder::new(
+    let mut builder = WindowBuilder::new(
         app,
         "icon",
         icon_url
@@ -94,8 +94,15 @@ fn create_icon_window(app: &tauri::AppHandle) -> Result<tauri::Window, Box<dyn s
     .resizable(false)
     .visible(true)
     .inner_size(ICON_SIZE as f64, ICON_SIZE as f64)
-    .title("")
-    .build()?;
+    .title("");
+    
+    // Windows 上启用透明背景
+    #[cfg(target_os = "windows")]
+    {
+        builder = builder.transparent(true);
+    }
+    
+    let icon_window = builder.build()?;
     
     // 使用物理坐标设置正确的位置（避免 DPI 缩放问题）
     if let Err(e) = icon_window.set_position(PhysicalPosition::new(init_x, init_y)) {
