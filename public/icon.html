@@ -11,10 +11,10 @@
       box-sizing: border-box;
     }
 
-    body {
+    html, body {
       width: 64px;
       height: 64px;
-      background: transparent;
+      background: transparent !important;
       display: flex;
       align-items: center;
       justify-content: center;
@@ -25,109 +25,55 @@
     }
 
     #icon {
-      width: 100%;
-      height: 100%;
+      width: 56px;
+      height: 56px;
       object-fit: contain;
       pointer-events: none;
-    }
-
-    /* 右键菜单样式 */
-    #contextMenu {
-      position: fixed;
-      background: #1e293b;
-      border: 1px solid #475569;
-      border-radius: 4px;
-      padding: 4px 0;
-      min-width: 120px;
-      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
-      display: none;
-      z-index: 10000;
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-      font-size: 13px;
-      white-space: nowrap;
-      overflow: visible;
-    }
-
-    #contextMenu.menu-visible {
-      display: block;
-    }
-
-    .menu-item {
-      padding: 8px 16px;
-      color: #e2e8f0;
-      cursor: pointer;
-      transition: background-color 0.15s;
-    }
-
-    .menu-item:hover {
-      background: #334155;
-    }
-
-    .menu-item:active {
-      background: #475569;
+      border-radius: 12px;
     }
   </style>
 </head>
 <body>
   <img id="icon" src="./icon.ico" alt="ArtHub" />
-  <div id="contextMenu">
-    <div class="menu-item" id="exitItem">退出</div>
-  </div>
   <script>
     // 使用全局 Tauri API
     let invoke;
     
-    // 尝试获取 Tauri API - 修复 object 类型问题
+    // 尝试获取 Tauri API
     function getInvoke() {
-      // 方法1: 直接使用 __TAURI_INTERNALS__.invoke（即使它是对象，也可能可以调用）
       if (window.__TAURI_INTERNALS__ && window.__TAURI_INTERNALS__.invoke) {
         const invokeObj = window.__TAURI_INTERNALS__.invoke;
-        // 如果是函数，直接返回
         if (typeof invokeObj === 'function') {
           return invokeObj.bind(window.__TAURI_INTERNALS__);
         }
-        // 如果是对象，尝试直接调用（某些对象实现了可调用接口）
         if (typeof invokeObj === 'object' && invokeObj !== null) {
-          // 尝试直接作为函数调用
           try {
             const testCall = invokeObj('test', {});
             if (testCall && typeof testCall.then === 'function') {
-              // 如果返回 Promise，说明可以调用
-              return async (cmd, args) => {
-                return invokeObj(cmd, args);
-              };
+              return async (cmd, args) => invokeObj(cmd, args);
             }
-          } catch (e) {
-            // 如果直接调用失败，尝试其他方法
-          }
-          // 检查是否有特定的调用方法
+          } catch (e) {}
           if (invokeObj.default && typeof invokeObj.default === 'function') {
             return invokeObj.default.bind(invokeObj);
           }
         }
       }
-      // 方法2: 尝试 core.invoke
       if (window.__TAURI_INTERNALS__ && window.__TAURI_INTERNALS__.core && window.__TAURI_INTERNALS__.core.invoke) {
         const coreInvoke = window.__TAURI_INTERNALS__.core.invoke;
         if (typeof coreInvoke === 'function') {
           return coreInvoke.bind(window.__TAURI_INTERNALS__.core);
         }
         if (typeof coreInvoke === 'object' && coreInvoke !== null) {
-          return async (cmd, args) => {
-            return coreInvoke(cmd, args);
-          };
+          return async (cmd, args) => coreInvoke(cmd, args);
         }
       }
-      // 方法3: 尝试 __TAURI__.invoke
       if (window.__TAURI__ && window.__TAURI__.invoke) {
         const tauriInvoke = window.__TAURI__.invoke;
         if (typeof tauriInvoke === 'function') {
           return tauriInvoke.bind(window.__TAURI__);
         }
         if (typeof tauriInvoke === 'object' && tauriInvoke !== null) {
-          return async (cmd, args) => {
-            return tauriInvoke(cmd, args);
-          };
+          return async (cmd, args) => tauriInvoke(cmd, args);
         }
       }
       return null;
@@ -136,17 +82,8 @@
     invoke = getInvoke();
     
     let isDragging = false;
-    let startPos = { x: 0, y: 0 };
-    let contextMenuVisible = false;
-    
-    console.log('Icon window script loaded');
-    console.log('__TAURI_INTERNALS__:', window.__TAURI_INTERNALS__);
-    console.log('invoke type:', typeof invoke);
-    if (window.__TAURI_INTERNALS__ && window.__TAURI_INTERNALS__.invoke) {
-      console.log('invoke object:', window.__TAURI_INTERNALS__.invoke);
-      console.log('invoke object type:', typeof window.__TAURI_INTERNALS__.invoke);
-      console.log('invoke object keys:', Object.keys(window.__TAURI_INTERNALS__.invoke || {}));
-    }
+    let startMousePos = { x: 0, y: 0 };
+    let startWindowPos = { x: 0, y: 0 };
     
     // 如果 invoke 不可用，尝试延迟加载
     if (!invoke || typeof invoke !== 'function') {
@@ -155,108 +92,28 @@
       const checkInterval = setInterval(() => {
         invoke = getInvoke();
         if (invoke && typeof invoke === 'function') {
-          console.log('Tauri API loaded after delay, retries:', retries);
           clearInterval(checkInterval);
         } else {
           retries++;
           if (retries >= maxRetries) {
-            console.error('Failed to load Tauri API after', maxRetries, 'retries');
-            console.log('Debug info:', {
-              hasInternals: !!window.__TAURI_INTERNALS__,
-              internalsKeys: window.__TAURI_INTERNALS__ ? Object.keys(window.__TAURI_INTERNALS__) : [],
-              invokeType: window.__TAURI_INTERNALS__?.invoke ? typeof window.__TAURI_INTERNALS__.invoke : 'undefined',
-              invokeKeys: window.__TAURI_INTERNALS__?.invoke ? Object.keys(window.__TAURI_INTERNALS__.invoke) : []
-            });
             clearInterval(checkInterval);
           }
         }
       }, 100);
     }
     
-    // 右键菜单
-    const contextMenu = document.getElementById('contextMenu');
-    const exitItem = document.getElementById('exitItem');
-    
-    // 右键点击显示菜单
+    // 禁用右键菜单
     document.addEventListener('contextmenu', (e) => {
       e.preventDefault();
       e.stopPropagation();
-      
-      if (invoke && typeof invoke === 'function') {
-        // 获取窗口尺寸和菜单尺寸
-        const menuWidth = 120; // min-width
-        const menuHeight = 40; // 估算高度（padding + item height）
-        const windowWidth = window.innerWidth || 64;
-        const windowHeight = window.innerHeight || 64;
-        
-        // 计算菜单位置，确保完全显示在窗口内
-        let menuX = e.clientX;
-        let menuY = e.clientY;
-        
-        // 如果菜单会超出右边界，向左移动
-        if (menuX + menuWidth > windowWidth) {
-          menuX = windowWidth - menuWidth - 5;
-        }
-        
-        // 如果菜单会超出下边界，向上移动
-        if (menuY + menuHeight > windowHeight) {
-          menuY = windowHeight - menuHeight - 5;
-        }
-        
-        // 确保不会超出左边界和上边界
-        menuX = Math.max(5, menuX);
-        menuY = Math.max(5, menuY);
-        
-        contextMenu.style.left = menuX + 'px';
-        contextMenu.style.top = menuY + 'px';
-        contextMenu.classList.add('menu-visible');
-        contextMenuVisible = true;
-        
-        console.log('Context menu shown at:', menuX, menuY);
-      } else {
-        console.warn('Cannot show context menu: invoke not available');
-      }
-    });
-    
-    // 点击菜单项
-    exitItem.addEventListener('click', async () => {
-      contextMenu.classList.remove('menu-visible');
-      contextMenuVisible = false;
-      
-      if (invoke && typeof invoke === 'function') {
-        try {
-          await invoke('app_exit');
-          console.log('app_exit called');
-        } catch (err) {
-          console.error('Exit error:', err);
-        }
-      } else {
-        console.error('invoke not available for exit');
-      }
-    });
-    
-    // 点击其他地方隐藏菜单
-    document.addEventListener('click', (e) => {
-      if (contextMenuVisible && !contextMenu.contains(e.target)) {
-        contextMenu.classList.remove('menu-visible');
-        contextMenuVisible = false;
-      }
     });
     
     // 鼠标按下（左键）
     document.addEventListener('mousedown', async (e) => {
       if (e.button === 0) {
-        // 隐藏右键菜单
-        if (contextMenuVisible) {
-          contextMenu.classList.remove('menu-visible');
-          contextMenuVisible = false;
-        }
-        
-        console.log('Mouse down at:', e.screenX, e.screenY);
         isDragging = true;
-        startPos = { x: e.screenX, y: e.screenY };
+        startMousePos = { x: e.screenX, y: e.screenY };
         
-        // 如果 invoke 还没有加载，尝试再次获取
         if (!invoke || typeof invoke !== 'function') {
           invoke = getInvoke();
         }
@@ -264,12 +121,9 @@
         if (invoke && typeof invoke === 'function') {
           try {
             await invoke('icon_mouse_down', { x: e.screenX, y: e.screenY });
-            console.log('icon_mouse_down called');
           } catch (err) {
             console.error('Mouse down error:', err);
           }
-        } else {
-          console.error('invoke not available in mousedown, type:', typeof invoke);
         }
         
         e.preventDefault();
@@ -277,10 +131,9 @@
       }
     });
 
-    // 鼠标移动 - 通过后端命令移动窗口
+    // 鼠标移动
     document.addEventListener('mousemove', async (e) => {
       if (isDragging) {
-        // 如果 invoke 还没有加载，尝试再次获取
         if (!invoke || typeof invoke !== 'function') {
           invoke = getInvoke();
         }
@@ -297,15 +150,12 @@
       }
     });
 
-    // 鼠标释放 - 检测点击或拖拽结束
+    // 鼠标释放
     document.addEventListener('mouseup', async (e) => {
       if (e.button === 0 && isDragging) {
-        const moved = Math.abs(e.screenX - startPos.x) > 3 || Math.abs(e.screenY - startPos.y) > 3;
+        const moved = Math.abs(e.screenX - startMousePos.x) > 3 || Math.abs(e.screenY - startMousePos.y) > 3;
         isDragging = false;
         
-        console.log('Mouse up, moved:', moved, 'at:', e.screenX, e.screenY);
-        
-        // 如果 invoke 还没有加载，尝试再次获取
         if (!invoke || typeof invoke !== 'function') {
           invoke = getInvoke();
         }
@@ -313,19 +163,14 @@
         if (invoke && typeof invoke === 'function') {
           try {
             await invoke('icon_mouse_up', { x: e.screenX, y: e.screenY });
-            console.log('icon_mouse_up called');
             
             // 如果没有移动，认为是点击
             if (!moved) {
-              console.log('Icon clicked, calling icon_click');
               await invoke('icon_click');
-              console.log('icon_click called');
             }
           } catch (err) {
             console.error('Mouse up error:', err);
           }
-        } else {
-          console.error('invoke not available in mouseup, type:', typeof invoke);
         }
         
         e.preventDefault();
@@ -338,10 +183,9 @@
       e.preventDefault();
     });
     
-    // 全局鼠标释放（防止鼠标移出窗口时卡住）
+    // 全局鼠标释放
     window.addEventListener('mouseup', () => {
       if (isDragging) {
-        console.log('Global mouseup, stopping drag');
         isDragging = false;
       }
     });
@@ -349,7 +193,6 @@
     // 鼠标离开窗口时也释放
     document.addEventListener('mouseleave', () => {
       if (isDragging) {
-        console.log('Mouse leave, stopping drag');
         isDragging = false;
       }
     });

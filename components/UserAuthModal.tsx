@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { X, AlertCircle, CheckCircle } from 'lucide-react';
+import { AlertCircle, CheckCircle } from 'lucide-react';
 import { verifyUser, saveUserInfo, getUserInfo } from '../services/userAuthService';
 
 interface UserAuthModalProps {
@@ -56,33 +56,31 @@ const UserAuthModal: React.FC<UserAuthModalProps> = ({ onVerified }) => {
   };
 
   return (
-    <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-      <div className="bg-slate-800 rounded-xl shadow-2xl border border-slate-700 w-full max-w-md">
+    <div className="fixed inset-0 bg-black/90 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+      <div className="bg-[#151515] rounded-xl shadow-2xl border border-[#2a2a2a] w-full max-w-md">
         <div className="p-6">
-          <div className="flex items-center justify-between mb-6">
-            <h2 className="text-2xl font-bold text-white">
-              掼蛋工作室ArtHub
+          <div className="flex items-center justify-center mb-6">
+            <h2 className="text-xl font-bold text-white">
+              掼蛋工作室 ArtHub
             </h2>
-            {!isFirstTime && (
-              <button
-                onClick={() => window.location.reload()}
-                className="text-slate-400 hover:text-white transition-colors"
-              >
-                <X size={24} />
-              </button>
-            )}
           </div>
 
           <form onSubmit={handleSubmit} className="space-y-4">
             <div>
-              <label className="block text-sm font-medium text-slate-400 mb-2">
+              <label className="block text-sm font-medium text-[#808080] mb-2">
                 用户名
               </label>
               <input
                 type="text"
                 value={username}
                 onChange={(e) => setUsername(e.target.value)}
-                className="w-full bg-slate-900 border border-slate-700 rounded-lg p-3 text-white focus:ring-2 focus:ring-blue-500 outline-none"
+                className="
+                  w-full px-4 py-3 rounded-lg
+                  bg-[#0a0a0a] border border-[#2a2a2a]
+                  text-white placeholder-[#555555]
+                  focus:outline-none focus:border-blue-500
+                  transition-colors
+                "
                 placeholder="请输入用户名"
                 disabled={isVerifying}
                 autoFocus
@@ -90,21 +88,31 @@ const UserAuthModal: React.FC<UserAuthModalProps> = ({ onVerified }) => {
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-slate-400 mb-2">
+              <label className="block text-sm font-medium text-[#808080] mb-2">
                 用户ID
               </label>
               <input
                 type="text"
                 value={userId}
                 onChange={(e) => setUserId(e.target.value)}
-                className="w-full bg-slate-900 border border-slate-700 rounded-lg p-3 text-white focus:ring-2 focus:ring-blue-500 outline-none"
+                className="
+                  w-full px-4 py-3 rounded-lg
+                  bg-[#0a0a0a] border border-[#2a2a2a]
+                  text-white placeholder-[#555555]
+                  focus:outline-none focus:border-blue-500
+                  transition-colors
+                "
                 placeholder="请输入用户ID"
                 disabled={isVerifying}
               />
             </div>
 
             {error && (
-              <div className="flex items-center gap-2 p-3 bg-red-900/30 border border-red-700 rounded-lg text-red-400 text-sm">
+              <div className="
+                flex items-center gap-2 p-3 
+                bg-red-500/10 border border-red-500/30 
+                rounded-lg text-red-400 text-sm
+              ">
                 <AlertCircle size={18} />
                 <span>{error}</span>
               </div>
@@ -113,7 +121,13 @@ const UserAuthModal: React.FC<UserAuthModalProps> = ({ onVerified }) => {
             <button
               type="submit"
               disabled={isVerifying || !username.trim() || !userId.trim()}
-              className="w-full bg-blue-600 hover:bg-blue-700 disabled:bg-slate-700 disabled:cursor-not-allowed text-white font-medium py-3 rounded-lg transition-colors flex items-center justify-center gap-2"
+              className="
+                w-full py-3 rounded-lg font-medium
+                bg-blue-600 hover:bg-blue-700 
+                disabled:bg-[#2a2a2a] disabled:text-[#555555] disabled:cursor-not-allowed 
+                text-white transition-colors 
+                flex items-center justify-center gap-2
+              "
             >
               {isVerifying ? (
                 <>
@@ -130,7 +144,7 @@ const UserAuthModal: React.FC<UserAuthModalProps> = ({ onVerified }) => {
           </form>
 
           {isFirstTime && (
-            <p className="mt-4 text-xs text-slate-500 text-center">
+            <p className="mt-4 text-xs text-[#555555] text-center">
               首次使用需要输入用户名和ID进行验证
             </p>
           )}
@@ -141,4 +155,3 @@ const UserAuthModal: React.FC<UserAuthModalProps> = ({ onVerified }) => {
 };
 
 export default UserAuthModal;
-

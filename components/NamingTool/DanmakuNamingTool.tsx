@@ -39,7 +39,7 @@ const DanmakuNamingTool: React.FC<DanmakuNamingToolProps> = ({
   const { showToast } = useToast();
   const [placeholderValues, setPlaceholderValues] = useState<Map<string, string>>(new Map());
   const [rawInput, setRawInput] = useState('');
-  const { translatedPart, isTranslating } = useTranslation(rawInput);
+  const { translatedPart, isTranslating, needsApiSetup } = useTranslation(rawInput);
   const [finalName, setFinalName] = useState('');
   const [chineseName, setChineseName] = useState('');
   const [copied, setCopied] = useState(false);
@@ -747,6 +747,19 @@ const DanmakuNamingTool: React.FC<DanmakuNamingToolProps> = ({
               onChange={(e) => setRawInput(e.target.value)}
               placeholder="例如：追踪弹 或 Homing"
             />
+            {needsApiSetup && (
+              <div className="mt-2 p-2 bg-yellow-500/10 border border-yellow-500/30 rounded-lg text-yellow-400 text-xs flex items-center justify-between">
+                <span>检测到中文输入，需配置翻译 API 才能自动翻译</span>
+                <button 
+                  onClick={() => {
+                    window.dispatchEvent(new CustomEvent('openSettings'));
+                  }}
+                  className="ml-2 px-2 py-1 bg-yellow-500/20 hover:bg-yellow-500/30 rounded text-yellow-300 transition-colors"
+                >
+                  去配置
+                </button>
+              </div>
+            )}
             {rawInput && (
               <button 
                 onClick={() => setRawInput('')}

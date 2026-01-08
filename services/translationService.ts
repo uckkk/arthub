@@ -262,6 +262,38 @@ const getActiveService = () => {
 };
 
 /**
+ * 检查是否配置了翻译 API
+ * @returns { hasApi: boolean, type: 'gemini' | 'baidu' | 'both' | 'none' }
+ */
+export const checkTranslationApiStatus = (): { hasApi: boolean; type: 'gemini' | 'baidu' | 'both' | 'none' } => {
+  const localGemini = localStorage.getItem('arthub_gemini_key');
+  const localBaiduAppId = localStorage.getItem('arthub_baidu_appid');
+  const localBaiduSecret = localStorage.getItem('arthub_baidu_secret');
+  const envGemini = typeof process !== 'undefined' ? process.env?.API_KEY : undefined;
+
+  const hasGemini = !!(localGemini || envGemini);
+  const hasBaidu = !!(localBaiduAppId && localBaiduSecret);
+
+  if (hasGemini && hasBaidu) {
+    return { hasApi: true, type: 'both' };
+  }
+  if (hasGemini) {
+    return { hasApi: true, type: 'gemini' };
+  }
+  if (hasBaidu) {
+    return { hasApi: true, type: 'baidu' };
+  }
+  return { hasApi: false, type: 'none' };
+};
+
+/**
+ * 检测文本是否包含中文
+ */
+export const containsChinese = (text: string): boolean => {
+  return /[\u4e00-\u9fa5]/.test(text);
+};
+
+/**
  * 统一翻译入口
  * 自动判断已填写的 API，优先使用 Gemini，失败时自动降级到百度翻译
  */

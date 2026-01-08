@@ -103,6 +103,13 @@ const App: React.FC = () => {
     initAutoSync();
   }, []);
 
+  // 监听打开设置事件（从命名工具的翻译提示触发）
+  useEffect(() => {
+    const handleOpenSettings = () => setShowSettings(true);
+    window.addEventListener('openSettings', handleOpenSettings);
+    return () => window.removeEventListener('openSettings', handleOpenSettings);
+  }, []);
+
   const handleUserVerified = () => {
     setIsUserVerified(true);
     const savedUserInfo = getUserInfo();
