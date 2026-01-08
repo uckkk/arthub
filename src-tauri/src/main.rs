@@ -435,37 +435,60 @@ async fn open_ai_tab(
 ) -> Result<String, String> {
     use tauri::WindowUrl;
     
-    println!("Opening AI tab: {} - {}", title, url);
+    let platform = std::env::consts::OS;
+    println!("[{}] Opening AI tab: {} - {}", platform, title, url);
     
     // 使用前端传递的JSON内容（前端已经读取了文件）
     let json_content_final = json_content;
     
     if json_file_path.is_some() {
-        println!("JSON file path provided: {:?}", json_file_path);
+        println!("[{}] JSON file path provided: {:?}", platform, json_file_path);
     }
     
     if json_content_final.is_some() {
-        println!("JSON content length: {}", json_content_final.as_ref().unwrap().len());
+        let json_len = json_content_final.as_ref().unwrap().len();
+        let json_preview = json_content_final.as_ref().unwrap().chars().take(100).collect::<String>();
+        println!("[{}] JSON content length: {}, preview: {}...", platform, json_len, json_preview);
+    } else {
+        println!("[{}] WARNING: No JSON content provided!", platform);
     }
     
-    // 生成唯一的窗口标签
-    let window_label = format!("ai_tab_{}", config_id);
+    // 生成唯一的窗口标签（包含平台信息，避免跨平台冲突）
+    let platform = std::env::consts::OS;
+    let window_label = format!("ai_tab_{}_{}", config_id, platform);
     
     // 检查窗口是否已存在
     if let Some(existing_window) = app.get_window(&window_label) {
+        println!("[{}] Window {} already exists, reusing and injecting new JSON", platform, window_label);
         // 窗口已存在，聚焦并刷新，同时重新注入JSON
         let _ = existing_window.set_focus();
-        let _ = existing_window.eval(&format!("window.location.href = '{}';", url));
         
-        // 如果有新的JSON内容，重新注入（清除旧的并注入新的）
+        // 如果有新的JSON内容，先清除旧的，然后刷新页面并注入新的JSON
         if let Some(json) = json_content_final {
             let json_clone = json.clone();
             let window_clone = existing_window.clone();
+            let url_clone = url.clone();
+            
+            // 先清除旧的 JSON 数据
+            let clear_script = r#"
+                try {
+                    localStorage.removeItem('arthub_injected_json');
+                    delete window.arthubInjectedJSON;
+                    delete window.arthubInjectedJSONString;
+                    console.log('[ArtHub] Old JSON cleared');
+                } catch(e) {
+                    console.warn('[ArtHub] Failed to clear old JSON:', e);
+                }
+            "#;
+            let _ = existing_window.eval(clear_script);
+            
+            // 刷新页面
+            let _ = existing_window.eval(&format!("window.location.href = '{}';", url_clone));
             
             // 使用异步任务等待页面加载并注入新的JSON
             tauri::async_runtime::spawn(async move {
-                // 等待页面刷新
-                tokio::time::sleep(tokio::time::Duration::from_millis(1500)).await;
+                // 等待页面刷新和加载
+                tokio::time::sleep(tokio::time::Duration::from_millis(2000)).await;
                 
                 // 使用base64编码JSON
                 use base64::{Engine as _, engine::general_purpose};
