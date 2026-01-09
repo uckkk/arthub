@@ -261,18 +261,19 @@ fn icon_mouse_down(app: tauri::AppHandle, x: f64, y: f64) {
     // 保存鼠标初始位置和鼠标相对于窗口的偏移
     if let Some(icon_window) = app.get_window("icon") {
         if let Ok(current_pos) = icon_window.outer_position() {
-            // 保存鼠标初始位置
+            // 保存鼠标初始屏幕位置
             let mut mouse_start = state.drag_start_mouse.lock().unwrap();
             mouse_start.x = x as i32;
             mouse_start.y = y as i32;
             
-            // 保存鼠标相对于窗口的偏移（用于后续拖动计算）
-            let mut window_start = state.drag_start_window.lock().unwrap();
-            window_start.x = x as i32 - current_pos.x;  // 鼠标相对于窗口的X偏移
-            window_start.y = y as i32 - current_pos.y;  // 鼠标相对于窗口的Y偏移
+            // 计算鼠标相对于窗口左上角的偏移（在窗口内的位置）
+            // 这个偏移在整个拖拽过程中保持不变
+            let mut window_offset = state.drag_start_window.lock().unwrap();
+            window_offset.x = x as i32 - current_pos.x;
+            window_offset.y = y as i32 - current_pos.y;
             
-            println!("Mouse start: ({}, {}), Window offset: ({}, {})", 
-                     mouse_start.x, mouse_start.y, window_start.x, window_start.y);
+            println!("Mouse screen: ({}, {}), Window pos: ({}, {}), Offset: ({}, {})", 
+                     mouse_start.x, mouse_start.y, current_pos.x, current_pos.y, window_offset.x, window_offset.y);
         } else {
             println!("Failed to get icon window position");
         }
@@ -289,23 +290,25 @@ fn icon_mouse_move(app: tauri::AppHandle, x: f64, y: f64) {
     
     if *is_dragging {
         if let Some(icon_window) = app.get_window("icon") {
-            // 获取鼠标相对于窗口的偏移（在 mouse_down 时保存）
+            // 获取鼠标相对于窗口的偏移（在 mouse_down 时保存，保持不变）
             let window_offset = state.drag_start_window.lock().unwrap();
             
-            // 计算窗口新位置（鼠标位置 - 鼠标相对于窗口的偏移）
-            // 这样可以确保窗口始终跟随鼠标，保持固定的相对位置
+            // 计算窗口新位置：鼠标屏幕位置 - 鼠标在窗口内的偏移 = 窗口左上角位置
+            // 这样窗口会跟随鼠标移动，保持鼠标在窗口内的相对位置不变
             let new_x = x as i32 - window_offset.x;
             let new_y = y as i32 - window_offset.y;
             
-            // 设置窗口新位置
+            // 使用物理坐标设置窗口位置（避免 DPI 缩放问题）
             if let Err(e) = icon_window.set_position(PhysicalPosition::new(new_x, new_y)) {
                 eprintln!("Failed to set icon position: {:?}", e);
+            } else {
+                // 调试日志（可选，生产环境可以移除）
+                // println!("Window moved to: ({}, {}), Mouse: ({}, {}), Offset: ({}, {})", 
+                //          new_x, new_y, x as i32, y as i32, window_offset.x, window_offset.y);
             }
         } else {
             println!("Icon window not found in icon_mouse_move");
         }
-    } else {
-        println!("Not dragging in icon_mouse_move");
     }
 }
 

@@ -23,8 +23,8 @@
       justify-content: center;
       cursor: move;
       user-select: none;
-      -webkit-app-region: drag;
       overflow: hidden;
+      /* 不使用 -webkit-app-region: drag，使用自定义拖拽逻辑 */
     }
 
     body {
@@ -37,7 +37,6 @@
       object-fit: contain;
       pointer-events: none;
       border-radius: 12px;
-      -webkit-app-region: no-drag;
       background: transparent;
     }
   </style>
