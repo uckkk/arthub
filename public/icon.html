@@ -16,8 +16,8 @@
       height: 64px;
       margin: 0;
       padding: 0;
-      background: transparent !important;
-      background-color: transparent !important;
+      background: #000000 !important;
+      background-color: #000000 !important;
       display: flex;
       align-items: center;
       justify-content: center;
@@ -25,10 +25,11 @@
       user-select: none;
       overflow: hidden;
       /* 不使用 -webkit-app-region: drag，使用自定义拖拽逻辑 */
+      /* 临时使用黑色背景，避免 macOS 上的白底问题 */
     }
 
     body {
-      background: rgba(0, 0, 0, 0) !important;
+      background: #000000 !important;
     }
 
     #icon {
