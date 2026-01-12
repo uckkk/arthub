@@ -933,8 +933,8 @@ const PathManager: React.FC = () => {
   };
 
   // 拖拽分组到指定分组之前
-  const handleDropGroupBefore = (targetGroup: string) => {
-    const currentDraggedGroup = draggedGroup;
+  const handleDropGroupBefore = (targetGroup: string, draggedGroupName?: string) => {
+    const currentDraggedGroup = draggedGroupName || draggedGroup;
     if (!currentDraggedGroup || currentDraggedGroup === targetGroup) {
       setDraggedGroup(null);
       setDragOverGroup(null);
@@ -946,14 +946,6 @@ const PathManager: React.FC = () => {
     const newOrder = [...allGroups];
     const draggedIndex = newOrder.indexOf(currentDraggedGroup);
     const targetIndex = newOrder.indexOf(targetGroup);
-    
-    console.log('[PathManager] handleDropGroupBefore', {
-      draggedGroup: currentDraggedGroup,
-      targetGroup,
-      draggedIndex,
-      targetIndex,
-      currentOrder: [...newOrder]
-    });
     
     if (draggedIndex >= 0 && targetIndex >= 0 && draggedIndex !== targetIndex) {
       // 移除被拖拽的分组
@@ -962,7 +954,6 @@ const PathManager: React.FC = () => {
       const newTargetIndex = draggedIndex < targetIndex ? targetIndex - 1 : targetIndex;
       // 插入到目标位置之前
       newOrder.splice(newTargetIndex, 0, currentDraggedGroup);
-      console.log('[PathManager] 新顺序:', newOrder);
       setGroupOrder(newOrder);
     }
     
@@ -971,8 +962,8 @@ const PathManager: React.FC = () => {
   };
 
   // 拖拽分组到指定分组之后
-  const handleDropGroupAfter = (targetGroup: string) => {
-    const currentDraggedGroup = draggedGroup;
+  const handleDropGroupAfter = (targetGroup: string, draggedGroupName?: string) => {
+    const currentDraggedGroup = draggedGroupName || draggedGroup;
     if (!currentDraggedGroup || currentDraggedGroup === targetGroup) {
       setDraggedGroup(null);
       setDragOverGroup(null);
@@ -985,14 +976,6 @@ const PathManager: React.FC = () => {
     const draggedIndex = newOrder.indexOf(currentDraggedGroup);
     const targetIndex = newOrder.indexOf(targetGroup);
     
-    console.log('[PathManager] handleDropGroupAfter', {
-      draggedGroup: currentDraggedGroup,
-      targetGroup,
-      draggedIndex,
-      targetIndex,
-      currentOrder: [...newOrder]
-    });
-    
     if (draggedIndex >= 0 && targetIndex >= 0 && draggedIndex !== targetIndex) {
       // 移除被拖拽的分组
       newOrder.splice(draggedIndex, 1);
@@ -1000,7 +983,6 @@ const PathManager: React.FC = () => {
       const newTargetIndex = draggedIndex < targetIndex ? targetIndex : targetIndex + 1;
       // 插入到目标位置之后
       newOrder.splice(newTargetIndex, 0, currentDraggedGroup);
-      console.log('[PathManager] 新顺序:', newOrder);
       setGroupOrder(newOrder);
     }
     
@@ -1176,18 +1158,24 @@ const PathManager: React.FC = () => {
                     }
                   }}
                   onDrop={(e) => {
-                    if (draggedGroup && draggedGroup !== groupName) {
-                      e.preventDefault();
-                      e.stopPropagation();
+                    e.preventDefault();
+                    e.stopPropagation();
+                    
+                    // 从 dataTransfer 获取被拖拽的分组名称
+                    const draggedGroupName = e.dataTransfer.getData('text/plain') || draggedGroup;
+                    const types = Array.from(e.dataTransfer.types);
+                    const isGroupDrag = types.includes('application/x-group') || draggedGroupName;
+                    
+                    if (isGroupDrag && draggedGroupName && draggedGroupName !== groupName) {
                       // 判断是拖到当前分组上方还是下方
                       const rect = e.currentTarget.getBoundingClientRect();
                       const midpoint = rect.top + rect.height / 2;
                       if (e.clientY < midpoint) {
                         // 插入到当前分组之前
-                        handleDropGroupBefore(groupName);
+                        handleDropGroupBefore(groupName, draggedGroupName);
                       } else {
                         // 插入到当前分组之后
-                        handleDropGroupAfter(groupName);
+                        handleDropGroupAfter(groupName, draggedGroupName);
                       }
                     }
                   }}
