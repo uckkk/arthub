@@ -1172,7 +1172,7 @@ const PathManager: React.FC = () => {
                             bg-[#1a1a1a] hover:bg-[#222222]
                             border border-[#2a2a2a] hover:border-[#3a3a3a]
                             rounded-lg p-3
-                            flex items-center gap-3
+                            flex items-start gap-3
                             cursor-pointer
                             transition-all duration-150
                             ${draggedItem?.id === item.id ? 'opacity-50' : ''}
