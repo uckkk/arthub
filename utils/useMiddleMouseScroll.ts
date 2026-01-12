@@ -1,5 +1,5 @@
 // 鼠标中键滚动工具 Hook
-import { useEffect, useRef } from 'react';
+import React, { useEffect, useRef } from 'react';
 
 interface UseMiddleMouseScrollOptions {
   enabled?: boolean;
