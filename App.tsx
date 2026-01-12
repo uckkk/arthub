@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, lazy, Suspense } from 'react';
 import { 
   Type, Menu, User, Settings, 
-  Image, Video, Mic, Box, Code, Star, HardDrive, Home
+  Image, Video, Mic, Box, Code, Star, HardDrive
 } from 'lucide-react';
 import { getStorageConfig, saveStorageConfig } from './services/fileStorageService';
 import { getUserInfo, clearUserInfo, UserInfo } from './services/userAuthService';
@@ -33,11 +33,6 @@ const LoadingPlaceholder = () => (
 // 定义菜单项
 const createMenuGroups = (): MenuGroup[] => [
   {
-    items: [
-      { id: 'home', label: '首页', icon: Home },
-    ],
-  },
-  {
     title: '生成类型',
     items: [
       { id: 'favorites', label: '使用案例', icon: Star },
@@ -58,8 +53,8 @@ const createMenuGroups = (): MenuGroup[] => [
 ];
 
 const App: React.FC = () => {
-  // 默认显示首页
-  const [activeTab, setActiveTab] = useState<string>('home');
+  // 默认显示AI工具
+  const [activeTab, setActiveTab] = useState<string>('ai');
   const [isUserVerified, setIsUserVerified] = useState(false);
   const [userInfo, setUserInfo] = useState<UserInfo | null>(null);
   const [showSettings, setShowSettings] = useState(false);
@@ -146,7 +141,7 @@ const App: React.FC = () => {
       'paths': 'paths',
       'api': 'ai',
     };
-    setActiveTab(tabMapping[id] || 'home');
+    setActiveTab(tabMapping[id] || 'ai');
   };
 
   if (!isUserVerified) {
