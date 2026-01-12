@@ -11,6 +11,12 @@ import { useMiddleMouseScroll } from '../utils/useMiddleMouseScroll';
 const HomePage: React.FC = () => {
   const [favorites, setFavorites] = useState<FavoriteItem[]>([]);
   const [hoveredId, setHoveredId] = useState<string | null>(null);
+  
+  // 鼠标中键滚动
+  const scrollContainerRef = useMiddleMouseScroll<HTMLDivElement>({
+    enabled: true,
+    scrollSpeed: 1.5
+  });
 
   // 加载收藏列表
   useEffect(() => {
