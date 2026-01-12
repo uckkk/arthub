@@ -9,7 +9,7 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "clean": "powershell -ExecutionPolicy Bypass -File ./clean-build.ps1",
+    "clean": "powershell -Command \"if (Test-Path dist) { Remove-Item -Recurse -Force dist }; if (Test-Path node_modules\\.vite) { Remove-Item -Recurse -Force node_modules\\.vite }; Write-Host '清理完成！' -ForegroundColor Green\"",
     "clean:build": "npm run clean && npm run build",
     "tauri": "tauri",
     "tauri:dev": "tauri dev",
