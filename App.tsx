@@ -11,6 +11,8 @@ import { ToastProvider } from './components/Toast';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { Sidebar, MenuGroup } from './components/ui';
 import { CURRENT_VERSION } from './services/updateService';
+import Console from './components/Console';
+import { consoleService, LogEntry } from './services/consoleService';
 
 // 懒加载组件以提升初始加载性能
 const PathManager = lazy(() => import('./components/PathManager'));
@@ -120,6 +122,52 @@ const App: React.FC = () => {
   const [storageEnabled, setStorageEnabled] = useState(() => {
     return getStorageConfig().enabled;
   });
+
+  // 控制台状态
+  const [isConsoleOpen, setIsConsoleOpen] = useState(false);
+  const [consoleLogs, setConsoleLogs] = useState<LogEntry[]>([]);
+  const [versionClickCount, setVersionClickCount] = useState(0);
+  const versionClickTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+
+  // 订阅控制台日志
+  useEffect(() => {
+    const unsubscribe = consoleService.subscribe((logs) => {
+      setConsoleLogs(logs);
+    });
+    return unsubscribe;
+  }, []);
+
+  // 处理版本号点击
+  const handleVersionClick = () => {
+    // 清除之前的超时
+    if (versionClickTimeoutRef.current) {
+      clearTimeout(versionClickTimeoutRef.current);
+    }
+
+    // 增加点击计数
+    const newCount = versionClickCount + 1;
+    setVersionClickCount(newCount);
+
+    // 如果达到5次，打开控制台
+    if (newCount >= 5) {
+      setIsConsoleOpen(true);
+      setVersionClickCount(0);
+    } else {
+      // 设置超时，如果2秒内没有继续点击，重置计数
+      versionClickTimeoutRef.current = setTimeout(() => {
+        setVersionClickCount(0);
+      }, 2000);
+    }
+  };
+
+  // 清理超时
+  useEffect(() => {
+    return () => {
+      if (versionClickTimeoutRef.current) {
+        clearTimeout(versionClickTimeoutRef.current);
+      }
+    };
+  }, []);
 
   const menuGroups = createMenuGroups();
 
@@ -325,9 +373,13 @@ const App: React.FC = () => {
                   </div>
                 )}
 
-                {/* 版本号 - 显示在左下角，很弱的样式 */}
+                {/* 版本号 - 显示在左下角，很弱的样式，连续点击5次打开控制台 */}
                 <div className="px-3 py-1.5 border-t border-[#1a1a1a] mt-2">
-                  <span className="text-[10px] text-[#333333] font-mono">
+                  <span 
+                    onClick={handleVersionClick}
+                    className="text-[10px] text-[#333333] font-mono cursor-pointer hover:text-[#555555] transition-colors select-none"
+                    title="连续点击5次打开控制台"
+                  >
                     v{CURRENT_VERSION}
                   </span>
                 </div>
@@ -349,6 +401,14 @@ const App: React.FC = () => {
               triggerRef={settingsButtonRef}
             />
           </Suspense>
+
+          {/* 控制台 */}
+          <Console
+            isOpen={isConsoleOpen}
+            onClose={() => setIsConsoleOpen(false)}
+            logs={consoleLogs}
+            onClear={() => consoleService.clearLogs()}
+          />
         </div>
       </ToastProvider>
     </ErrorBoundary>
