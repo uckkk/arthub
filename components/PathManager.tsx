@@ -1206,66 +1206,76 @@ const PathManager: React.FC = () => {
 
                           {/* 内容 */}
                           <div className={`flex-1 min-w-0 ${columnsPerRow > 1 ? 'overflow-hidden' : ''}`}>
-                            <h3 className="
-                              text-[14px] font-medium text-white
-                              group-hover:text-blue-400
-                              truncate transition-colors
-                            " title={item.name}>
-                              {item.name}
-                            </h3>
+                            <div className="flex items-center gap-2 min-w-0">
+                              <h3 className="
+                                text-[14px] font-medium text-white
+                                group-hover:text-blue-400
+                                truncate transition-colors flex-1 min-w-0
+                              " title={item.name}>
+                                {item.name}
+                              </h3>
+                              {/* 收藏按钮 - 移到标题右侧，始终显示（如果已收藏）或hover时显示 */}
+                              <button 
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleAddToFavorites(item, e);
+                                }}
+                                className={`
+                                  shrink-0 p-1 rounded transition-all duration-150
+                                  ${isFavorited(item.id)
+                                    ? 'text-yellow-400 opacity-100'
+                                    : 'text-[#666666] opacity-0 group-hover:opacity-100 hover:text-yellow-400'
+                                  }
+                                  ${justFavoritedId === item.id ? 'scale-125' : ''}
+                                `}
+                                title={isFavorited(item.id) ? "取消收藏" : "添加到收藏"}
+                              >
+                                <Star size={14} fill={isFavorited(item.id) ? "currentColor" : "none"} />
+                              </button>
+                            </div>
                             <p className="
                               text-[12px] text-[#666666] font-mono
-                              truncate
+                              truncate mt-0.5
                             " title={item.path}>
                               {item.path}
                             </p>
                           </div>
 
-                          {/* 操作按钮 */}
-                          <div className="flex items-center gap-1">
-                            {/* 收藏按钮 */}
+                          {/* 操作按钮 - 移到最右侧，hover时显示 */}
+                          <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
                             <button 
-                              onClick={(e) => handleAddToFavorites(item, e)}
-                              className={`
-                                p-2 rounded-lg transition-all duration-150
-                                ${isFavorited(item.id)
-                                  ? 'text-yellow-400'
-                                  : 'text-[#666666] opacity-0 group-hover:opacity-100 hover:text-yellow-400'
-                                }
-                                ${justFavoritedId === item.id ? 'scale-125' : ''}
-                              `}
-                              title={isFavorited(item.id) ? "取消收藏" : "添加到收藏"}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleEdit(item, e);
+                              }}
+                              className="p-1.5 rounded text-[#666666] hover:text-white hover:bg-[#2a2a2a] transition-colors"
+                              title="编辑"
                             >
-                              <Star size={16} fill={isFavorited(item.id) ? "currentColor" : "none"} />
+                              <Pencil size={13} />
                             </button>
-
-                            {/* 其他按钮 */}
-                            <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                              <button 
-                                onClick={(e) => handleEdit(item, e)}
-                                className="p-2 rounded-lg text-[#666666] hover:text-white hover:bg-[#2a2a2a] transition-colors"
-                                title="编辑"
-                              >
-                                <Pencil size={14} />
-                              </button>
-                              <button 
-                                onClick={(e) => handleCopy(item, e)}
-                                className="p-2 rounded-lg text-[#666666] hover:text-white hover:bg-[#2a2a2a] transition-colors"
-                                title="复制路径"
-                              >
-                                <Copy size={14} />
-                              </button>
-                              {item.type === 'web' && (
-                                <ExternalLink size={14} className="text-[#444444] mx-1" />
-                              )}
-                              <button 
-                                onClick={(e) => handleDelete(item.id, e)}
-                                className="p-2 rounded-lg text-[#666666] hover:text-red-400 hover:bg-red-500/10 transition-colors"
-                                title="删除"
-                              >
-                                <Trash2 size={14} />
-                              </button>
-                            </div>
+                            <button 
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleCopy(item, e);
+                              }}
+                              className="p-1.5 rounded text-[#666666] hover:text-white hover:bg-[#2a2a2a] transition-colors"
+                              title="复制路径"
+                            >
+                              <Copy size={13} />
+                            </button>
+                            {item.type === 'web' && (
+                              <ExternalLink size={13} className="text-[#444444] mx-0.5" />
+                            )}
+                            <button 
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleDelete(item.id, e);
+                              }}
+                              className="p-1.5 rounded text-[#666666] hover:text-red-400 hover:bg-red-500/10 transition-colors"
+                              title="删除"
+                            >
+                              <Trash2 size={13} />
+                            </button>
                           </div>
                         </div>
                       ))}
