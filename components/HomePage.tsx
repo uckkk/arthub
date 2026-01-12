@@ -140,21 +140,6 @@ const HomePage: React.FC = () => {
 
   return (
     <div className="w-full h-full flex flex-col bg-[#0a0a0a]">
-      {/* 顶部标题栏 */}
-      <div className="flex items-center justify-between p-6 border-b border-[#1a1a1a]">
-        <div className="flex items-center gap-3">
-          <div className="p-2 bg-[#1a1a1a] rounded-lg">
-            <Star size={20} className="text-yellow-400" fill="currentColor" />
-          </div>
-          <div>
-            <h2 className="text-lg font-semibold text-white">首页</h2>
-            <p className="text-sm text-[#666666]">
-              我的收藏 ({totalCount})
-            </p>
-          </div>
-        </div>
-      </div>
-
       {/* 内容区域 */}
       <div 
         ref={scrollContainerRef}
