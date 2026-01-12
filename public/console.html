@@ -4,8 +4,6 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>错误日志控制台</title>
-  <link rel="stylesheet" href="/index.css">
-  <script src="https://cdn.tailwindcss.com"></script>
   <style>
     * {
       margin: 0;
@@ -18,14 +16,309 @@
       color: #fff;
       overflow: hidden;
     }
-    #root {
-      width: 100%;
+    .container {
+      display: flex;
+      flex-direction: column;
       height: 100vh;
+      width: 100%;
+    }
+    .header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 16px 20px;
+      border-bottom: 1px solid #2a2a2a;
+      flex-shrink: 0;
+    }
+    .header-left {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    .title {
+      font-size: 18px;
+      font-weight: 600;
+      color: #fff;
+    }
+    .badge {
+      padding: 2px 8px;
+      border-radius: 4px;
+      font-size: 12px;
+      font-weight: 500;
+      background: #1a1a1a;
+      color: #666666;
+    }
+    .header-right {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .btn {
+      padding: 6px 12px;
+      border-radius: 8px;
+      font-size: 14px;
+      background: #1a1a1a;
+      color: #a0a0a0;
+      border: 1px solid #2a2a2a;
+      cursor: pointer;
+      transition: all 0.2s;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .btn:hover {
+      background: #222222;
+      color: #fff;
+      border-color: #3a3a3a;
+    }
+    .btn-icon {
+      width: 14px;
+      height: 14px;
+    }
+    .content {
+      flex: 1;
+      overflow-y: auto;
+      padding: 16px;
+      font-family: 'Courier New', monospace;
+      font-size: 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+    .content::-webkit-scrollbar {
+      width: 8px;
+    }
+    .content::-webkit-scrollbar-track {
+      background: #1a1a1a;
+    }
+    .content::-webkit-scrollbar-thumb {
+      background: #2a2a2a;
+      border-radius: 4px;
+    }
+    .empty-state {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      height: 100%;
+      color: #666666;
+    }
+    .log-entry {
+      padding: 8px 12px;
+      border-radius: 4px;
+      border: 1px solid rgba(239, 68, 68, 0.2);
+      background: rgba(239, 68, 68, 0.1);
+      color: #fca5a5;
+      word-break: break-word;
+      white-space: pre-wrap;
+      user-select: text;
+      transition: opacity 0.2s;
+    }
+    .log-entry:hover {
+      opacity: 0.8;
+    }
+    .log-args {
+      margin-top: 4px;
+      padding-left: 16px;
+      border-left: 2px solid rgba(239, 68, 68, 0.3);
+    }
+    .log-arg {
+      margin-top: 4px;
+    }
+    .log-arg pre {
+      font-size: 11px;
+      overflow-x: auto;
+    }
+    .footer {
+      padding: 8px 20px;
+      border-top: 1px solid #2a2a2a;
+      flex-shrink: 0;
+    }
+    .footer-text {
+      font-size: 10px;
+      color: #555555;
     }
   </style>
 </head>
 <body>
-  <div id="root"></div>
-  <script type="module" src="/console-window.tsx"></script>
+  <div class="container">
+    <div class="header">
+      <div class="header-left">
+        <h3 class="title">错误日志控制台</h3>
+        <span class="badge" id="logCount">0 条错误</span>
+      </div>
+      <div class="header-right">
+        <button class="btn" id="copyBtn" title="复制所有日志">
+          <svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+            <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+          </svg>
+          复制全部
+        </button>
+        <button class="btn" id="exportBtn" title="导出日志文件">
+          <svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+            <polyline points="7 10 12 15 17 10"></polyline>
+            <line x1="12" y1="15" x2="12" y2="3"></line>
+          </svg>
+          导出
+        </button>
+        <button class="btn" id="clearBtn" title="清空日志">
+          <svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <polyline points="3 6 5 6 21 6"></polyline>
+            <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+          </svg>
+          清空
+        </button>
+      </div>
+    </div>
+    <div class="content" id="logContainer">
+      <div class="empty-state">
+        <p>暂无错误日志</p>
+      </div>
+    </div>
+    <div class="footer">
+      <p class="footer-text">提示：可以选中文本复制，或使用"复制全部"按钮复制所有错误日志</p>
+    </div>
+  </div>
+  <script>
+    (function() {
+      const LOG_STORAGE_KEY = 'arthub_console_logs';
+      const logContainer = document.getElementById('logContainer');
+      const logCount = document.getElementById('logCount');
+      const copyBtn = document.getElementById('copyBtn');
+      const exportBtn = document.getElementById('exportBtn');
+      const clearBtn = document.getElementById('clearBtn');
+      
+      let autoScroll = true;
+      
+      function getLogs() {
+        try {
+          const stored = localStorage.getItem(LOG_STORAGE_KEY);
+          return stored ? JSON.parse(stored) : [];
+        } catch {
+          return [];
+        }
+      }
+      
+      function formatMessage(entry) {
+        const time = new Date(entry.timestamp).toLocaleTimeString('zh-CN', {
+          hour12: false,
+          hour: '2-digit',
+          minute: '2-digit',
+          second: '2-digit',
+          fractionalSecondDigits: 3,
+        });
+        
+        let message = entry.message;
+        if (entry.args && entry.args.length > 0) {
+          try {
+            const argsStr = entry.args.map(arg => {
+              if (typeof arg === 'object') {
+                return JSON.stringify(arg, null, 2);
+              }
+              return String(arg);
+            }).join(' ');
+            message += ' ' + argsStr;
+          } catch (e) {
+            message += ' [无法序列化参数]';
+          }
+        }
+        
+        return `[${time}] ${message}`;
+      }
+      
+      function renderLogs() {
+        const logs = getLogs();
+        logCount.textContent = `${logs.length} 条错误`;
+        
+        if (logs.length === 0) {
+          logContainer.innerHTML = '<div class="empty-state"><p>暂无错误日志</p></div>';
+          return;
+        }
+        
+        logContainer.innerHTML = logs.map(log => {
+          const message = formatMessage(log);
+          let argsHtml = '';
+          
+          if (log.args && log.args.length > 0) {
+            argsHtml = '<div class="log-args">' +
+              log.args.map(arg => {
+                if (typeof arg === 'object') {
+                  return '<div class="log-arg"><pre>' + JSON.stringify(arg, null, 2) + '</pre></div>';
+                }
+                return '<div class="log-arg"><span>' + String(arg) + '</span></div>';
+              }).join('') +
+              '</div>';
+          }
+          
+          return `<div class="log-entry">${escapeHtml(message)}${argsHtml}</div>`;
+        }).join('');
+        
+        if (autoScroll) {
+          logContainer.scrollTop = logContainer.scrollHeight;
+        }
+      }
+      
+      function escapeHtml(text) {
+        const div = document.createElement('div');
+        div.textContent = text;
+        return div.innerHTML;
+      }
+      
+      function copyAllLogs() {
+        const logs = getLogs();
+        const logText = logs.map(formatMessage).join('\n');
+        navigator.clipboard.writeText(logText).then(() => {
+          // 可以添加一个提示
+        }).catch(err => {
+          console.error('复制失败:', err);
+        });
+      }
+      
+      function exportLogs() {
+        const logs = getLogs();
+        const logText = logs.map(formatMessage).join('\n');
+        const blob = new Blob([logText], { type: 'text/plain;charset=utf-8' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `arthub-errors-${new Date().toISOString().replace(/[:.]/g, '-')}.txt`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+      }
+      
+      function clearLogs() {
+        localStorage.removeItem(LOG_STORAGE_KEY);
+        renderLogs();
+      }
+      
+      // 监听滚动事件
+      logContainer.addEventListener('scroll', () => {
+        const { scrollTop, scrollHeight, clientHeight } = logContainer;
+        const isAtBottom = scrollHeight - scrollTop - clientHeight < 50;
+        autoScroll = isAtBottom;
+      });
+      
+      // 监听 storage 事件（跨窗口同步）
+      window.addEventListener('storage', () => {
+        renderLogs();
+      });
+      
+      // 定期检查更新（因为同窗口的 localStorage 变化不会触发 storage 事件）
+      setInterval(() => {
+        renderLogs();
+      }, 500);
+      
+      // 绑定按钮事件
+      copyBtn.addEventListener('click', copyAllLogs);
+      exportBtn.addEventListener('click', exportLogs);
+      clearBtn.addEventListener('click', clearLogs);
+      
+      // 初始渲染
+      renderLogs();
+    })();
+  </script>
 </body>
 </html>

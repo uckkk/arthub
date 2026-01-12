@@ -94,6 +94,13 @@ class ConsoleService {
       this.logs.shift();
     }
 
+    // 保存到 localStorage（供控制台窗口读取）
+    try {
+      localStorage.setItem('arthub_console_logs', JSON.stringify(this.logs));
+    } catch (e) {
+      // 忽略存储错误
+    }
+
     // 通知监听器
     this.notifyListeners();
   }
@@ -127,6 +134,11 @@ class ConsoleService {
   // 清空日志
   clearLogs() {
     this.logs = [];
+    try {
+      localStorage.removeItem('arthub_console_logs');
+    } catch (e) {
+      // 忽略存储错误
+    }
     this.notifyListeners();
   }
 

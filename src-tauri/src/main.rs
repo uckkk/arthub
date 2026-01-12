@@ -463,9 +463,11 @@ async fn open_console_window(app: tauri::AppHandle) -> Result<String, String> {
     };
     
     // 在开发模式下使用开发服务器，生产模式下使用应用资源
+    // 注意：console.html 在 public 目录中，构建后会复制到 dist 根目录
     let console_url = if cfg!(debug_assertions) {
         WindowUrl::External("http://localhost:3000/console.html".parse().unwrap())
     } else {
+        // 生产模式：使用 App URL，Tauri 会从 dist 目录加载
         WindowUrl::App("console.html".into())
     };
     
