@@ -118,12 +118,12 @@ const HomePage: React.FC = () => {
     }
   };
 
-  // 获取路径图标
+  // 获取路径图标（紧凑尺寸）
   const getPathIcon = (type: PathItem['type']) => {
     switch (type) {
-      case 'web': return <Globe size={20} className="text-cyan-400" />;
-      case 'network': return <Server size={20} className="text-purple-400" />;
-      case 'local': return <Folder size={20} className="text-orange-400" />;
+      case 'web': return <Globe size={16} className="text-cyan-400" />;
+      case 'network': return <Server size={16} className="text-purple-400" />;
+      case 'local': return <Folder size={16} className="text-orange-400" />;
     }
   };
 
@@ -162,7 +162,7 @@ const HomePage: React.FC = () => {
           </div>
         ) : (
           <div className="space-y-8">
-            {/* 快捷路径区域 - 紧凑列表样式 */}
+            {/* 快捷路径区域 - 紧凑标签式网格布局 */}
             {pathsCount > 0 && (
               <div>
                 <div className="flex items-center gap-2 mb-3">
@@ -172,7 +172,7 @@ const HomePage: React.FC = () => {
                     {pathsCount}
                   </span>
                 </div>
-                <div className="space-y-1.5">
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-2.5">
                   {groupedFavorites.paths.map((fav) => {
                     const path = fav.pathItem!;
                     return (
@@ -187,29 +187,35 @@ const HomePage: React.FC = () => {
                           border border-[#2a2a2a]
                           transition-all duration-150
                           hover:border-[#3a3a3a] hover:bg-[#1f1f1f]
+                          hover:shadow-md hover:shadow-black/20
                           cursor-pointer
-                          px-4 py-3
-                          flex items-center gap-3
+                          px-3 py-2.5
+                          flex items-center gap-2.5
+                          min-h-[56px]
                         "
                       >
                         {/* 图标 */}
                         <div className="shrink-0">
-                          <div className="p-2 rounded-lg bg-[#0f0f0f] group-hover:bg-[#151515] transition-colors">
+                          <div className="p-1.5 rounded-md bg-[#0f0f0f] group-hover:bg-[#151515] transition-colors">
                             {getPathIcon(path.type)}
                           </div>
                         </div>
 
                         {/* 内容区域 */}
                         <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-2 mb-1">
+                          <div className="flex items-center gap-1.5 mb-0.5">
                             <h3 className="
-                              text-[14px] font-medium text-white
+                              text-[13px] font-medium text-white
                               truncate
                               group-hover:text-blue-400
                               transition-colors duration-150
                             ">
                               {path.name}
                             </h3>
+                            {/* 收藏标识 */}
+                            <Star size={11} className="text-yellow-400 fill-current shrink-0" />
+                          </div>
+                          <div className="flex items-center gap-1.5 flex-wrap">
                             {path.group && (
                               <span className="
                                 px-1.5 py-0.5 rounded text-[10px] font-medium
@@ -219,15 +225,13 @@ const HomePage: React.FC = () => {
                                 {path.group}
                               </span>
                             )}
-                            {/* 收藏标识 */}
-                            <Star size={12} className="text-yellow-400 fill-current shrink-0" />
+                            <p className="
+                              text-[11px] text-[#666666] font-mono
+                              truncate flex-1 min-w-0
+                            " title={path.path}>
+                              {path.path}
+                            </p>
                           </div>
-                          <p className="
-                            text-[12px] text-[#666666] font-mono
-                            truncate
-                          " title={path.path}>
-                            {path.path}
-                          </p>
                         </div>
 
                         {/* 删除按钮 */}
@@ -236,7 +240,7 @@ const HomePage: React.FC = () => {
                             onClick={(e) => handleRemoveFavorite(fav, e)}
                             className="
                               shrink-0
-                              p-1.5 rounded-lg
+                              p-1 rounded-md
                               bg-[#2a2a2a] hover:bg-red-500/20
                               text-[#666666] hover:text-red-400
                               transition-colors duration-150
@@ -244,7 +248,7 @@ const HomePage: React.FC = () => {
                             "
                             title="取消收藏"
                           >
-                            <X size={14} />
+                            <X size={12} />
                           </button>
                         )}
                       </div>
