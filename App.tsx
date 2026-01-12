@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, lazy, Suspense } from 'react';
 import { 
   LayoutGrid, Type, Menu, User, Settings, 
-  Image, Video, Mic, Box, Code, Star, HardDrive
+  Image, Video, Mic, Box, Code, Star, HardDrive, Home
 } from 'lucide-react';
 import { getStorageConfig, saveStorageConfig } from './services/fileStorageService';
 import { getUserInfo, clearUserInfo, UserInfo } from './services/userAuthService';
@@ -18,6 +18,7 @@ const SettingsPanel = lazy(() => import('./components/SettingsPanel'));
 const UserAuthModal = lazy(() => import('./components/UserAuthModal'));
 const AITool = lazy(() => import('./components/AITool'));
 const UpdateNotification = lazy(() => import('./components/UpdateNotification'));
+const HomePage = lazy(() => import('./components/HomePage'));
 
 // 加载占位符组件
 const LoadingPlaceholder = () => (
@@ -33,6 +34,7 @@ const LoadingPlaceholder = () => (
 const createMenuGroups = (): MenuGroup[] => [
   {
     items: [
+      { id: 'home', label: '首页', icon: Home },
       { id: 'all', label: '所有模板', icon: LayoutGrid },
     ],
   },
@@ -57,7 +59,8 @@ const createMenuGroups = (): MenuGroup[] => [
 ];
 
 const App: React.FC = () => {
-  const [activeTab, setActiveTab] = useState<string>('ai');
+  // 默认显示首页
+  const [activeTab, setActiveTab] = useState<string>('home');
   const [isUserVerified, setIsUserVerified] = useState(false);
   const [userInfo, setUserInfo] = useState<UserInfo | null>(null);
   const [showSettings, setShowSettings] = useState(false);
@@ -133,6 +136,7 @@ const App: React.FC = () => {
   const handleMenuSelect = (id: string) => {
     // 将多个 ID 映射到实际的标签
     const tabMapping: Record<string, string> = {
+      'home': 'home',
       'all': 'ai',
       'favorites': 'ai',
       'ai': 'ai',
@@ -143,7 +147,7 @@ const App: React.FC = () => {
       'paths': 'paths',
       'api': 'ai',
     };
-    setActiveTab(tabMapping[id] || 'ai');
+    setActiveTab(tabMapping[id] || 'home');
   };
 
   if (!isUserVerified) {
@@ -157,6 +161,12 @@ const App: React.FC = () => {
   // 渲染主内容
   const renderContent = () => {
     switch (activeTab) {
+      case 'home':
+        return (
+          <Suspense fallback={<LoadingPlaceholder />}>
+            <HomePage />
+          </Suspense>
+        );
       case 'naming':
         return (
           <Suspense fallback={<LoadingPlaceholder />}>
@@ -192,7 +202,7 @@ const App: React.FC = () => {
           {/* 左侧边栏 */}
           <Sidebar
             groups={menuGroups}
-            activeId={activeTab === 'naming' ? 'naming' : activeTab === 'paths' ? 'paths' : 'ai'}
+            activeId={activeTab}
             onSelect={handleMenuSelect}
             footer={
               <div className="space-y-2">

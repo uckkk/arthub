@@ -1,10 +1,16 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { 
   Folder, Globe, Server, ExternalLink, Copy, Trash2, Plus, 
-  AlertCircle, Check, ChevronDown, ChevronRight, Pencil, Star, X, Save
+  AlertCircle, Check, ChevronDown, ChevronRight, Pencil, Star, X, Save, Upload
 } from 'lucide-react';
 import { PathItem, PathType } from '../types';
 import { MOCK_PATHS } from '../constants';
+import { 
+  addFavorite, 
+  removeFavorite, 
+  isFavorited as checkIsFavorited,
+  FavoriteItem 
+} from '../services/favoritesService';
 
 const PathManager: React.FC = () => {
   const [paths, setPaths] = useState<PathItem[]>([]);
@@ -12,9 +18,14 @@ const PathManager: React.FC = () => {
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
   
-  // 快速路径状态
+  // 快速路径状态（已迁移到收藏服务，保留用于兼容）
   const [quickPaths, setQuickPaths] = useState<PathItem[]>([]);
   const [justFavoritedId, setJustFavoritedId] = useState<string | null>(null);
+  
+  // 拖拽创建路径状态
+  const [isDraggingOver, setIsDraggingOver] = useState(false);
+  const [showDragModal, setShowDragModal] = useState(false);
+  const [draggedPath, setDraggedPath] = useState<{ path: string; name?: string; type?: PathType } | null>(null);
   
   // 编辑模态框状态
   const [editingItem, setEditingItem] = useState<PathItem | null>(null);
@@ -103,20 +114,132 @@ const PathManager: React.FC = () => {
     };
   }, []);
 
-  // 检查路径是否已收藏
+  // 检查路径是否已收藏（使用新的收藏服务）
   const isFavorited = (itemId: string): boolean => {
-    const currentPresetId = localStorage.getItem('arthub_naming_preset') || 'fgui_card';
-    const quickPathsKey = `arthub_quick_paths_${currentPresetId}`;
-    const saved = localStorage.getItem(quickPathsKey);
-    if (saved) {
-      try {
-        const paths = JSON.parse(saved);
-        return paths.some((p: PathItem) => p.id === itemId);
-      } catch {
-        return false;
+    return checkIsFavorited('path', itemId);
+  };
+
+  // 处理拖拽进入
+  const handleDragEnter = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDraggingOver(true);
+  };
+
+  // 处理拖拽离开
+  const handleDragLeave = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDraggingOver(false);
+  };
+
+  // 处理拖拽悬停
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDraggingOver(true);
+  };
+
+  // 处理拖拽放下（创建新路径）
+  const handleDropCreatePath = async (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDraggingOver(false);
+
+    try {
+      // 尝试获取拖拽的文本（可能是URL或路径）
+      const text = e.dataTransfer.getData('text/plain') || e.dataTransfer.getData('text');
+      
+      if (!text) {
+        // 尝试从浏览器地址栏拖拽
+        const url = e.dataTransfer.getData('text/uri-list') || e.dataTransfer.getData('URL');
+        if (url) {
+          await handleDroppedPath(url, 'web');
+          return;
+        }
+        return;
       }
+
+      // 判断是URL还是路径
+      if (text.startsWith('http://') || text.startsWith('https://')) {
+        await handleDroppedPath(text, 'web');
+      } else if (text.startsWith('\\\\') || text.startsWith('//')) {
+        await handleDroppedPath(text, 'network');
+      } else if (text.match(/^[A-Za-z]:\\/) || text.startsWith('/')) {
+        await handleDroppedPath(text, 'local');
+      } else {
+        // 尝试作为URL处理
+        try {
+          new URL(text);
+          await handleDroppedPath(text, 'web');
+        } catch {
+          // 不是有效的URL，尝试作为路径
+          await handleDroppedPath(text, 'local');
+        }
+      }
+    } catch (error) {
+      console.error('处理拖拽失败:', error);
     }
-    return false;
+  };
+
+  // 处理拖拽的路径
+  const handleDroppedPath = async (path: string, type: PathType) => {
+    // 尝试获取路径名称
+    let name = '';
+    
+    if (type === 'web') {
+      try {
+        // 尝试获取网页标题
+        const response = await fetch(path, { mode: 'no-cors' });
+        // 由于CORS限制，我们只能使用路径本身
+        const url = new URL(path);
+        name = url.hostname || path;
+      } catch {
+        try {
+          const url = new URL(path);
+          name = url.hostname || path;
+        } catch {
+          name = path;
+        }
+      }
+    } else {
+      // 对于本地路径，使用文件夹名
+      const parts = path.replace(/\\/g, '/').split('/').filter(p => p);
+      name = parts[parts.length - 1] || path;
+    }
+
+    setDraggedPath({ path, name, type });
+    setShowDragModal(true);
+  };
+
+  // 确认添加拖拽的路径
+  const handleConfirmDragPath = () => {
+    if (!draggedPath) return;
+    
+    const groupName = newGroup.trim() || '默认分组';
+    let finalPath = draggedPath.path.trim();
+    
+    if (draggedPath.type === 'network' && !finalPath.startsWith('\\\\')) {
+      finalPath = '\\\\' + finalPath.replace(/^\\+/, '');
+    }
+    
+    const item: PathItem = {
+      id: Date.now().toString(),
+      name: draggedPath.name || finalPath,
+      path: finalPath,
+      type: draggedPath.type || 'local',
+      group: groupName
+    };
+    
+    setPaths([item, ...paths]);
+    
+    if (!groupOrder.includes(groupName)) {
+      setGroupOrder([...groupOrder, groupName]);
+    }
+    
+    setShowDragModal(false);
+    setDraggedPath(null);
+    setNewGroup('');
   };
 
   // 获取所有唯一的分组名称
@@ -292,12 +415,29 @@ const PathManager: React.FC = () => {
     }
   };
 
-  // 添加到快速路径
-  const handleAddToQuickPaths = (item: PathItem, e: React.MouseEvent) => {
+  // 添加到收藏（使用新的收藏服务）
+  const handleAddToFavorites = (item: PathItem, e: React.MouseEvent) => {
     e.stopPropagation();
+    
+    const favoriteItem: FavoriteItem = {
+      id: `path_${item.id}`,
+      type: 'path',
+      pathItem: item,
+      createdAt: Date.now()
+    };
+    
+    const wasAdded = checkIsFavorited('path', item.id);
+    if (wasAdded) {
+      removeFavorite('path', item.id);
+    } else {
+      addFavorite(favoriteItem);
+      setJustFavoritedId(item.id);
+      setTimeout(() => setJustFavoritedId(null), 1000);
+    }
+    
+    // 同时更新旧的快捷路径（兼容性）
     const currentPresetId = localStorage.getItem('arthub_naming_preset') || 'fgui_card';
     const quickPathsKey = `arthub_quick_paths_${currentPresetId}`;
-    
     const saved = localStorage.getItem(quickPathsKey);
     let newQuickPaths: PathItem[] = [];
     if (saved) {
@@ -307,13 +447,10 @@ const PathManager: React.FC = () => {
     }
     
     const isAlreadyFavorited = newQuickPaths.some(p => p.id === item.id);
-    
     if (isAlreadyFavorited) {
       newQuickPaths = newQuickPaths.filter(p => p.id !== item.id);
     } else {
       newQuickPaths.push(item);
-      setJustFavoritedId(item.id);
-      setTimeout(() => setJustFavoritedId(null), 1000);
     }
     
     setQuickPaths(newQuickPaths);
@@ -490,8 +627,17 @@ const PathManager: React.FC = () => {
         </button>
       </div>
 
-      {/* 路径列表 */}
-      <div className="flex-1 overflow-y-auto p-6">
+      {/* 拖拽区域 */}
+      <div
+        onDragEnter={handleDragEnter}
+        onDragLeave={handleDragLeave}
+        onDragOver={handleDragOver}
+        onDrop={handleDropCreatePath}
+        className={`
+          flex-1 overflow-y-auto p-6 transition-colors duration-200
+          ${isDraggingOver ? 'bg-blue-500/10 border-2 border-dashed border-blue-500' : ''}
+        `}
+      >
         {paths.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-full text-center">
             <div className="w-16 h-16 rounded-full bg-[#1a1a1a] flex items-center justify-center mb-4">
@@ -618,7 +764,7 @@ const PathManager: React.FC = () => {
                           <div className="flex items-center gap-1">
                             {/* 收藏按钮 */}
                             <button 
-                              onClick={(e) => handleAddToQuickPaths(item, e)}
+                              onClick={(e) => handleAddToFavorites(item, e)}
                               className={`
                                 p-2 rounded-lg transition-all duration-150
                                 ${isFavorited(item.id)
@@ -627,7 +773,7 @@ const PathManager: React.FC = () => {
                                 }
                                 ${justFavoritedId === item.id ? 'scale-125' : ''}
                               `}
-                              title={isFavorited(item.id) ? "取消收藏" : "添加到快速路径"}
+                              title={isFavorited(item.id) ? "取消收藏" : "添加到收藏"}
                             >
                               <Star size={16} fill={isFavorited(item.id) ? "currentColor" : "none"} />
                             </button>
@@ -909,6 +1055,102 @@ const PathManager: React.FC = () => {
               >
                 <Save size={16} />
                 保存
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 拖拽创建路径模态框 */}
+      {showDragModal && draggedPath && (
+        <div 
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm"
+          onClick={() => {
+            setShowDragModal(false);
+            setDraggedPath(null);
+          }}
+        >
+          <div 
+            className="
+              w-full max-w-md mx-4
+              bg-[#151515] border border-[#2a2a2a] rounded-xl
+              shadow-2xl shadow-black/50
+              animate-scale-in
+            "
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between px-6 py-4 border-b border-[#2a2a2a]">
+              <h3 className="text-lg font-semibold text-white">添加路径</h3>
+              <button
+                onClick={() => {
+                  setShowDragModal(false);
+                  setDraggedPath(null);
+                }}
+                className="p-1.5 rounded-lg text-[#666666] hover:text-white hover:bg-[#252525] transition-colors"
+              >
+                <X size={18} />
+              </button>
+            </div>
+            
+            <div className="p-6 space-y-4">
+              <div className="p-4 bg-[#0f0f0f] rounded-lg border border-[#2a2a2a]">
+                <div className="flex items-center gap-2 mb-2">
+                  <Upload size={16} className="text-blue-400" />
+                  <span className="text-sm font-medium text-[#a0a0a0]">检测到的路径</span>
+                </div>
+                <p className="text-sm text-white font-mono break-all">{draggedPath.path}</p>
+                {draggedPath.name && (
+                  <p className="text-xs text-[#666666] mt-1">建议名称: {draggedPath.name}</p>
+                )}
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-[#a0a0a0] mb-2">分组名称</label>
+                <input 
+                  list="drag-groups-list"
+                  value={newGroup}
+                  onChange={(e) => setNewGroup(e.target.value)}
+                  className="
+                    w-full px-4 py-2.5 rounded-lg
+                    bg-[#0f0f0f] border border-[#2a2a2a]
+                    text-white placeholder-[#666666]
+                    focus:outline-none focus:border-blue-500
+                    transition-colors
+                  "
+                  placeholder="例如：工作目录（留空则为默认分组）"
+                />
+                <datalist id="drag-groups-list">
+                  {existingGroups.map(g => <option key={g} value={g} />)}
+                </datalist>
+              </div>
+            </div>
+
+            <div className="flex justify-end gap-3 px-6 py-4 border-t border-[#2a2a2a]">
+              <button 
+                onClick={() => {
+                  setShowDragModal(false);
+                  setDraggedPath(null);
+                }}
+                className="
+                  px-4 py-2.5 rounded-lg
+                  bg-[#1a1a1a] border border-[#2a2a2a]
+                  text-[#a0a0a0] hover:text-white hover:border-[#3a3a3a]
+                  transition-colors font-medium
+                "
+              >
+                取消
+              </button>
+              <button 
+                onClick={handleConfirmDragPath}
+                className="
+                  flex items-center gap-2 px-4 py-2.5 rounded-lg
+                  bg-blue-600 hover:bg-blue-700
+                  text-white font-medium
+                  transition-colors
+                "
+              >
+                <Save size={16} />
+                添加
               </button>
             </div>
           </div>

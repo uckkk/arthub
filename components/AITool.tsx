@@ -5,6 +5,12 @@ import {
 } from 'lucide-react';
 import { useToast } from './Toast';
 import { TemplateCard, TemplateTag, SearchBar, FilterDropdown, Tag } from './ui';
+import { 
+  addFavorite, 
+  removeFavorite, 
+  isFavorited as checkIsFavorited,
+  FavoriteItem 
+} from '../services/favoritesService';
 
 interface AIConfig {
   id: string;
@@ -586,6 +592,39 @@ const AITool: React.FC = () => {
     return tags;
   };
 
+  // 处理收藏
+  const handleToggleFavorite = (config: AIConfig, e: React.MouseEvent) => {
+    e.stopPropagation();
+    const favoriteItem: FavoriteItem = {
+      id: `ai_workflow_${config.id}`,
+      type: 'ai_workflow',
+      aiWorkflow: {
+        id: config.id,
+        name: config.name,
+        url: config.url,
+        description: config.description,
+        thumbnail: config.thumbnail,
+        tags: config.tags,
+        category: config.category,
+      },
+      createdAt: Date.now()
+    };
+    
+    const wasAdded = checkIsFavorited('ai_workflow', config.id);
+    if (wasAdded) {
+      removeFavorite('ai_workflow', config.id);
+      showToast('info', '已取消收藏');
+    } else {
+      addFavorite(favoriteItem);
+      showToast('success', '已添加到收藏');
+    }
+  };
+
+  // 检查是否已收藏
+  const isFavorited = (configId: string): boolean => {
+    return checkIsFavorited('ai_workflow', configId);
+  };
+
   return (
     <div className="w-full h-full flex flex-col bg-[#0a0a0a]">
       {/* 顶部筛选栏 */}
@@ -680,6 +719,23 @@ const AITool: React.FC = () => {
                   showPlayButton={!!config.jsonFile}
                 />
                 
+                {/* 收藏按钮 - 始终显示 */}
+                <button
+                  onClick={(e) => handleToggleFavorite(config, e)}
+                  className={`
+                    absolute top-3 right-3 z-10
+                    p-2 rounded-lg
+                    transition-all duration-150
+                    ${isFavorited(config.id)
+                      ? 'bg-yellow-500/20 backdrop-blur-sm text-yellow-400 opacity-100'
+                      : 'bg-black/60 backdrop-blur-sm text-white opacity-0 group-hover:opacity-100 hover:bg-yellow-500/20 hover:text-yellow-400'
+                    }
+                  `}
+                  title={isFavorited(config.id) ? "取消收藏" : "添加到收藏"}
+                >
+                  <Star size={14} fill={isFavorited(config.id) ? "currentColor" : "none"} />
+                </button>
+
                 {/* 悬浮操作按钮 */}
                 <div className="
                   absolute top-3 right-3
@@ -687,33 +743,35 @@ const AITool: React.FC = () => {
                   opacity-0 group-hover:opacity-100
                   transition-opacity duration-150
                 ">
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      handleStartEdit(config);
-                    }}
-                    className="
-                      p-2 rounded-lg
-                      bg-black/60 backdrop-blur-sm
-                      text-white hover:bg-black/80
-                      transition-colors duration-150
-                    "
-                    title="编辑"
-                  >
-                    <Edit2 size={14} />
-                  </button>
-                  <button
-                    onClick={(e) => handleDelete(config.id, e)}
-                    className="
-                      p-2 rounded-lg
-                      bg-black/60 backdrop-blur-sm
-                      text-red-400 hover:bg-red-500/30 hover:text-red-300
-                      transition-colors duration-150
-                    "
-                    title="删除"
-                  >
-                    <Trash2 size={14} />
-                  </button>
+                  <div className="flex gap-1.5">
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleStartEdit(config);
+                      }}
+                      className="
+                        p-2 rounded-lg
+                        bg-black/60 backdrop-blur-sm
+                        text-white hover:bg-black/80
+                        transition-colors duration-150
+                      "
+                      title="编辑"
+                    >
+                      <Edit2 size={14} />
+                    </button>
+                    <button
+                      onClick={(e) => handleDelete(config.id, e)}
+                      className="
+                        p-2 rounded-lg
+                        bg-black/60 backdrop-blur-sm
+                        text-red-400 hover:bg-red-500/30 hover:text-red-300
+                        transition-colors duration-150
+                      "
+                      title="删除"
+                    >
+                      <Trash2 size={14} />
+                    </button>
+                  </div>
                 </div>
               </div>
             ))}
