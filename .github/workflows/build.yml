@@ -47,26 +47,31 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          # Windows 构建
+          # Windows 构建（默认构建，成本最低）
           - platform: windows-latest
             target: x86_64-pc-windows-msvc
             name: Windows
-            condition: ${{ github.event.inputs.platform == 'windows' || github.event.inputs.platform == 'all' || github.event.inputs.platform == '' }}
+            build_platform: windows
           
-          # macOS Intel 构建
+          # macOS Intel 构建（macOS runner 成本较高，约 $0.08/分钟）
           - platform: macos-latest
             target: x86_64-apple-darwin
             name: macOS-Intel
-            condition: ${{ github.event.inputs.platform == 'macos' || github.event.inputs.platform == 'all' }}
+            build_platform: macos
           
           # macOS Apple Silicon 构建
           - platform: macos-latest
             target: aarch64-apple-darwin
             name: macOS-ARM
-            condition: ${{ github.event.inputs.platform == 'macos' || github.event.inputs.platform == 'all' }}
+            build_platform: macos
 
     runs-on: ${{ matrix.platform }}
-    if: ${{ matrix.condition != 'false' }}
+    # 根据选择的平台过滤构建任务
+    if: |
+      github.event.inputs.platform == '' || 
+      github.event.inputs.platform == 'all' || 
+      github.event.inputs.platform == matrix.build_platform ||
+      (github.event.inputs.platform == 'macos' && matrix.build_platform == 'macos')
     
     steps:
       # 1. 检出代码
