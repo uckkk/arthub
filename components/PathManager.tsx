@@ -822,17 +822,8 @@ const PathManager: React.FC = () => {
 
   return (
     <div className="h-full flex flex-col bg-[#0a0a0a]">
-      {/* 顶部标题栏 */}
-      <div className="flex items-center justify-between p-6 border-b border-[#1a1a1a]">
-        <div className="flex items-center gap-3">
-          <div className="p-2 bg-[#1a1a1a] rounded-lg">
-            <Folder size={20} className="text-orange-400" />
-          </div>
-          <div>
-            <h2 className="text-lg font-semibold text-white">路径管理</h2>
-            <p className="text-sm text-[#666666]">管理本地、网络和网页路径</p>
-          </div>
-        </div>
+      {/* 顶部工具栏 */}
+      <div className="flex items-center justify-end p-6 border-b border-[#1a1a1a]">
         <div className="flex items-center gap-2">
           {/* 列数设置按钮 */}
           <div className="relative">
