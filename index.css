@@ -61,11 +61,11 @@ body, #root {
   overflow: hidden;
 }
 
-/* 滚动条样式 - 只在内容溢出时显示，默认隐藏 */
-/* Firefox - 默认透明 */
+/* 滚动条样式 - 只在内容溢出时自动显示 */
+/* Firefox */
 * {
   scrollbar-width: thin;
-  scrollbar-color: transparent transparent;
+  scrollbar-color: var(--comfy-border-light) transparent;
 }
 
 /* Webkit 浏览器（Chrome, Edge, Safari） */
@@ -79,58 +79,30 @@ body, #root {
 }
 
 ::-webkit-scrollbar-thumb {
-  background: transparent;
+  background: var(--comfy-border-light);
   border-radius: 4px;
   transition: background 0.2s ease;
 }
 
-/* 只在可滚动元素悬停时显示滚动条 */
-.overflow-y-auto:hover::-webkit-scrollbar-thumb,
-.overflow-auto:hover::-webkit-scrollbar-thumb,
-.overflow-y-scroll:hover::-webkit-scrollbar-thumb,
-.overflow-scroll:hover::-webkit-scrollbar-thumb,
-.overflow-x-auto:hover::-webkit-scrollbar-thumb {
-  background: var(--comfy-border-light);
-}
-
-.overflow-y-auto:hover::-webkit-scrollbar-thumb:hover,
-.overflow-auto:hover::-webkit-scrollbar-thumb:hover,
-.overflow-y-scroll:hover::-webkit-scrollbar-thumb:hover,
-.overflow-scroll:hover::-webkit-scrollbar-thumb:hover,
-.overflow-x-auto:hover::-webkit-scrollbar-thumb:hover {
+::-webkit-scrollbar-thumb:hover {
   background: #444444;
 }
 
-/* 滚动时显示滚动条 */
-.overflow-y-auto:active::-webkit-scrollbar-thumb,
-.overflow-auto:active::-webkit-scrollbar-thumb,
-.overflow-y-scroll:active::-webkit-scrollbar-thumb,
-.overflow-scroll:active::-webkit-scrollbar-thumb,
-.overflow-x-auto:active::-webkit-scrollbar-thumb {
+/* 对于可滚动元素，滚动条始终可见（当内容溢出时） */
+.overflow-y-auto::-webkit-scrollbar-thumb,
+.overflow-auto::-webkit-scrollbar-thumb,
+.overflow-y-scroll::-webkit-scrollbar-thumb,
+.overflow-scroll::-webkit-scrollbar-thumb,
+.overflow-x-auto::-webkit-scrollbar-thumb {
   background: var(--comfy-border-light);
 }
 
-/* 聚焦时显示滚动条 */
-.overflow-y-auto:focus::-webkit-scrollbar-thumb,
-.overflow-auto:focus::-webkit-scrollbar-thumb,
-.overflow-y-scroll:focus::-webkit-scrollbar-thumb,
-.overflow-scroll:focus::-webkit-scrollbar-thumb,
-.overflow-x-auto:focus::-webkit-scrollbar-thumb {
-  background: var(--comfy-border-light);
-}
-
-/* 对于 Firefox，在悬停时显示滚动条 */
-.overflow-y-auto:hover,
-.overflow-auto:hover,
-.overflow-y-scroll:hover,
-.overflow-scroll:hover,
-.overflow-x-auto:hover {
-  scrollbar-color: var(--comfy-border-light) transparent;
-}
-
-/* 使用 JavaScript 添加滚动类时显示滚动条 */
-.scrolling::-webkit-scrollbar-thumb {
-  background: var(--comfy-border-light);
+.overflow-y-auto::-webkit-scrollbar-thumb:hover,
+.overflow-auto::-webkit-scrollbar-thumb:hover,
+.overflow-y-scroll::-webkit-scrollbar-thumb:hover,
+.overflow-scroll::-webkit-scrollbar-thumb:hover,
+.overflow-x-auto::-webkit-scrollbar-thumb:hover {
+  background: #444444;
 }
 
 /* 选中文字样式 */
