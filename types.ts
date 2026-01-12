@@ -1,4 +1,4 @@
-export type PathType = 'web' | 'local' | 'network';
+export type PathType = 'web' | 'local' | 'network' | 'app';
 
 // 路径项接口定义
 export interface PathItem {
@@ -8,6 +8,7 @@ export interface PathItem {
   type: PathType;
   group?: string; // 分组名称
   description?: string;
+  icon?: string; // 应用图标（base64 或路径）
 }
 
 // 命名分类接口

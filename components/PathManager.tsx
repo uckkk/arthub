@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { 
   Folder, Globe, Server, ExternalLink, Copy, Trash2, Plus, 
-  AlertCircle, Check, ChevronDown, ChevronRight, Pencil, Star, X, Save, Upload
+  AlertCircle, Check, ChevronDown, ChevronRight, Pencil, Star, X, Save, Upload, Play
 } from 'lucide-react';
 import { PathItem, PathType } from '../types';
 import { MOCK_PATHS } from '../constants';
@@ -11,6 +11,12 @@ import {
   isFavorited as checkIsFavorited,
   FavoriteItem 
 } from '../services/favoritesService';
+import { handleDroppedAppFile, launchApp, isAppFile } from '../services/appService';
+
+// 检查是否在 Tauri 环境中
+const isTauriEnvironment = (): boolean => {
+  return typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
+};
 
 const PathManager: React.FC = () => {
   const [paths, setPaths] = useState<PathItem[]>([]);
@@ -147,6 +153,43 @@ const PathManager: React.FC = () => {
     setIsDraggingOver(false);
 
     try {
+      // 首先检查是否是文件拖拽
+      const files = e.dataTransfer.files;
+      if (files && files.length > 0) {
+        const file = files[0];
+        // 在 Tauri 环境中，文件对象可能有 path 属性
+        // 在浏览器环境中，只能获取文件名
+        const filePath = (file as any).path || file.name;
+        const fileName = file.name;
+        
+        // 检查是否是应用文件（通过扩展名判断）
+        if (isAppFile(fileName) || isAppFile(filePath)) {
+          // 在 Tauri 环境中，尝试获取完整路径
+          let fullPath = filePath;
+          if (isTauriEnvironment() && !fullPath.match(/^[A-Za-z]:/) && !fullPath.startsWith('/')) {
+            // 如果路径不完整，尝试使用文件名（用户需要手动输入完整路径）
+            fullPath = fileName;
+          }
+          
+          const appInfo = await handleDroppedAppFile(fullPath);
+          if (appInfo) {
+            setDraggedPath({ 
+              path: appInfo.path, 
+              name: appInfo.name, 
+              type: 'app' 
+            });
+            setShowDragModal(true);
+            return;
+          }
+        }
+        
+        // 如果不是应用文件，尝试作为普通路径处理
+        if (filePath && (filePath.match(/^[A-Za-z]:/) || filePath.startsWith('/'))) {
+          await handleDroppedPath(filePath, 'local');
+          return;
+        }
+      }
+      
       // 尝试获取拖拽的文本（可能是URL或路径）
       const text = e.dataTransfer.getData('text/plain') || e.dataTransfer.getData('text');
       
@@ -158,6 +201,20 @@ const PathManager: React.FC = () => {
           return;
         }
         return;
+      }
+
+      // 检查是否是应用文件路径
+      if (isAppFile(text)) {
+        const appInfo = await handleDroppedAppFile(text);
+        if (appInfo) {
+          setDraggedPath({ 
+            path: appInfo.path, 
+            name: appInfo.name, 
+            type: 'app' 
+          });
+          setShowDragModal(true);
+          return;
+        }
       }
 
       // 判断是URL还是路径
@@ -381,7 +438,15 @@ const PathManager: React.FC = () => {
 
   const handleJump = async (item: PathItem) => {
     try {
-      if (item.type === 'web') {
+      if (item.type === 'app') {
+        // 应用类型：启动应用
+        try {
+          await launchApp(item.path);
+        } catch (error) {
+          console.error('启动应用失败:', error);
+          copyToClipboard(item.path, item.id);
+        }
+      } else if (item.type === 'web') {
         // 网页类型：直接在新标签页打开
         window.open(item.path, '_blank');
       } else if (item.type === 'local' || item.type === 'network') {
@@ -473,8 +538,25 @@ const PathManager: React.FC = () => {
     setCollapsedGroups(newCollapsed);
   };
 
-  const getIcon = (type: PathType) => {
-    switch (type) {
+  const getIcon = (item: PathItem) => {
+    // 如果有自定义图标，显示图标
+    if (item.icon) {
+      return (
+        <img 
+          src={item.icon} 
+          alt={item.name}
+          className="w-[18px] h-[18px] object-contain"
+          onError={(e) => {
+            // 如果图标加载失败，显示默认图标
+            (e.target as HTMLImageElement).style.display = 'none';
+          }}
+        />
+      );
+    }
+    
+    // 根据类型显示默认图标
+    switch (item.type) {
+      case 'app': return <Play size={18} className="text-green-400" />;
       case 'web': return <Globe size={18} className="text-cyan-400" />;
       case 'network': return <Server size={18} className="text-purple-400" />;
       case 'local': return <Folder size={18} className="text-orange-400" />;
@@ -580,8 +662,8 @@ const PathManager: React.FC = () => {
 
   // 类型选择按钮组件
   const TypeSelector = ({ value, onChange }: { value: PathType; onChange: (t: PathType) => void }) => (
-    <div className="flex gap-2">
-      {(['local', 'network', 'web'] as PathType[]).map(t => (
+    <div className="flex gap-2 flex-wrap">
+      {(['local', 'network', 'web', 'app'] as PathType[]).map(t => (
         <button
           key={t}
           onClick={() => onChange(t)}
@@ -594,7 +676,7 @@ const PathManager: React.FC = () => {
             }
           `}
         >
-          {t === 'local' ? '本地' : t === 'network' ? '局域网' : '网页'}
+          {t === 'local' ? '本地' : t === 'network' ? '局域网' : t === 'web' ? '网页' : '应用'}
         </button>
       ))}
     </div>
@@ -644,7 +726,7 @@ const PathManager: React.FC = () => {
               <Folder size={28} className="text-[#333333]" />
             </div>
             <h3 className="text-lg font-medium text-white mb-2">暂无路径</h3>
-            <p className="text-[#666666] mb-6">点击"添加路径"开始管理你的目录</p>
+            <p className="text-[#666666] mb-6">点击"添加路径"开始管理你的目录，或直接拖入应用快捷方式（.lnk）或可执行文件（.exe）</p>
           </div>
         ) : (
           <div className="space-y-4">
@@ -738,9 +820,9 @@ const PathManager: React.FC = () => {
                           <div className="
                             p-2 rounded-lg
                             bg-[#0f0f0f] group-hover:bg-[#151515]
-                            transition-colors
+                            transition-colors flex items-center justify-center
                           ">
-                            {getIcon(item.type)}
+                            {getIcon(item)}
                           </div>
 
                           {/* 内容 */}
@@ -820,9 +902,14 @@ const PathManager: React.FC = () => {
       {/* 提示信息 */}
       <div className="mx-6 mb-6 p-3 bg-[#0f0f0f] rounded-lg border border-[#1a1a1a] flex gap-2 items-start">
         <AlertCircle size={14} className="text-blue-400 shrink-0 mt-0.5" />
-        <p className="text-[12px] text-[#666666]">
-          点击任意行即可打开。如果浏览器阻止直接打开本地路径，它将自动复制到剪贴板。
-        </p>
+        <div className="flex-1">
+          <p className="text-[12px] text-[#666666] mb-1">
+            点击任意行即可打开。应用类型会直接启动，路径类型会打开资源管理器。如果浏览器阻止直接打开本地路径，它将自动复制到剪贴板。
+          </p>
+          <p className="text-[12px] text-[#666666]">
+            💡 提示：可以直接将桌面上的应用快捷方式（.lnk）或可执行文件（.exe）拖入此界面，系统会自动识别应用名称。
+          </p>
+        </div>
       </div>
 
       {/* 添加模态框 */}
@@ -904,7 +991,7 @@ const PathManager: React.FC = () => {
                     focus:outline-none focus:border-blue-500
                     transition-colors
                   "
-                  placeholder={newType === 'web' ? "https://..." : newType === 'network' ? "\\\\192.168.1.100\\Share" : "D:\\Projects\\..."}
+                  placeholder={newType === 'web' ? "https://..." : newType === 'network' ? "\\\\192.168.1.100\\Share" : newType === 'app' ? "C:\\Program Files\\App\\app.exe" : "D:\\Projects\\..."}
                 />
                 {newType === 'network' && (
                   <p className="text-[11px] text-[#666666] mt-1.5">
@@ -1022,7 +1109,7 @@ const PathManager: React.FC = () => {
                     focus:outline-none focus:border-blue-500
                     transition-colors
                   "
-                  placeholder={editType === 'web' ? "https://..." : editType === 'network' ? "\\\\192.168.1.100\\Share" : "D:\\Projects\\..."}
+                  placeholder={editType === 'web' ? "https://..." : editType === 'network' ? "\\\\192.168.1.100\\Share" : editType === 'app' ? "C:\\Program Files\\App\\app.exe" : "D:\\Projects\\..."}
                 />
                 {editType === 'network' && (
                   <p className="text-[11px] text-[#666666] mt-1.5">
