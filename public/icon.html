@@ -16,8 +16,8 @@
       height: 64px;
       margin: 0;
       padding: 0;
-      background: #000000 !important;
-      background-color: #000000 !important;
+      background: transparent !important;
+      background-color: transparent !important;
       display: flex;
       align-items: center;
       justify-content: center;
@@ -25,25 +25,40 @@
       user-select: none;
       overflow: hidden;
       /* 不使用 -webkit-app-region: drag，使用自定义拖拽逻辑 */
-      /* 临时使用黑色背景，避免 macOS 上的白底问题 */
     }
 
     body {
-      background: #000000 !important;
+      background: transparent !important;
+    }
+
+    #icon-container {
+      width: 64px;
+      height: 64px;
+      border-radius: 12px;
+      background: transparent;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      overflow: hidden;
+      /* 确保容器是圆角正方形 */
     }
 
     #icon {
-      width: 56px;
-      height: 56px;
+      width: 64px;
+      height: 64px;
       object-fit: contain;
       pointer-events: none;
       border-radius: 12px;
       background: transparent;
+      /* 确保图标是圆角正方形 */
+      display: block;
     }
   </style>
 </head>
 <body>
-  <img id="icon" src="./icon.ico" alt="ArtHub" />
+  <div id="icon-container">
+    <img id="icon" src="./icon.ico" alt="ArtHub" />
+  </div>
   <script>
     // 使用全局 Tauri API
     let invoke;
