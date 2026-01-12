@@ -1264,19 +1264,6 @@ const PathManager: React.FC = () => {
         )}
       </div>
 
-      {/* 提示信息 */}
-      <div className="mx-6 mb-6 p-3 bg-[#0f0f0f] rounded-lg border border-[#1a1a1a] flex gap-2 items-start">
-        <AlertCircle size={14} className="text-blue-400 shrink-0 mt-0.5" />
-        <div className="flex-1">
-          <p className="text-[12px] text-[#666666] mb-1">
-            点击任意行即可打开。应用类型会直接启动，路径类型会打开资源管理器。如果浏览器阻止直接打开本地路径，它将自动复制到剪贴板。
-          </p>
-          <p className="text-[12px] text-[#666666]">
-            💡 提示：可以直接将桌面上的应用快捷方式（.lnk）或可执行文件（.exe）拖入此界面，系统会自动识别应用名称。
-          </p>
-        </div>
-      </div>
-
       {/* 添加模态框 */}
       {isModalOpen && (
         <div 
