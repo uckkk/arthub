@@ -957,9 +957,9 @@ const PathManager: React.FC = () => {
   );
 
   return (
-    <div className="h-full flex flex-col bg-[#0a0a0a]">
+    <div className="h-full flex flex-col overflow-hidden bg-[#0a0a0a]">
       {/* 顶部工具栏 */}
-      <div className="flex items-center justify-end p-6 border-b border-[#1a1a1a]">
+      <div className="flex items-center justify-end p-6 border-b border-[#1a1a1a] shrink-0">
         <div className="flex items-center gap-2">
           {/* 列数设置按钮 */}
           <div className="relative">
