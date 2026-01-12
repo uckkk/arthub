@@ -162,22 +162,22 @@ const PathManager: React.FC = () => {
     setIsDraggingOver(false);
 
     try {
-      // 首先检查是否是文件拖拽
+      // 首先检查是否是文件拖拽（优先级最高）
       const files = e.dataTransfer.files;
       if (files && files.length > 0) {
         const file = files[0];
         // 在 Tauri 环境中，文件对象可能有 path 属性
         // 在浏览器环境中，只能获取文件名
         const filePath = (file as any).path || file.name;
-        const fileName = file.name;
+        const fileName = file.name.toLowerCase();
         
-        // 检查是否是应用文件（通过扩展名判断）
+        // 优先检查是否是应用文件（通过扩展名判断）
         if (isAppFile(fileName) || isAppFile(filePath)) {
           // 在 Tauri 环境中，尝试获取完整路径
           let fullPath = filePath;
           if (isTauriEnvironment() && !fullPath.match(/^[A-Za-z]:/) && !fullPath.startsWith('/')) {
             // 如果路径不完整，尝试使用文件名（用户需要手动输入完整路径）
-            fullPath = fileName;
+            fullPath = filePath;
           }
           
           const appInfo = await handleDroppedAppFile(fullPath);
@@ -200,83 +200,103 @@ const PathManager: React.FC = () => {
       }
       
       // 尝试获取拖拽的文本（可能是URL或路径）
-      const text = e.dataTransfer.getData('text/plain') || e.dataTransfer.getData('text');
+      // 注意：在 Windows 上拖拽文件时，可能会同时有 files 和 text/uri-list
+      const textUriList = e.dataTransfer.getData('text/uri-list');
+      const textPlain = e.dataTransfer.getData('text/plain');
+      const text = textPlain || e.dataTransfer.getData('text');
       
-      if (!text) {
-        // 尝试从浏览器地址栏拖拽
-        const url = e.dataTransfer.getData('text/uri-list') || e.dataTransfer.getData('URL');
-        if (url) {
-          // 检查是否是文件路径（file:// 协议）
-          if (url.startsWith('file://')) {
-            // 提取文件路径
-            const filePath = url.replace(/^file:\/\/\//, '').replace(/\//g, '\\');
-            // 检查是否是应用文件
-            if (isAppFile(filePath)) {
-              const appInfo = await handleDroppedAppFile(filePath);
-              if (appInfo) {
-                setDraggedPath({ 
-                  path: appInfo.path, 
-                  name: appInfo.name, 
-                  type: 'app' 
-                });
-                setShowDragModal(true);
-                return;
-              }
+      // 优先处理 text/uri-list（Windows 文件拖拽常用）
+      if (textUriList) {
+        // 检查是否是文件路径（file:// 协议）
+        if (textUriList.startsWith('file://')) {
+          // 提取文件路径（Windows 路径格式）
+          let filePath = textUriList.replace(/^file:\/\/\//, '').replace(/^file:\/\//, '');
+          // Windows 路径可能需要解码
+          try {
+            filePath = decodeURIComponent(filePath);
+          } catch {
+            // 解码失败，使用原始路径
+          }
+          // 统一路径分隔符
+          filePath = filePath.replace(/\//g, '\\');
+          
+          // 检查是否是应用文件
+          if (isAppFile(filePath)) {
+            const appInfo = await handleDroppedAppFile(filePath);
+            if (appInfo) {
+              setDraggedPath({ 
+                path: appInfo.path, 
+                name: appInfo.name, 
+                type: 'app' 
+              });
+              setShowDragModal(true);
+              return;
             }
-            await handleDroppedPath(filePath, 'local');
+          }
+          // 本地文件路径
+          await handleDroppedPath(filePath, 'local');
+          return;
+        }
+        // 检查是否是网页 URL
+        if (textUriList.startsWith('http://') || textUriList.startsWith('https://')) {
+          await handleDroppedPath(textUriList, 'web');
+          return;
+        }
+      }
+      
+      // 处理 text/plain 数据
+      if (text) {
+        // 优先检查是否是应用文件路径（.exe, .lnk）
+        if (isAppFile(text)) {
+          const appInfo = await handleDroppedAppFile(text);
+          if (appInfo) {
+            setDraggedPath({ 
+              path: appInfo.path, 
+              name: appInfo.name, 
+              type: 'app' 
+            });
+            setShowDragModal(true);
             return;
           }
-          // 只有明确的 http:// 或 https:// 才识别为网页
-          if (url.startsWith('http://') || url.startsWith('https://')) {
-            await handleDroppedPath(url, 'web');
-            return;
+        }
+
+        // 判断是URL还是路径
+        // 只有明确的 http:// 或 https:// 开头才识别为网页
+        if (text.startsWith('http://') || text.startsWith('https://')) {
+          await handleDroppedPath(text, 'web');
+        } else if (text.startsWith('\\\\') || text.startsWith('//')) {
+          // 网络路径
+          await handleDroppedPath(text, 'network');
+        } else if (text.match(/^[A-Za-z]:[\\/]/) || text.startsWith('/') || text.match(/^[A-Za-z]:$/)) {
+          // 本地路径（Windows 路径如 C:\ 或 C:/，或 Unix 路径）
+          await handleDroppedPath(text, 'local');
+        } else if (text.includes('\\') || text.includes('/')) {
+          // 包含路径分隔符，优先识别为本地路径
+          await handleDroppedPath(text, 'local');
+        } else {
+          // 其他情况，尝试作为URL处理（但只有明确的协议才识别为网页）
+          try {
+            const url = new URL(text);
+            // 只有 http 或 https 协议才识别为网页
+            if (url.protocol === 'http:' || url.protocol === 'https:') {
+              await handleDroppedPath(text, 'web');
+            } else {
+              // 其他协议（如 file://）识别为本地路径
+              await handleDroppedPath(text, 'local');
+            }
+          } catch {
+            // 不是有效的URL，识别为本地路径
+            await handleDroppedPath(text, 'local');
           }
         }
         return;
       }
-
-      // 优先检查是否是应用文件路径（.exe, .lnk）
-      if (isAppFile(text)) {
-        const appInfo = await handleDroppedAppFile(text);
-        if (appInfo) {
-          setDraggedPath({ 
-            path: appInfo.path, 
-            name: appInfo.name, 
-            type: 'app' 
-          });
-          setShowDragModal(true);
-          return;
-        }
-      }
-
-      // 判断是URL还是路径
-      // 只有明确的 http:// 或 https:// 开头才识别为网页
-      if (text.startsWith('http://') || text.startsWith('https://')) {
-        await handleDroppedPath(text, 'web');
-      } else if (text.startsWith('\\\\') || text.startsWith('//')) {
-        // 网络路径
-        await handleDroppedPath(text, 'network');
-      } else if (text.match(/^[A-Za-z]:[\\/]/) || text.startsWith('/') || text.match(/^[A-Za-z]:$/)) {
-        // 本地路径（Windows 路径如 C:\ 或 C:/，或 Unix 路径）
-        await handleDroppedPath(text, 'local');
-      } else if (text.includes('\\') || text.includes('/')) {
-        // 包含路径分隔符，优先识别为本地路径
-        await handleDroppedPath(text, 'local');
-      } else {
-        // 其他情况，尝试作为URL处理（但只有明确的协议才识别为网页）
-        try {
-          const url = new URL(text);
-          // 只有 http 或 https 协议才识别为网页
-          if (url.protocol === 'http:' || url.protocol === 'https:') {
-            await handleDroppedPath(text, 'web');
-          } else {
-            // 其他协议（如 file://）识别为本地路径
-            await handleDroppedPath(text, 'local');
-          }
-        } catch {
-          // 不是有效的URL，识别为本地路径
-          await handleDroppedPath(text, 'local');
-        }
+      
+      // 最后尝试从浏览器地址栏拖拽
+      const url = e.dataTransfer.getData('URL');
+      if (url && (url.startsWith('http://') || url.startsWith('https://'))) {
+        await handleDroppedPath(url, 'web');
+        return;
       }
     } catch (error) {
       console.error('处理拖拽失败:', error);
@@ -630,32 +650,55 @@ const PathManager: React.FC = () => {
 
   // 拖拽处理函数
   const handleDragStart = (item: PathItem, e: React.DragEvent) => {
+    e.stopPropagation(); // 阻止事件冒泡，避免触发点击事件
     e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.dropEffect = 'move';
     setDraggedItem(item);
     // 设置拖拽数据，支持跨组拖动
     e.dataTransfer.setData('text/plain', item.id);
+    // 设置自定义数据格式
+    e.dataTransfer.setData('application/x-path-item', JSON.stringify({ id: item.id, type: 'path-item' }));
   };
 
   const handleDragStartGroup = (groupName: string, e: React.DragEvent) => {
+    e.stopPropagation(); // 阻止事件冒泡，避免触发点击事件
     e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.dropEffect = 'move';
     setDraggedGroup(groupName);
-    e.stopPropagation();
+    // 设置拖拽数据
+    e.dataTransfer.setData('text/plain', groupName);
+    e.dataTransfer.setData('application/x-group', JSON.stringify({ name: groupName, type: 'group' }));
   };
 
   const handleDragOver = (groupName: string, index: number, e: React.DragEvent) => {
     e.preventDefault();
     e.stopPropagation();
-    e.dataTransfer.dropEffect = 'move';
-    if (draggedItem) {
-      setDragOverGroup(groupName);
-      setDragOverIndex(index);
+    // 检查是否是路径项拖拽
+    const dragData = e.dataTransfer.getData('application/x-path-item');
+    if (dragData || draggedItem) {
+      e.dataTransfer.dropEffect = 'move';
+      if (draggedItem) {
+        setDragOverGroup(groupName);
+        setDragOverIndex(index);
+      }
+    } else {
+      e.dataTransfer.dropEffect = 'none';
     }
   };
 
   const handleDragOverGroup = (groupName: string, e: React.DragEvent) => {
     e.preventDefault();
-    e.dataTransfer.dropEffect = 'move';
-    if (draggedGroup) setDragOverGroup(groupName);
+    e.stopPropagation();
+    // 检查是否是分组拖拽
+    const dragData = e.dataTransfer.getData('application/x-group');
+    if (dragData || draggedGroup) {
+      e.dataTransfer.dropEffect = 'move';
+      if (draggedGroup && draggedGroup !== groupName) {
+        setDragOverGroup(groupName);
+      }
+    } else {
+      e.dataTransfer.dropEffect = 'none';
+    }
   };
 
   const handleDrop = (targetGroup: string, targetIndex: number, e: React.DragEvent) => {
@@ -865,19 +908,25 @@ const PathManager: React.FC = () => {
                 <div key={groupName} className="space-y-2">
                   {/* 分组标题 */}
                   <div 
-                    draggable
+                    draggable={true}
                     onDragStart={(e) => {
                       handleDragStartGroup(groupName, e);
-                      e.dataTransfer.effectAllowed = 'move';
                     }}
                     onDragOver={(e) => {
-                      e.preventDefault();
                       handleDragOverGroup(groupName, e);
-                      e.dataTransfer.dropEffect = 'move';
                     }}
-                    onDrop={(e) => handleDropGroup(groupName, e)}
+                    onDrop={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      handleDropGroup(groupName, e);
+                    }}
                     onDragEnd={handleDragEnd}
-                    onClick={() => toggleGroup(groupName)}
+                    onClick={(e) => {
+                      // 如果正在拖拽，不触发折叠/展开
+                      if (!draggedGroup) {
+                        toggleGroup(groupName);
+                      }
+                    }}
                     className={`
                       flex items-center gap-2 px-2 py-1.5 rounded-lg
                       cursor-move select-none
@@ -928,12 +977,21 @@ const PathManager: React.FC = () => {
                       {groupedPaths[groupName].map((item, index) => (
                         <div 
                           key={item.id} 
-                          draggable
+                          draggable={true}
                           onDragStart={(e) => handleDragStart(item, e)}
                           onDragOver={(e) => handleDragOver(groupName, index, e)}
-                          onDrop={(e) => handleDrop(groupName, index, e)}
+                          onDrop={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            handleDrop(groupName, index, e);
+                          }}
                           onDragEnd={handleDragEnd}
-                          onClick={() => handleJump(item)}
+                          onClick={(e) => {
+                            // 如果正在拖拽，不触发跳转
+                            if (!draggedItem) {
+                              handleJump(item);
+                            }
+                          }}
                           className={`
                             group relative
                             bg-[#1a1a1a] hover:bg-[#222222]
