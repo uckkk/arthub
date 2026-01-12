@@ -221,26 +221,6 @@ const NamingTool: React.FC = () => {
     <div className="h-full flex flex-col bg-[#0a0a0a]">
       {/* 头部工具栏 */}
       <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4 p-6 border-b border-[#1a1a1a]">
-        <div className="flex items-center gap-3">
-          <div className="p-2 bg-[#1a1a1a] rounded-lg">
-            {isDanmaku ? (
-              <button
-                onClick={() => setShowRulesModal(true)}
-                className="text-[#666666] hover:text-blue-400 transition-colors"
-                title="查看命名规则"
-              >
-                <HelpCircle size={20} />
-              </button>
-            ) : (
-              <Wand2 size={20} className="text-blue-400" />
-            )}
-          </div>
-          <div>
-            <h2 className="text-lg font-semibold text-white">命名工具</h2>
-            <p className="text-sm text-[#666666]">生成规范的资源命名</p>
-          </div>
-        </div>
-        
         {/* 命名格式和模板选择 */}
         <div className="flex flex-col md:flex-row items-stretch md:items-center gap-3 w-full md:w-auto">
           <FormatSelector
