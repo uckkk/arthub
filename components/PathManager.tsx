@@ -673,31 +673,39 @@ const PathManager: React.FC = () => {
   const handleDragOver = (groupName: string, index: number, e: React.DragEvent) => {
     e.preventDefault();
     e.stopPropagation();
-    // 检查是否是路径项拖拽
-    const dragData = e.dataTransfer.getData('application/x-path-item');
-    if (dragData || draggedItem) {
+    // 检查是否是路径项拖拽（使用状态而不是 getData，因为 dragOver 事件中无法读取数据）
+    if (draggedItem) {
       e.dataTransfer.dropEffect = 'move';
-      if (draggedItem) {
-        setDragOverGroup(groupName);
-        setDragOverIndex(index);
-      }
+      setDragOverGroup(groupName);
+      setDragOverIndex(index);
     } else {
-      e.dataTransfer.dropEffect = 'none';
+      // 检查拖拽类型（通过 types 数组）
+      const types = Array.from(e.dataTransfer.types);
+      if (types.includes('application/x-path-item') || types.includes('text/plain')) {
+        e.dataTransfer.dropEffect = 'move';
+      } else {
+        e.dataTransfer.dropEffect = 'none';
+      }
     }
   };
 
   const handleDragOverGroup = (groupName: string, e: React.DragEvent) => {
     e.preventDefault();
     e.stopPropagation();
-    // 检查是否是分组拖拽
-    const dragData = e.dataTransfer.getData('application/x-group');
-    if (dragData || draggedGroup) {
+    // 检查是否是分组拖拽（使用状态而不是 getData）
+    if (draggedGroup) {
       e.dataTransfer.dropEffect = 'move';
-      if (draggedGroup && draggedGroup !== groupName) {
+      if (draggedGroup !== groupName) {
         setDragOverGroup(groupName);
       }
     } else {
-      e.dataTransfer.dropEffect = 'none';
+      // 检查拖拽类型（通过 types 数组）
+      const types = Array.from(e.dataTransfer.types);
+      if (types.includes('application/x-group') || types.includes('text/plain')) {
+        e.dataTransfer.dropEffect = 'move';
+      } else {
+        e.dataTransfer.dropEffect = 'none';
+      }
     }
   };
 
