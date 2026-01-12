@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
-import { Copy, Trash2, History as HistoryIcon, FileText, ExternalLink, X, RefreshCw, Check } from 'lucide-react';
-import { NamingHistoryItem, PathItem } from '../types';
+import { Copy, Trash2, History as HistoryIcon, FileText, X, RefreshCw, Check } from 'lucide-react';
+import { NamingHistoryItem } from '../types';
 import { loadNotesFromLocalStorage, saveNotesToLocalStorage, saveNotesToFile, loadNotesFromFile } from '../services/notesService';
 import { getStorageConfig } from '../services/fileStorageService';
 
@@ -23,9 +23,6 @@ const NamingHistory: React.FC = () => {
   const currentPresetIdRef = useRef<string>(currentPresetId);
   const isInitialLoadRef = useRef<boolean>(true);
   
-  // 快速路径标签
-  const [quickPaths, setQuickPaths] = useState<PathItem[]>([]);
-  
   // 容器高度调整
   const [topHeight, setTopHeight] = useState<number>(50);
   const [isResizing, setIsResizing] = useState(false);
@@ -35,11 +32,6 @@ const NamingHistory: React.FC = () => {
   const getHistoryKey = useCallback((presetId?: string): string => {
     const id = presetId || currentPresetId;
     return `arthub_naming_history_${id}`;
-  }, [currentPresetId]);
-
-  const getQuickPathsKey = useCallback((presetId?: string): string => {
-    const id = presetId || currentPresetId;
-    return `arthub_quick_paths_${id}`;
   }, [currentPresetId]);
 
   // 从 localStorage 加载历史记录
@@ -161,43 +153,6 @@ const NamingHistory: React.FC = () => {
     }
   }, [loadTemplateNotes, currentPresetId]);
 
-  // 加载快速路径
-  useEffect(() => {
-    const loadQuickPaths = () => {
-      const key = getQuickPathsKey(currentPresetId);
-      const saved = localStorage.getItem(key);
-      if (saved) {
-        try {
-          setQuickPaths(JSON.parse(saved));
-        } catch {
-          setQuickPaths([]);
-        }
-      } else {
-        setQuickPaths([]);
-      }
-    };
-    
-    loadQuickPaths();
-    
-    const handleQuickPathsUpdate = () => loadQuickPaths();
-    
-    window.addEventListener('quickPathsUpdated', handleQuickPathsUpdate);
-    
-    return () => {
-      window.removeEventListener('quickPathsUpdated', handleQuickPathsUpdate);
-    };
-  }, [currentPresetId, getQuickPathsKey]);
-
-  // 保存快速路径
-  useEffect(() => {
-    const key = getQuickPathsKey(currentPresetId);
-    if (quickPaths.length > 0) {
-      localStorage.setItem(key, JSON.stringify(quickPaths));
-    } else {
-      localStorage.removeItem(key);
-    }
-  }, [quickPaths, currentPresetId, getQuickPathsKey]);
-
   // 防抖保存定时器
   const saveTimerRef = useRef<NodeJS.Timeout | null>(null);
   
@@ -311,55 +266,6 @@ const NamingHistory: React.FC = () => {
     if (isExpanded) return history;
     return history.slice(0, 4);
   }, [history, isExpanded]);
-
-  // 处理快速路径跳转
-  const handleQuickPathJump = (item: PathItem) => {
-    try {
-      if (item.type === 'web') {
-        window.open(item.path, '_blank');
-      } else if (item.type === 'local' || item.type === 'network') {
-        let pathToOpen = item.path;
-        if (item.type === 'local') {
-          pathToOpen = 'file:///' + item.path.replace(/\\/g, '/').replace(/^([A-Za-z]):/, '$1:');
-        } else {
-          pathToOpen = 'file:///' + item.path.replace(/\\/g, '/');
-        }
-        const w = window.open(pathToOpen);
-        setTimeout(() => {
-          if (!w || w.closed || typeof w.closed === 'undefined') {
-            navigator.clipboard.writeText(item.path);
-          }
-        }, 100);
-      }
-    } catch {
-      navigator.clipboard.writeText(item.path);
-    }
-  };
-
-  // 删除快速路径
-  const handleRemoveQuickPath = (id: string) => {
-    const newQuickPaths = quickPaths.filter(p => p.id !== id);
-    setQuickPaths(newQuickPaths);
-    const key = getQuickPathsKey(currentPresetId);
-    if (newQuickPaths.length > 0) {
-      localStorage.setItem(key, JSON.stringify(newQuickPaths));
-    } else {
-      localStorage.removeItem(key);
-    }
-  };
-
-  // 生成标签颜色
-  const getTagColor = (index: number): string => {
-    const colors = [
-      'bg-blue-500/20 text-blue-400 border-blue-500/30',
-      'bg-purple-500/20 text-purple-400 border-purple-500/30',
-      'bg-green-500/20 text-green-400 border-green-500/30',
-      'bg-orange-500/20 text-orange-400 border-orange-500/30',
-      'bg-cyan-500/20 text-cyan-400 border-cyan-500/30',
-      'bg-pink-500/20 text-pink-400 border-pink-500/30',
-    ];
-    return colors[index % colors.length];
-  };
 
   // 复制到剪贴板
   const handleCopy = async (item: NamingHistoryItem) => {
@@ -534,47 +440,6 @@ const NamingHistory: React.FC = () => {
         style={{ cursor: 'row-resize', userSelect: 'none' }}
         title="拖拽调整高度"
       />
-
-      {/* 快速路径标签容器 */}
-      {quickPaths.length > 0 && (
-        <div className="bg-[#0f0f0f] rounded-xl border border-[#1a1a1a] shrink-0">
-          <div className="flex items-center gap-2 px-4 py-2 border-b border-[#1a1a1a]">
-            <ExternalLink className="text-yellow-400" size={14} />
-            <span className="text-sm font-medium text-white">快捷路径</span>
-          </div>
-          <div className="p-3">
-            <div className="flex flex-wrap gap-2">
-              {quickPaths.map((item, index) => (
-                <div
-                  key={item.id}
-                  className={`
-                    ${getTagColor(index)}
-                    px-3 py-1.5 rounded-lg text-xs font-medium
-                    border
-                    flex items-center gap-2 cursor-pointer
-                    hover:brightness-110 transition-all
-                    group
-                  `}
-                  onClick={() => handleQuickPathJump(item)}
-                  title={item.path}
-                >
-                  <span className="truncate max-w-[180px]">{item.name}</span>
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      handleRemoveQuickPath(item.id);
-                    }}
-                    className="opacity-0 group-hover:opacity-100 transition-opacity hover:bg-white/10 rounded p-0.5"
-                    title="删除"
-                  >
-                    <X size={12} />
-                  </button>
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* 下半部分：简化的历史记录列表 */}
       <div 

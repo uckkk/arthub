@@ -719,11 +719,11 @@ const AITool: React.FC = () => {
                   showPlayButton={!!config.jsonFile}
                 />
                 
-                {/* 收藏按钮 - 始终显示 */}
+                {/* 收藏按钮 - 左上角 */}
                 <button
                   onClick={(e) => handleToggleFavorite(config, e)}
                   className={`
-                    absolute top-3 right-3 z-10
+                    absolute top-3 left-3 z-10
                     p-2 rounded-lg
                     transition-all duration-150
                     ${isFavorited(config.id)
@@ -736,42 +736,40 @@ const AITool: React.FC = () => {
                   <Star size={14} fill={isFavorited(config.id) ? "currentColor" : "none"} />
                 </button>
 
-                {/* 悬浮操作按钮 */}
+                {/* 悬浮操作按钮 - 右上角 */}
                 <div className="
-                  absolute top-3 right-3
+                  absolute top-3 right-3 z-10
                   flex gap-1.5
                   opacity-0 group-hover:opacity-100
                   transition-opacity duration-150
                 ">
-                  <div className="flex gap-1.5">
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleStartEdit(config);
-                      }}
-                      className="
-                        p-2 rounded-lg
-                        bg-black/60 backdrop-blur-sm
-                        text-white hover:bg-black/80
-                        transition-colors duration-150
-                      "
-                      title="编辑"
-                    >
-                      <Edit2 size={14} />
-                    </button>
-                    <button
-                      onClick={(e) => handleDelete(config.id, e)}
-                      className="
-                        p-2 rounded-lg
-                        bg-black/60 backdrop-blur-sm
-                        text-red-400 hover:bg-red-500/30 hover:text-red-300
-                        transition-colors duration-150
-                      "
-                      title="删除"
-                    >
-                      <Trash2 size={14} />
-                    </button>
-                  </div>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleStartEdit(config);
+                    }}
+                    className="
+                      p-2 rounded-lg
+                      bg-black/60 backdrop-blur-sm
+                      text-white hover:bg-black/80
+                      transition-colors duration-150
+                    "
+                    title="编辑"
+                  >
+                    <Edit2 size={14} />
+                  </button>
+                  <button
+                    onClick={(e) => handleDelete(config.id, e)}
+                    className="
+                      p-2 rounded-lg
+                      bg-black/60 backdrop-blur-sm
+                      text-red-400 hover:bg-red-500/30 hover:text-red-300
+                      transition-colors duration-150
+                    "
+                    title="删除"
+                  >
+                    <Trash2 size={14} />
+                  </button>
                 </div>
               </div>
             ))}
