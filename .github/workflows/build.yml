@@ -79,6 +79,7 @@ jobs:
       # 4. 提取版本号（如果打了标签，从标签提取；否则使用 package.json）
       - name: Extract version
         id: version
+        shell: bash
         run: |
           if [[ "${{ github.ref }}" == refs/tags/v* ]]; then
             # 从 Git tag 提取版本号（例如 v1.0.2 -> 1.0.2）
@@ -95,6 +96,7 @@ jobs:
       # 4.5. 更新版本号到 package.json（如果从 tag 提取）
       - name: Update version in package.json
         if: startsWith(github.ref, 'refs/tags/v')
+        shell: bash
         run: |
           npm pkg set version=${{ steps.version.outputs.version }}
           echo "已更新 package.json 版本号为: ${{ steps.version.outputs.version }}"
