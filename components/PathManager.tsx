@@ -133,8 +133,8 @@ const PathManager: React.FC = () => {
     setIsDraggingOver(false);
   };
 
-  // 处理拖拽悬停
-  const handleDragOver = (e: React.DragEvent) => {
+  // 处理拖拽悬停（创建新路径）
+  const handleDragOverCreatePath = (e: React.DragEvent) => {
     e.preventDefault();
     e.stopPropagation();
     setIsDraggingOver(true);
@@ -631,7 +631,7 @@ const PathManager: React.FC = () => {
       <div
         onDragEnter={handleDragEnter}
         onDragLeave={handleDragLeave}
-        onDragOver={handleDragOver}
+        onDragOver={handleDragOverCreatePath}
         onDrop={handleDropCreatePath}
         className={`
           flex-1 overflow-y-auto p-6 transition-colors duration-200
