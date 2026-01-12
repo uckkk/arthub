@@ -67,11 +67,8 @@ jobs:
 
     runs-on: ${{ matrix.platform }}
     # 根据选择的平台过滤构建任务
-    if: |
-      github.event.inputs.platform == '' || 
-      github.event.inputs.platform == 'all' || 
-      github.event.inputs.platform == '${{ matrix.build_platform }}' ||
-      (github.event.inputs.platform == 'macos' && '${{ matrix.build_platform }}' == 'macos')
+    # 当 platform 输入为空、'all' 或匹配当前构建平台时，执行构建
+    if: ${{ !github.event.inputs.platform || github.event.inputs.platform == 'all' || github.event.inputs.platform == matrix.build_platform }}
     
     steps:
       # 1. 检出代码
