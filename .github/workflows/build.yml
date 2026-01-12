@@ -20,6 +20,15 @@ on:
         options:
           - 'false'
           - 'true'
+      platform:
+        description: '构建平台（选择 all 会构建所有平台，成本较高）'
+        required: false
+        default: 'windows'
+        type: choice
+        options:
+          - 'windows'
+          - 'macos'
+          - 'all'
   
   # 打标签时自动构建并发布
   push:
@@ -42,18 +51,22 @@ jobs:
           - platform: windows-latest
             target: x86_64-pc-windows-msvc
             name: Windows
+            condition: ${{ github.event.inputs.platform == 'windows' || github.event.inputs.platform == 'all' || github.event.inputs.platform == '' }}
           
           # macOS Intel 构建
           - platform: macos-latest
             target: x86_64-apple-darwin
             name: macOS-Intel
+            condition: ${{ github.event.inputs.platform == 'macos' || github.event.inputs.platform == 'all' }}
           
           # macOS Apple Silicon 构建
           - platform: macos-latest
             target: aarch64-apple-darwin
             name: macOS-ARM
+            condition: ${{ github.event.inputs.platform == 'macos' || github.event.inputs.platform == 'all' }}
 
     runs-on: ${{ matrix.platform }}
+    if: ${{ matrix.condition != 'false' }}
     
     steps:
       # 1. 检出代码
