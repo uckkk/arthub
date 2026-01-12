@@ -33,9 +33,25 @@ function writeJson(filePath, data) {
 function updateCargoToml(filePath, version) {
   try {
     let content = fs.readFileSync(filePath, 'utf-8');
-    // 替换 version = "x.x.x" 行
-    content = content.replace(/^version = ".*"$/m, `version = "${version}"`);
-    fs.writeFileSync(filePath, content, 'utf-8');
+    // 替换 version = "x.x.x" 行（匹配 [package] 下的 version）
+    // 使用更精确的正则，确保只替换 [package] 部分的 version
+    const lines = content.split('\n');
+    let inPackageSection = false;
+    const updatedLines = lines.map((line, index) => {
+      if (line.trim() === '[package]') {
+        inPackageSection = true;
+        return line;
+      }
+      if (line.trim().startsWith('[') && line.trim() !== '[package]') {
+        inPackageSection = false;
+        return line;
+      }
+      if (inPackageSection && /^\s*version\s*=\s*".*"$/.test(line.trim())) {
+        return line.replace(/version\s*=\s*".*"/, `version = "${version}"`);
+      }
+      return line;
+    });
+    fs.writeFileSync(filePath, updatedLines.join('\n'), 'utf-8');
     console.log(`✓ 已更新 ${filePath}`);
   } catch (e) {
     console.error(`无法更新 ${filePath}:`, e);
