@@ -100,7 +100,7 @@
     },
     "security": {
       "csp": null,
-      "dangerousUseHttpScheme": true
+      "dangerousUseHttpScheme": false
     },
     "windows": [
       {
