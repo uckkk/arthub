@@ -3,8 +3,8 @@
  * 从原 NamingTool.tsx 迁移的传统模板逻辑
  */
 
-import React, { useState, useEffect, useCallback } from 'react';
-import { X } from 'lucide-react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
+import { X, ChevronDown, Check } from 'lucide-react';
 import { SpecialSuffix, NamingSubType } from '../../types';
 import { getPresetLabel } from '../../services/namingDataService';
 import { usePresetLoader } from './hooks/usePresetLoader';
@@ -20,6 +20,91 @@ interface TraditionalNamingToolProps {
   separatorFormat: 'underscore' | 'hyphen' | 'none';
   specialSuffixes: SpecialSuffix[];
 }
+
+// 分类下拉组件（与 FormatSelector 中的 Dropdown 样式一致）
+interface CategoryDropdownProps {
+  options: { value: string; label: string }[];
+  value: string;
+  onChange: (value: string) => void;
+  disabled?: boolean;
+}
+
+const CategoryDropdown: React.FC<CategoryDropdownProps> = ({ options, value, onChange, disabled }) => {
+  const [isOpen, setIsOpen] = useState(false);
+  const dropdownRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+        setIsOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  const selectedOption = options.find(opt => opt.value === value);
+
+  return (
+    <div ref={dropdownRef} className="relative w-full">
+      <button
+        type="button"
+        onClick={() => !disabled && setIsOpen(!isOpen)}
+        disabled={disabled}
+        className={`
+          w-full flex items-center gap-2 px-3 py-2
+          bg-[#0f0f0f] border border-[#2a2a2a] rounded-lg
+          text-white hover:border-[#3a3a3a]
+          transition-all duration-150
+          ${disabled ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}
+        `}
+      >
+        <span className="flex-1 text-left text-sm">
+          {selectedOption?.label || '选择'}
+        </span>
+        <ChevronDown 
+          size={14} 
+          className={`text-[#666666] transition-transform duration-150 ${isOpen ? 'rotate-180' : ''}`}
+        />
+      </button>
+
+      {isOpen && (
+        <div className="
+          absolute top-full left-0 mt-1 w-full
+          bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg
+          shadow-lg shadow-black/50
+          z-50 overflow-hidden
+          animate-scale-in
+        ">
+          {options.map((option) => (
+            <button
+              key={option.value}
+              type="button"
+              onClick={() => {
+                onChange(option.value);
+                setIsOpen(false);
+              }}
+              className={`
+                w-full flex items-center gap-2 px-3 py-2
+                text-sm text-left
+                transition-colors duration-150
+                ${option.value === value 
+                  ? 'bg-[#252525] text-white' 
+                  : 'text-[#a0a0a0] hover:bg-[#222222] hover:text-white'
+                }
+              `}
+            >
+              <span className="flex-1">{option.label}</span>
+              {option.value === value && (
+                <Check size={12} className="text-blue-400" />
+              )}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+};
 
 const TraditionalNamingTool: React.FC<TraditionalNamingToolProps> = ({
   presetId,
@@ -223,22 +308,21 @@ const TraditionalNamingTool: React.FC<TraditionalNamingToolProps> = ({
           {controlCategoryGroup && (
             <div>
               <label className="block text-sm font-medium text-slate-400 mb-2">资产分类</label>
-              <select 
-                className="w-full bg-slate-900 border border-slate-700 rounded-lg p-3 text-white focus:ring-2 focus:ring-blue-500 outline-none"
+              <CategoryDropdown
+                options={controlCategoryGroup.subTypes?.map(sub => ({
+                  value: sub.id,
+                  label: sub.label,
+                })) || []}
                 value={selectedControlCategory?.id || ''}
-                onChange={(e) => {
-                  const selected = controlCategoryGroup.subTypes?.find(s => s.id === e.target.value);
+                onChange={(id) => {
+                  const selected = controlCategoryGroup.subTypes?.find(s => s.id === id);
                   if (selected) {
                     setSelectedControlCategory(selected);
                     localStorage.setItem(`arthub_${presetId}_control_category_id`, selected.id);
                   }
                 }}
                 disabled={!controlCategoryGroup.subTypes?.length}
-              >
-                {controlCategoryGroup.subTypes?.map(sub => (
-                  <option key={sub.id} value={sub.id}>{sub.label}</option>
-                ))}
-              </select>
+              />
             </div>
           )}
 
@@ -246,22 +330,21 @@ const TraditionalNamingTool: React.FC<TraditionalNamingToolProps> = ({
           {assetTypeGroup && (
             <div>
               <label className="block text-sm font-medium text-slate-400 mb-2">子类型 / 变体</label>
-              <select 
-                className="w-full bg-slate-900 border border-slate-700 rounded-lg p-3 text-white focus:ring-2 focus:ring-blue-500 outline-none"
+              <CategoryDropdown
+                options={assetTypeGroup.subTypes?.map(sub => ({
+                  value: sub.id,
+                  label: sub.label,
+                })) || []}
                 value={selectedAssetType?.id || ''}
-                onChange={(e) => {
-                  const selected = assetTypeGroup.subTypes?.find(s => s.id === e.target.value);
+                onChange={(id) => {
+                  const selected = assetTypeGroup.subTypes?.find(s => s.id === id);
                   if (selected) {
                     setSelectedAssetType(selected);
                     localStorage.setItem(`arthub_${presetId}_asset_type_id`, selected.id);
                   }
                 }}
                 disabled={!assetTypeGroup.subTypes?.length}
-              >
-                {assetTypeGroup.subTypes?.map(sub => (
-                  <option key={sub.id} value={sub.id}>{sub.label}</option>
-                ))}
-              </select>
+              />
             </div>
           )}
         </div>
