@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, lazy, Suspense } from 'react';
 import { 
-  LayoutGrid, Type, Menu, User, Settings, 
+  Type, Menu, User, Settings, 
   Image, Video, Mic, Box, Code, Star, HardDrive, Home
 } from 'lucide-react';
 import { getStorageConfig, saveStorageConfig } from './services/fileStorageService';
@@ -35,7 +35,6 @@ const createMenuGroups = (): MenuGroup[] => [
   {
     items: [
       { id: 'home', label: '首页', icon: Home },
-      { id: 'all', label: '所有模板', icon: LayoutGrid },
     ],
   },
   {
