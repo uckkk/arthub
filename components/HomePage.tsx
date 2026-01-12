@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { 
-  Star, Folder, Globe, Server, Sparkles, ExternalLink, 
-  Trash2, X, Image as ImageIcon, Play
+  Star, Folder, Globe, Server, Sparkles, 
+  X, Image as ImageIcon, Play
 } from 'lucide-react';
 import { FavoriteItem, getAllFavorites, removeFavorite } from '../services/favoritesService';
 import { PathItem } from '../types';
@@ -162,17 +162,17 @@ const HomePage: React.FC = () => {
           </div>
         ) : (
           <div className="space-y-8">
-            {/* 快捷路径区域 */}
+            {/* 快捷路径区域 - 紧凑列表样式 */}
             {pathsCount > 0 && (
               <div>
-                <div className="flex items-center gap-2 mb-4">
+                <div className="flex items-center gap-2 mb-3">
                   <Folder size={18} className="text-orange-400" />
                   <h3 className="text-base font-semibold text-white">快捷路径</h3>
                   <span className="px-2 py-0.5 rounded text-xs font-medium bg-[#1a1a1a] text-[#666666]">
                     {pathsCount}
                   </span>
                 </div>
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+                <div className="space-y-1.5">
                   {groupedFavorites.paths.map((fav) => {
                     const path = fav.pathItem!;
                     return (
@@ -183,59 +183,51 @@ const HomePage: React.FC = () => {
                         onClick={() => handlePathJump(path)}
                         className="
                           group relative
-                          bg-[#1a1a1a] rounded-xl overflow-hidden
+                          bg-[#1a1a1a] rounded-lg
                           border border-[#2a2a2a]
-                          transition-all duration-200
+                          transition-all duration-150
                           hover:border-[#3a3a3a] hover:bg-[#1f1f1f]
-                          hover:shadow-lg hover:shadow-black/30
-                          hover:-translate-y-0.5
                           cursor-pointer
+                          px-4 py-3
+                          flex items-center gap-3
                         "
                       >
-                        {/* 收藏标识 */}
-                        <div className="absolute top-3 right-3 z-10">
-                          <div className="
-                            p-1.5 rounded-lg
-                            bg-yellow-500/20 backdrop-blur-sm
-                            border border-yellow-500/30
-                          ">
-                            <Star size={14} className="text-yellow-400" fill="currentColor" />
-                          </div>
-                        </div>
-
-                        {/* 图标区域 */}
-                        <div className="p-6 flex items-center justify-center bg-[#0f0f0f]">
-                          <div className="p-4 rounded-lg bg-[#1a1a1a]">
+                        {/* 图标 */}
+                        <div className="shrink-0">
+                          <div className="p-2 rounded-lg bg-[#0f0f0f] group-hover:bg-[#151515] transition-colors">
                             {getPathIcon(path.type)}
                           </div>
                         </div>
 
                         {/* 内容区域 */}
-                        <div className="p-4">
-                          <h3 className="
-                            text-[15px] font-medium text-white
-                            line-clamp-1 mb-1
-                            group-hover:text-blue-400
-                            transition-colors duration-150
-                          ">
-                            {path.name}
-                          </h3>
-                          <p className="
-                            text-[12px] text-[#666666] font-mono
-                            line-clamp-2
-                          " title={path.path}>
-                            {path.path}
-                          </p>
-                          {path.group && (
-                            <div className="mt-2">
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2 mb-1">
+                            <h3 className="
+                              text-[14px] font-medium text-white
+                              truncate
+                              group-hover:text-blue-400
+                              transition-colors duration-150
+                            ">
+                              {path.name}
+                            </h3>
+                            {path.group && (
                               <span className="
-                                px-2 py-0.5 rounded text-[10px] font-medium
+                                px-1.5 py-0.5 rounded text-[10px] font-medium
                                 bg-blue-500/20 text-blue-400 border border-blue-500/30
+                                shrink-0
                               ">
                                 {path.group}
                               </span>
-                            </div>
-                          )}
+                            )}
+                            {/* 收藏标识 */}
+                            <Star size={12} className="text-yellow-400 fill-current shrink-0" />
+                          </div>
+                          <p className="
+                            text-[12px] text-[#666666] font-mono
+                            truncate
+                          " title={path.path}>
+                            {path.path}
+                          </p>
                         </div>
 
                         {/* 删除按钮 */}
@@ -243,10 +235,10 @@ const HomePage: React.FC = () => {
                           <button
                             onClick={(e) => handleRemoveFavorite(fav, e)}
                             className="
-                              absolute top-3 left-3 z-10
+                              shrink-0
                               p-1.5 rounded-lg
-                              bg-black/60 backdrop-blur-sm
-                              text-red-400 hover:bg-red-500/30 hover:text-red-300
+                              bg-[#2a2a2a] hover:bg-red-500/20
+                              text-[#666666] hover:text-red-400
                               transition-colors duration-150
                               opacity-0 group-hover:opacity-100
                             "
