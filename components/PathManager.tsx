@@ -1040,7 +1040,7 @@ const PathManager: React.FC = () => {
         onDragOver={handleDragOverCreatePath}
         onDrop={handleDropCreatePath}
         className={`
-          flex-1 min-h-0 overflow-y-auto p-6 transition-colors duration-200
+          flex-1 min-h-0 overflow-y-auto px-6 py-6 transition-colors duration-200
           ${isDraggingOver ? 'bg-blue-500/10 border-2 border-dashed border-blue-500' : ''}
         `}
         style={{ scrollbarWidth: 'thin', scrollbarColor: '#2a2a2a #0a0a0a' }}

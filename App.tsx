@@ -283,9 +283,7 @@ const App: React.FC = () => {
       case 'paths':
         return (
           <Suspense fallback={<LoadingPlaceholder />}>
-            <div className="p-6">
-              <PathManager />
-            </div>
+            <PathManager />
           </Suspense>
         );
       default:
