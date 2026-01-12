@@ -439,6 +439,56 @@ fn app_exit(app: tauri::AppHandle) {
     app.exit(0);
 }
 
+// Tauri 命令：打开控制台窗口
+#[tauri::command]
+async fn open_console_window(app: tauri::AppHandle) -> Result<String, String> {
+    use tauri::WindowUrl;
+    
+    // 检查窗口是否已存在
+    if let Some(existing_window) = app.get_window("console") {
+        let _ = existing_window.show();
+        let _ = existing_window.set_focus();
+        return Ok("console".to_string());
+    }
+    
+    // 获取主窗口位置
+    let (x, y) = if let Some(main_window) = app.get_window("main") {
+        if let Ok(position) = main_window.outer_position() {
+            (position.x + 50, position.y + 50)
+        } else {
+            (100, 100)
+        }
+    } else {
+        (100, 100)
+    };
+    
+    // 在开发模式下使用开发服务器，生产模式下使用应用资源
+    let console_url = if cfg!(debug_assertions) {
+        WindowUrl::External("http://localhost:3000/console.html".parse().unwrap())
+    } else {
+        WindowUrl::App("console.html".into())
+    };
+    
+    // 创建控制台窗口
+    match tauri::WindowBuilder::new(
+        &app,
+        "console",
+        console_url
+    )
+    .title("错误日志控制台")
+    .inner_size(1000.0, 700.0)
+    .min_inner_size(600.0, 400.0)
+    .resizable(true)
+    .position(x as f64, y as f64)
+    .decorations(true)
+    .always_on_top(false)
+    .skip_taskbar(false)
+    .build() {
+        Ok(_) => Ok("console".to_string()),
+        Err(e) => Err(format!("Failed to create console window: {:?}", e))
+    }
+}
+
 // Tauri 命令：打开AI标签页窗口
 #[tauri::command]
 async fn open_ai_tab(
@@ -1355,6 +1405,7 @@ fn main() {
             icon_mouse_up,
             icon_click,
             app_exit,
+            open_console_window,
             open_ai_window,
             open_ai_tab,
             simulate_paste,

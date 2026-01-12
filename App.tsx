@@ -154,29 +154,45 @@ const App: React.FC = () => {
         return;
       }
 
-      // 创建新窗口
-      const { WebviewWindow } = await import('@tauri-apps/api/window');
-      const { appWindow } = await import('@tauri-apps/api/window');
-      
-      // 获取主窗口位置，在新窗口位置附近打开
-      const position = await appWindow.outerPosition();
-      
-      const consoleWindow = new WebviewWindow('console', {
-        url: '/console.html',
-        title: '错误日志控制台',
-        width: 1000,
-        height: 700,
-        minWidth: 600,
-        minHeight: 400,
-        resizable: true,
-        x: position.x + 50,
-        y: position.y + 50,
-        decorations: true,
-        alwaysOnTop: false,
-        skipTaskbar: false,
-      });
-
-      consoleWindowRef.current = consoleWindow;
+      // 使用 Tauri 命令打开控制台窗口（在 Rust 端正确处理 URL）
+      const { invoke } = await import('@tauri-apps/api/tauri');
+      try {
+        const windowLabel = await invoke('open_console_window');
+        consoleWindowRef.current = windowLabel;
+      } catch (error) {
+        console.error('打开控制台窗口失败:', error);
+        // 降级方案：尝试使用 WebviewWindow
+        try {
+          const { WebviewWindow } = await import('@tauri-apps/api/window');
+          const { appWindow } = await import('@tauri-apps/api/window');
+          const position = await appWindow.outerPosition();
+          
+          const isDev = import.meta.env.DEV;
+          const consoleUrl = isDev 
+            ? 'http://localhost:3000/console.html'
+            : 'console.html';
+          
+          const consoleWindow = new WebviewWindow('console', {
+            url: consoleUrl,
+            title: '错误日志控制台',
+            width: 1000,
+            height: 700,
+            minWidth: 600,
+            minHeight: 400,
+            resizable: true,
+            x: position.x + 50,
+            y: position.y + 50,
+            decorations: true,
+            alwaysOnTop: false,
+            skipTaskbar: false,
+          });
+          consoleWindowRef.current = consoleWindow;
+        } catch (fallbackError) {
+          console.error('降级方案也失败:', fallbackError);
+          // 最后降级：使用浏览器新标签页
+          window.open('/console.html', '_blank', 'width=1000,height=700');
+        }
+      }
     } catch (error) {
       console.error('打开控制台窗口失败:', error);
       // 降级方案：使用新标签页

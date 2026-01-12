@@ -4,7 +4,7 @@
  */
 
 const GITHUB_REPO = 'uckkk/arthub';
-const CURRENT_VERSION = '1.0.0'; // 需与 tauri.conf.json 中的版本保持一致
+const CURRENT_VERSION = '1.0.1'; // 需与 tauri.conf.json 中的版本保持一致
 
 interface ReleaseInfo {
   version: string;

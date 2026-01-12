@@ -3,7 +3,7 @@
   "description": "ArtHub - 游戏美术工作台",
   "author": "ArtHub Team",
   "private": true,
-  "version": "1.0.0",
+  "version": "1.0.1",
   "type": "module",
   "scripts": {
     "dev": "vite",
