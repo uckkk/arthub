@@ -1054,8 +1054,18 @@ const PathManager: React.FC = () => {
             <p className="text-[#666666] mb-6">点击"添加路径"开始管理你的目录，或直接拖入应用快捷方式（.lnk）或可执行文件（.exe）</p>
           </div>
         ) : (
-          <div className="space-y-4">
-            {groupOrder.map(groupName => {
+          <div 
+            className="space-y-4"
+            onDragOver={(e) => {
+              // 允许分组拖拽到空白区域
+              if (draggedGroup) {
+                e.preventDefault();
+                e.stopPropagation();
+                e.dataTransfer.dropEffect = 'move';
+              }
+            }}
+          >
+            {groupOrder.map((groupName, groupIndex) => {
               if (!groupedPaths[groupName]) return null;
               
               return (
@@ -1067,6 +1077,8 @@ const PathManager: React.FC = () => {
                       handleDragStartGroup(groupName, e);
                     }}
                     onDragOver={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
                       handleDragOverGroup(groupName, e);
                     }}
                     onDrop={(e) => {
@@ -1074,7 +1086,9 @@ const PathManager: React.FC = () => {
                       e.stopPropagation();
                       handleDropGroup(groupName, e);
                     }}
-                    onDragEnd={handleDragEnd}
+                    onDragEnd={(e) => {
+                      handleDragEnd();
+                    }}
                     onClick={(e) => {
                       // 如果正在拖拽，不触发折叠/展开
                       if (isDragging || draggedGroup) {
