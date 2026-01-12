@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, lazy, Suspense } from 'react';
 import { 
   Type, Menu, User, Settings, 
-  Image, Video, Mic, Box, Code, Star, HardDrive
+  Code, HardDrive
 } from 'lucide-react';
 import { getStorageConfig, saveStorageConfig } from './services/fileStorageService';
 import { getUserInfo, clearUserInfo, UserInfo } from './services/userAuthService';
@@ -32,16 +32,6 @@ const LoadingPlaceholder = () => (
 
 // 定义菜单项
 const createMenuGroups = (): MenuGroup[] => [
-  {
-    title: '生成类型',
-    items: [
-      { id: 'favorites', label: '使用案例', icon: Star },
-      { id: 'ai', label: '图像', icon: Image },
-      { id: 'video', label: '视频', icon: Video },
-      { id: 'audio', label: '音频', icon: Mic },
-      { id: '3d', label: '3D模型', icon: Box },
-    ],
-  },
   {
     title: '工具',
     items: [
@@ -128,15 +118,8 @@ const App: React.FC = () => {
 
   // 处理菜单选择
   const handleMenuSelect = (id: string) => {
-    // 将多个 ID 映射到实际的标签
+    // 将菜单 ID 映射到实际的标签
     const tabMapping: Record<string, string> = {
-      'home': 'home',
-      'all': 'ai',
-      'favorites': 'ai',
-      'ai': 'ai',
-      'video': 'ai',
-      'audio': 'ai',
-      '3d': 'ai',
       'naming': 'naming',
       'paths': 'paths',
       'api': 'ai',
