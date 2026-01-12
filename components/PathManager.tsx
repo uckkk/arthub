@@ -162,6 +162,29 @@ const PathManager: React.FC = () => {
     setIsDraggingOver(false);
 
     try {
+      // 辅助函数：从路径字符串中提取并检查是否是应用文件
+      const checkAndHandleAppFile = async (filePath: string): Promise<boolean> => {
+        if (!filePath) return false;
+        
+        // 统一路径分隔符并清理
+        let cleanPath = filePath.trim().replace(/\//g, '\\');
+        
+        // 优先检查是否是应用文件（.exe, .lnk）- 必须在判断URL之前
+        if (isAppFile(cleanPath)) {
+          const appInfo = await handleDroppedAppFile(cleanPath);
+          if (appInfo) {
+            setDraggedPath({ 
+              path: appInfo.path, 
+              name: appInfo.name, 
+              type: 'app' 
+            });
+            setShowDragModal(true);
+            return true;
+          }
+        }
+        return false;
+      };
+
       // 首先检查是否是文件拖拽（优先级最高）
       const files = e.dataTransfer.files;
       if (files && files.length > 0) {
@@ -172,24 +195,8 @@ const PathManager: React.FC = () => {
         const fileName = file.name.toLowerCase();
         
         // 优先检查是否是应用文件（通过扩展名判断）
-        if (isAppFile(fileName) || isAppFile(filePath)) {
-          // 在 Tauri 环境中，尝试获取完整路径
-          let fullPath = filePath;
-          if (isTauriEnvironment() && !fullPath.match(/^[A-Za-z]:/) && !fullPath.startsWith('/')) {
-            // 如果路径不完整，尝试使用文件名（用户需要手动输入完整路径）
-            fullPath = filePath;
-          }
-          
-          const appInfo = await handleDroppedAppFile(fullPath);
-          if (appInfo) {
-            setDraggedPath({ 
-              path: appInfo.path, 
-              name: appInfo.name, 
-              type: 'app' 
-            });
-            setShowDragModal(true);
-            return;
-          }
+        if (await checkAndHandleAppFile(filePath) || await checkAndHandleAppFile(fileName)) {
+          return;
         }
         
         // 如果不是应用文件，尝试作为普通路径处理
@@ -201,11 +208,12 @@ const PathManager: React.FC = () => {
       
       // 尝试获取拖拽的文本（可能是URL或路径）
       // 注意：在 Windows 上拖拽文件时，可能会同时有 files 和 text/uri-list
+      // 在Windows上，快捷方式(.lnk)可能只出现在text/uri-list中
       const textUriList = e.dataTransfer.getData('text/uri-list');
       const textPlain = e.dataTransfer.getData('text/plain');
       const text = textPlain || e.dataTransfer.getData('text');
       
-      // 优先处理 text/uri-list（Windows 文件拖拽常用）
+      // 优先处理 text/uri-list（Windows 文件拖拽常用，特别是.lnk快捷方式）
       if (textUriList) {
         // 检查是否是文件路径（file:// 协议）
         if (textUriList.startsWith('file://')) {
@@ -221,17 +229,8 @@ const PathManager: React.FC = () => {
           filePath = filePath.replace(/\//g, '\\');
           
           // 优先检查是否是应用文件（.exe, .lnk）- 必须在判断URL之前
-          if (isAppFile(filePath)) {
-            const appInfo = await handleDroppedAppFile(filePath);
-            if (appInfo) {
-              setDraggedPath({ 
-                path: appInfo.path, 
-                name: appInfo.name, 
-                type: 'app' 
-              });
-              setShowDragModal(true);
-              return;
-            }
+          if (await checkAndHandleAppFile(filePath)) {
+            return;
           }
           // 本地文件路径（非应用文件）
           await handleDroppedPath(filePath, 'local');
@@ -247,17 +246,8 @@ const PathManager: React.FC = () => {
       // 处理 text/plain 数据
       if (text) {
         // 优先检查是否是应用文件路径（.exe, .lnk）
-        if (isAppFile(text)) {
-          const appInfo = await handleDroppedAppFile(text);
-          if (appInfo) {
-            setDraggedPath({ 
-              path: appInfo.path, 
-              name: appInfo.name, 
-              type: 'app' 
-            });
-            setShowDragModal(true);
-            return;
-          }
+        if (await checkAndHandleAppFile(text)) {
+          return;
         }
 
         // 判断是URL还是路径
@@ -715,42 +705,57 @@ const PathManager: React.FC = () => {
     e.preventDefault();
     e.stopPropagation();
     
-    if (draggedItem) {
-      const sourceGroup = draggedItem.group || '默认分组';
-      
-      if (!groupOrder.includes(targetGroup)) {
-        setGroupOrder([...groupOrder, targetGroup]);
-      }
-      
-      const updatedPaths = paths.map(p => {
-        if (p.id === draggedItem.id) {
-          return { ...p, group: targetGroup };
-        }
-        return p;
-      });
-      
-      const targetGroupItems = updatedPaths.filter(p => (p.group || '默认分组') === targetGroup);
-      const otherItems = updatedPaths.filter(p => (p.group || '默认分组') !== targetGroup);
-      
-      const draggedItemUpdated = updatedPaths.find(p => p.id === draggedItem.id)!;
-      const currentIndex = targetGroupItems.findIndex(p => p.id === draggedItem.id);
-      
-      if (currentIndex >= 0) {
-        targetGroupItems.splice(currentIndex, 1);
-      } else {
-        const sourceGroupItems = otherItems.filter(p => (p.group || '默认分组') === sourceGroup);
-        const remainingItems = otherItems.filter(p => (p.group || '默认分组') !== sourceGroup);
-        const itemIndex = sourceGroupItems.findIndex(p => p.id === draggedItem.id);
-        if (itemIndex >= 0) {
-          sourceGroupItems.splice(itemIndex, 1);
-        }
-        otherItems.splice(0, otherItems.length, ...remainingItems, ...sourceGroupItems);
-      }
-      
-      targetGroupItems.splice(Math.min(targetIndex, targetGroupItems.length), 0, draggedItemUpdated);
-      
-      setPaths([...otherItems, ...targetGroupItems]);
+    if (!draggedItem) {
+      setDraggedItem(null);
+      setDragOverGroup(null);
+      setDragOverIndex(null);
+      return;
     }
+
+    const sourceGroup = draggedItem.group || '默认分组';
+    
+    // 确保目标分组在分组顺序中
+    if (!groupOrder.includes(targetGroup)) {
+      setGroupOrder([...groupOrder, targetGroup]);
+    }
+    
+    // 更新路径项的分组
+    const updatedPaths = paths.map(p => {
+      if (p.id === draggedItem.id) {
+        return { ...p, group: targetGroup };
+      }
+      return p;
+    });
+    
+    // 分离目标分组和其他分组的项
+    const targetGroupItems = updatedPaths.filter(p => (p.group || '默认分组') === targetGroup);
+    const otherItems = updatedPaths.filter(p => (p.group || '默认分组') !== targetGroup);
+    
+    // 获取被拖拽的项（已更新分组）
+    const draggedItemUpdated = updatedPaths.find(p => p.id === draggedItem.id)!;
+    
+    // 如果项已经在目标分组中，从目标分组中移除
+    const currentIndexInTarget = targetGroupItems.findIndex(p => p.id === draggedItem.id);
+    if (currentIndexInTarget >= 0) {
+      targetGroupItems.splice(currentIndexInTarget, 1);
+    } else {
+      // 如果项不在目标分组中，从源分组中移除
+      const sourceGroupItems = otherItems.filter(p => (p.group || '默认分组') === sourceGroup);
+      const remainingItems = otherItems.filter(p => (p.group || '默认分组') !== sourceGroup);
+      const itemIndexInSource = sourceGroupItems.findIndex(p => p.id === draggedItem.id);
+      if (itemIndexInSource >= 0) {
+        sourceGroupItems.splice(itemIndexInSource, 1);
+      }
+      // 重新组合其他项
+      otherItems.splice(0, otherItems.length, ...remainingItems, ...sourceGroupItems);
+    }
+    
+    // 将项插入到目标位置
+    const insertIndex = Math.min(targetIndex, targetGroupItems.length);
+    targetGroupItems.splice(insertIndex, 0, draggedItemUpdated);
+    
+    // 更新路径列表
+    setPaths([...otherItems, ...targetGroupItems]);
     
     setDraggedItem(null);
     setDragOverGroup(null);
@@ -1001,9 +1006,12 @@ const PathManager: React.FC = () => {
                           onDragEnd={handleDragEnd}
                           onClick={(e) => {
                             // 如果正在拖拽，不触发跳转
-                            if (!draggedItem) {
-                              handleJump(item);
-                            }
+                            // 使用setTimeout确保拖拽状态已清除
+                            setTimeout(() => {
+                              if (!draggedItem) {
+                                handleJump(item);
+                              }
+                            }, 50);
                           }}
                           className={`
                             group relative
