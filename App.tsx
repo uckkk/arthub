@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, lazy, Suspense } from 'react';
 import { 
   Type, Menu, User, Settings, 
-  Code, HardDrive
+  Code, HardDrive, Home
 } from 'lucide-react';
 import { getStorageConfig, saveStorageConfig } from './services/fileStorageService';
 import { getUserInfo, clearUserInfo, UserInfo } from './services/userAuthService';
@@ -33,6 +33,11 @@ const LoadingPlaceholder = () => (
 // 定义菜单项
 const createMenuGroups = (): MenuGroup[] => [
   {
+    items: [
+      { id: 'home', label: '首页', icon: Home },
+    ],
+  },
+  {
     title: '工具',
     items: [
       { id: 'naming', label: '资产命名', icon: Type },
@@ -43,8 +48,8 @@ const createMenuGroups = (): MenuGroup[] => [
 ];
 
 const App: React.FC = () => {
-  // 默认显示AI工具
-  const [activeTab, setActiveTab] = useState<string>('ai');
+  // 默认显示首页
+  const [activeTab, setActiveTab] = useState<string>('home');
   const [isUserVerified, setIsUserVerified] = useState(false);
   const [userInfo, setUserInfo] = useState<UserInfo | null>(null);
   const [showSettings, setShowSettings] = useState(false);
@@ -120,11 +125,12 @@ const App: React.FC = () => {
   const handleMenuSelect = (id: string) => {
     // 将菜单 ID 映射到实际的标签
     const tabMapping: Record<string, string> = {
+      'home': 'home',
       'naming': 'naming',
       'paths': 'paths',
       'api': 'ai',
     };
-    setActiveTab(tabMapping[id] || 'ai');
+    setActiveTab(tabMapping[id] || 'home');
   };
 
   if (!isUserVerified) {
