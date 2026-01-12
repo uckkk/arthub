@@ -468,14 +468,17 @@ async fn open_console_window(app: tauri::AppHandle) -> Result<String, String> {
         WindowUrl::External("http://localhost:3000/console.html".parse().unwrap())
     } else {
         // 生产模式：使用 App URL，Tauri 会从 dist 目录加载
+        // 使用相对路径，确保文件能被正确加载
         WindowUrl::App("console.html".into())
     };
+    
+    println!("Creating console window with URL: {:?}", console_url);
     
     // 创建控制台窗口
     match tauri::WindowBuilder::new(
         &app,
         "console",
-        console_url
+        console_url.clone()
     )
     .title("错误日志控制台")
     .inner_size(1000.0, 700.0)
@@ -486,8 +489,18 @@ async fn open_console_window(app: tauri::AppHandle) -> Result<String, String> {
     .always_on_top(false)
     .skip_taskbar(false)
     .build() {
-        Ok(_) => Ok("console".to_string()),
-        Err(e) => Err(format!("Failed to create console window: {:?}", e))
+        Ok(window) => {
+            println!("Console window created successfully");
+            // 确保窗口显示
+            let _ = window.show();
+            let _ = window.set_focus();
+            Ok("console".to_string())
+        },
+        Err(e) => {
+            eprintln!("Failed to create console window: {:?}", e);
+            eprintln!("Console URL was: {:?}", console_url);
+            Err(format!("Failed to create console window: {:?}", e))
+        }
     }
 }
 
