@@ -116,6 +116,124 @@ class ConsoleService {
 
     // 拦截 XMLHttpRequest 错误
     this.interceptXHR();
+
+    // 启动布局问题检测（仅在开发模式或启用时）
+    if (process.env.NODE_ENV === 'development' || this.shouldDetectLayoutIssues()) {
+      this.startLayoutDetection();
+    }
+  }
+
+  // 检查是否应该检测布局问题
+  private shouldDetectLayoutIssues(): boolean {
+    try {
+      return localStorage.getItem('arthub_detect_layout_issues') === 'true';
+    } catch {
+      return false;
+    }
+  }
+
+  // 启动布局问题检测
+  private startLayoutDetection() {
+    // 延迟启动，等待页面加载完成
+    setTimeout(() => {
+      this.detectLayoutIssues();
+      // 定期检测（每5秒）
+      setInterval(() => {
+        this.detectLayoutIssues();
+      }, 5000);
+    }, 2000);
+  }
+
+  // 检测布局问题
+  private detectLayoutIssues() {
+    try {
+      // 检测1: 滚动容器无法滚动的问题
+      const scrollContainers = document.querySelectorAll('[class*="overflow-y-auto"], [class*="overflow-auto"]');
+      scrollContainers.forEach((container) => {
+        const el = container as HTMLElement;
+        const hasOverflow = el.scrollHeight > el.clientHeight;
+        const canScroll = el.scrollHeight > el.clientHeight && 
+                         (el.scrollTop > 0 || el.scrollTop < el.scrollHeight - el.clientHeight - 1);
+        
+        // 如果内容超出但无法滚动，可能是布局问题
+        if (hasOverflow && el.scrollHeight > el.clientHeight + 10) {
+          // 检查父容器是否有高度约束
+          const parent = el.parentElement;
+          if (parent) {
+            const parentHeight = parent.clientHeight;
+            const elHeight = el.clientHeight;
+            
+            // 如果元素高度为0或非常小，可能是 flex 布局问题
+            if (elHeight < 10 && parentHeight > 100) {
+              this.addLog('warn', [
+                `[布局问题] 滚动容器高度异常`,
+                `元素: ${el.className || el.tagName}`,
+                `容器高度: ${elHeight}px`,
+                `父容器高度: ${parentHeight}px`,
+                `内容高度: ${el.scrollHeight}px`,
+                `建议: 检查是否需要添加 min-h-0 或 overflow-hidden 到父容器`,
+                { element: el, parent },
+              ]);
+            }
+          }
+        }
+      });
+
+      // 检测2: h-full 但高度为0的元素
+      const fullHeightElements = document.querySelectorAll('[class*="h-full"]');
+      fullHeightElements.forEach((el) => {
+        const element = el as HTMLElement;
+        const height = element.clientHeight;
+        const parent = element.parentElement;
+        
+        if (height === 0 && parent && parent.clientHeight > 0) {
+          // 检查是否是 flex 布局问题
+          const parentStyle = window.getComputedStyle(parent);
+          const isFlex = parentStyle.display === 'flex';
+          
+          if (isFlex) {
+            this.addLog('warn', [
+              `[布局问题] h-full 元素高度为0`,
+              `元素: ${element.className || element.tagName}`,
+              `父容器: ${parent.className || parent.tagName}`,
+              `父容器高度: ${parent.clientHeight}px`,
+              `父容器 display: ${parentStyle.display}`,
+              `建议: 检查父容器是否需要 overflow-hidden 或 flex-1`,
+              { element, parent },
+            ]);
+          }
+        }
+      });
+
+      // 检测3: flex-1 但高度异常的容器
+      const flex1Elements = document.querySelectorAll('[class*="flex-1"]');
+      flex1Elements.forEach((el) => {
+        const element = el as HTMLElement;
+        const parent = element.parentElement;
+        
+        if (parent) {
+          const parentStyle = window.getComputedStyle(parent);
+          const isFlex = parentStyle.display === 'flex';
+          const elementHeight = element.clientHeight;
+          const parentHeight = parent.clientHeight;
+          
+          // 如果父容器是 flex，但 flex-1 元素高度为0
+          if (isFlex && elementHeight === 0 && parentHeight > 0) {
+            const hasMinH0 = element.className.includes('min-h-0');
+            this.addLog('warn', [
+              `[布局问题] flex-1 元素高度为0`,
+              `元素: ${element.className || element.tagName}`,
+              `父容器高度: ${parentHeight}px`,
+              `是否有 min-h-0: ${hasMinH0}`,
+              `建议: ${hasMinH0 ? '检查父容器布局' : '尝试添加 min-h-0 类'}`,
+              { element, parent },
+            ]);
+          }
+        }
+      });
+    } catch (error) {
+      // 静默失败，不影响应用运行
+    }
   }
 
   // 获取调用栈信息
