@@ -367,7 +367,7 @@ fn icon_click(app: tauri::AppHandle) {
         if *window_visible && was_visible_before && focus_success {
             // 窗口之前就是可见的，且聚焦成功，则隐藏（切换行为）
             println!("Main window was visible, hiding...");
-            let _ = main_window.hide();
+                let _ = main_window.hide();
             *window_visible = false;
         } else {
             // 窗口之前不可见，或者需要恢复，则显示

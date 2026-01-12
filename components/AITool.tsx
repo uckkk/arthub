@@ -628,29 +628,48 @@ const AITool: React.FC = () => {
   return (
     <div className="w-full h-full flex flex-col bg-[#0a0a0a]">
       {/* 顶部筛选栏 */}
-      <div className="flex items-center gap-4 p-6 border-b border-[#1a1a1a]">
-        <SearchBar
-          value={searchQuery}
-          onChange={setSearchQuery}
-          placeholder="搜索模板..."
-          className="w-80"
-        />
+      <div className="flex flex-col gap-4 p-6 border-b border-[#1a1a1a]">
+        {/* 第一行：搜索和排序 */}
+        <div className="flex items-center gap-4">
+          <SearchBar
+            value={searchQuery}
+            onChange={setSearchQuery}
+            placeholder="搜索模板..."
+            className="w-80"
+          />
+          
+          <div className="flex-1" />
+          
+          <FilterDropdown
+            label="排序"
+            options={SORT_OPTIONS}
+            value={sortBy}
+            onChange={setSortBy}
+          />
+        </div>
         
-        <FilterDropdown
-          label="分类"
-          options={CATEGORY_OPTIONS}
-          value={categoryFilter}
-          onChange={setCategoryFilter}
-        />
-        
-        <div className="flex-1" />
-        
-        <FilterDropdown
-          label="排序"
-          options={SORT_OPTIONS}
-          value={sortBy}
-          onChange={setSortBy}
-        />
+        {/* 第二行：分类标签 */}
+        <div className="flex items-center gap-2">
+          <span className="text-sm text-[#808080] font-medium mr-2">分类：</span>
+          <div className="flex flex-wrap gap-2">
+            {CATEGORY_OPTIONS.map((category) => (
+              <button
+                key={category.value}
+                onClick={() => setCategoryFilter(category.value)}
+                className={`
+                  inline-flex items-center px-3 py-1.5 rounded-md text-sm font-medium
+                  transition-all duration-150 cursor-pointer
+                  ${categoryFilter === category.value
+                    ? 'bg-blue-500/20 text-blue-400 border border-blue-500/50 shadow-sm'
+                    : 'bg-[#1a1a1a] text-[#808080] border border-[#2a2a2a] hover:border-[#3a3a3a] hover:text-[#a0a0a0] hover:bg-[#222222]'
+                  }
+                `}
+              >
+                {category.label}
+              </button>
+            ))}
+          </div>
+        </div>
         
         <button
           onClick={() => {
