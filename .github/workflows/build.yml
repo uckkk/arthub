@@ -67,7 +67,8 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: '20'
-          cache: 'npm'
+          # 禁用 npm 缓存，确保每次都是全新安装（可选，如果构建慢可以启用缓存）
+          # cache: 'npm'
 
       # 3. 安装 Rust
       - name: Setup Rust
@@ -78,6 +79,25 @@ jobs:
       # 4. 安装 npm 依赖
       - name: Install npm dependencies
         run: npm ci
+
+      # 4.5. 清理构建缓存（确保每次构建都是全新的）
+      - name: Clean build cache (Windows)
+        if: matrix.platform == 'windows-latest'
+        shell: pwsh
+        run: |
+          Write-Host "清理构建缓存..." -ForegroundColor Cyan
+          if (Test-Path dist) { Remove-Item -Recurse -Force dist; Write-Host "✓ 已清理 dist 目录" -ForegroundColor Green }
+          if (Test-Path node_modules\.vite) { Remove-Item -Recurse -Force node_modules\.vite; Write-Host "✓ 已清理 Vite 缓存" -ForegroundColor Green }
+          Write-Host "清理完成！" -ForegroundColor Green
+
+      - name: Clean build cache (macOS/Linux)
+        if: startsWith(matrix.platform, 'macos') || startsWith(matrix.platform, 'ubuntu')
+        shell: bash
+        run: |
+          echo "清理构建缓存..."
+          if [ -d "dist" ]; then rm -rf dist && echo "✓ 已清理 dist 目录"; fi
+          if [ -d "node_modules/.vite" ]; then rm -rf node_modules/.vite && echo "✓ 已清理 Vite 缓存"; fi
+          echo "清理完成！"
 
       # 5. 生成 macOS 图标
       - name: Generate macOS icons
@@ -122,9 +142,14 @@ jobs:
             fi
           fi
 
-      # 6. 构建前端
+      # 6. 构建前端（清理缓存后重新构建）
       - name: Build frontend
-        run: npm run build
+        run: |
+          echo "开始构建前端..."
+          echo "当前 Git commit: $(git rev-parse HEAD)"
+          echo "当前 Git 分支: $(git branch --show-current || echo 'detached')"
+          npm run build
+          echo "前端构建完成！"
 
       # 7. 构建 Tauri 应用
       - name: Build Tauri app
