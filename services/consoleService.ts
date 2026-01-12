@@ -32,34 +32,10 @@ class ConsoleService {
   }
 
   private interceptConsole() {
-    // 拦截 console.log
-    console.log = (...args: any[]) => {
-      this.addLog('log', args);
-      this.originalConsole.log(...args);
-    };
-
-    // 拦截 console.info
-    console.info = (...args: any[]) => {
-      this.addLog('info', args);
-      this.originalConsole.info(...args);
-    };
-
-    // 拦截 console.warn
-    console.warn = (...args: any[]) => {
-      this.addLog('warn', args);
-      this.originalConsole.warn(...args);
-    };
-
-    // 拦截 console.error
+    // 只拦截 console.error（报错日志）
     console.error = (...args: any[]) => {
       this.addLog('error', args);
       this.originalConsole.error(...args);
-    };
-
-    // 拦截 console.debug
-    console.debug = (...args: any[]) => {
-      this.addLog('debug', args);
-      this.originalConsole.debug(...args);
     };
 
     // 拦截未捕获的错误
