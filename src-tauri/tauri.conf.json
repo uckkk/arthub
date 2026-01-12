@@ -75,7 +75,7 @@
     },
     "bundle": {
       "active": true,
-      "targets": "all",
+      "targets": ["dmg", "nsis"],
       "identifier": "com.arthub.gameartist",
       "icon": [
         "icons/32x32.png",

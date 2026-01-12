@@ -133,14 +133,6 @@ jobs:
           args: --target ${{ matrix.target }}
 
       # 8. 上传构建产物
-      - name: Upload artifacts (Windows MSI)
-        if: matrix.platform == 'windows-latest'
-        uses: actions/upload-artifact@v4
-        with:
-          name: ArtHub-${{ matrix.name }}-MSI
-          path: src-tauri/target/${{ matrix.target }}/release/bundle/msi/*.msi
-          if-no-files-found: ignore
-
       - name: Upload artifacts (Windows EXE)
         if: matrix.platform == 'windows-latest'
         uses: actions/upload-artifact@v4
@@ -155,14 +147,6 @@ jobs:
         with:
           name: ArtHub-${{ matrix.name }}-DMG
           path: src-tauri/target/${{ matrix.target }}/release/bundle/dmg/*.dmg
-          if-no-files-found: ignore
-
-      - name: Upload artifacts (macOS App)
-        if: startsWith(matrix.platform, 'macos')
-        uses: actions/upload-artifact@v4
-        with:
-          name: ArtHub-${{ matrix.name }}-App
-          path: src-tauri/target/${{ matrix.target }}/release/bundle/macos/*.app
           if-no-files-found: ignore
 
   # 可选：自动发布到 GitHub Releases
@@ -185,7 +169,6 @@ jobs:
         with:
           draft: true
           files: |
-            artifacts/**/*.msi
             artifacts/**/*.exe
             artifacts/**/*.dmg
         env:
