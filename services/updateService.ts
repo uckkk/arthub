@@ -71,12 +71,13 @@ export const checkForUpdates = async (): Promise<UpdateCheckResult> => {
 
     if (!response.ok) {
       if (response.status === 404) {
+        // 404 是正常情况（没有发布版本），静默处理，不记录错误
         return {
           hasUpdate: false,
           currentVersion: CURRENT_VERSION,
           latestVersion: null,
           releaseInfo: null,
-          error: '暂无发布版本',
+          error: null, // 改为 null，表示没有错误
         };
       }
       throw new Error(`GitHub API 错误: ${response.status}`);

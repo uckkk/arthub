@@ -138,6 +138,7 @@ class ConsoleService {
     const originalFetch = window.fetch;
     window.fetch = async (...args: Parameters<typeof fetch>) => {
       const [url, options] = args;
+      const urlString = typeof url === 'string' ? url : url.toString();
       const startTime = Date.now();
       
       try {
@@ -146,14 +147,21 @@ class ConsoleService {
         
         // 记录失败的请求
         if (!response.ok) {
-          const errorText = await response.clone().text().catch(() => '无法读取响应');
-          this.addLog('error', [
-            `[网络请求失败] ${response.status} ${response.statusText}`,
-            `URL: ${url}`,
-            `方法: ${options?.method || 'GET'}`,
-            `耗时: ${duration}ms`,
-            { response: errorText.substring(0, 500) }, // 限制长度
-          ]);
+          // 检查是否是预期的错误（应该被静默处理）
+          const isExpectedError = this.isExpectedError(urlString, response.status);
+          
+          if (!isExpectedError) {
+            const errorText = await response.clone().text().catch(() => '无法读取响应');
+            // 404 和 403 通常是预期的错误，记录为警告
+            const logType = (response.status === 404 || response.status === 403) ? 'warn' : 'error';
+            this.addLog(logType, [
+              `[网络请求失败] ${response.status} ${response.statusText}`,
+              `URL: ${urlString}`,
+              `方法: ${options?.method || 'GET'}`,
+              `耗时: ${duration}ms`,
+              { response: errorText.substring(0, 500) }, // 限制长度
+            ]);
+          }
         }
         
         return response;
@@ -161,7 +169,7 @@ class ConsoleService {
         const duration = Date.now() - startTime;
         this.addLog('error', [
           `[网络请求异常]`,
-          `URL: ${url}`,
+          `URL: ${urlString}`,
           `方法: ${options?.method || 'GET'}`,
           `耗时: ${duration}ms`,
           `错误: ${error.message || String(error)}`,
@@ -170,6 +178,19 @@ class ConsoleService {
         throw error;
       }
     };
+  }
+
+  // 判断是否是预期的错误（应该被静默处理）
+  private isExpectedError(url: string, status: number): boolean {
+    // GitHub API 的 404 通常是预期的（没有 release、仓库不存在等）
+    if (status === 404 && url.includes('api.github.com')) {
+      return true;
+    }
+    
+    // 可以添加更多预期的错误模式
+    // 例如：检查更新的 API、健康检查端点等
+    
+    return false;
   }
 
   // 拦截 XMLHttpRequest
