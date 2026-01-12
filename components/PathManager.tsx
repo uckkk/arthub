@@ -923,6 +923,62 @@ const PathManager: React.FC = () => {
     setDragOverGroup(null);
   };
 
+  // 拖拽分组到指定分组之前
+  const handleDropGroupBefore = (targetGroup: string) => {
+    if (!draggedGroup || draggedGroup === targetGroup) {
+      setDraggedGroup(null);
+      setDragOverGroup(null);
+      return;
+    }
+    
+    // 确保分组顺序数组包含所有分组
+    const allGroups = Array.from(new Set([...groupOrder, ...Object.keys(groupedPaths)]));
+    const newOrder = [...allGroups];
+    const draggedIndex = newOrder.indexOf(draggedGroup);
+    const targetIndex = newOrder.indexOf(targetGroup);
+    
+    if (draggedIndex >= 0 && targetIndex >= 0) {
+      // 移除被拖拽的分组
+      newOrder.splice(draggedIndex, 1);
+      // 计算新的目标索引
+      const newTargetIndex = draggedIndex < targetIndex ? targetIndex - 1 : targetIndex;
+      // 插入到目标位置之前
+      newOrder.splice(newTargetIndex, 0, draggedGroup);
+      setGroupOrder(newOrder);
+    }
+    
+    setDraggedGroup(null);
+    setDragOverGroup(null);
+  };
+
+  // 拖拽分组到指定分组之后
+  const handleDropGroupAfter = (targetGroup: string) => {
+    if (!draggedGroup || draggedGroup === targetGroup) {
+      setDraggedGroup(null);
+      setDragOverGroup(null);
+      return;
+    }
+    
+    // 确保分组顺序数组包含所有分组
+    const allGroups = Array.from(new Set([...groupOrder, ...Object.keys(groupedPaths)]));
+    const newOrder = [...allGroups];
+    const draggedIndex = newOrder.indexOf(draggedGroup);
+    const targetIndex = newOrder.indexOf(targetGroup);
+    
+    if (draggedIndex >= 0 && targetIndex >= 0) {
+      // 移除被拖拽的分组
+      newOrder.splice(draggedIndex, 1);
+      // 计算新的目标索引（插入到目标之后）
+      const newTargetIndex = draggedIndex < targetIndex ? targetIndex : targetIndex + 1;
+      // 插入到目标位置之后
+      newOrder.splice(newTargetIndex, 0, draggedGroup);
+      setGroupOrder(newOrder);
+    }
+    
+    setDraggedGroup(null);
+    setDragOverGroup(null);
+  };
+
   const handleDragEnd = () => {
     // 延迟清除状态，确保拖拽事件完全结束
     setTimeout(() => {
