@@ -19,6 +19,14 @@ const isTauriEnvironment = (): boolean => {
   return typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
 };
 
+// 从文件路径提取应用名称
+const extractAppName = (filePath: string): string => {
+  const fileName = filePath.split(/[/\\]/).pop() || '';
+  // 移除扩展名
+  const nameWithoutExt = fileName.replace(/\.(lnk|exe|app)$/i, '');
+  return nameWithoutExt || '未知应用';
+};
+
 const PathManager: React.FC = () => {
   const [paths, setPaths] = useState<PathItem[]>([]);
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -232,43 +240,86 @@ const PathManager: React.FC = () => {
           } catch {
             // 解码失败，使用原始路径
           }
-          // 统一路径分隔符
+          // 统一路径分隔符为 Windows 格式
           filePath = filePath.replace(/\//g, '\\');
           
+          // 调试日志
+          console.log('[PathManager] 检测到 file:// 路径:', filePath);
+          
           // 优先检查是否是应用文件（.exe, .lnk）- 必须在判断URL之前
-          if (await checkAndHandleAppFile(filePath)) {
+          // 检查路径是否以 .lnk 或 .exe 结尾（不区分大小写）
+          const lowerPath = filePath.toLowerCase();
+          if (lowerPath.endsWith('.lnk') || lowerPath.endsWith('.exe')) {
+            console.log('[PathManager] file:// 识别为应用文件:', filePath);
+            // 直接处理为应用文件，不进行URL检查
+            if (await checkAndHandleAppFile(filePath)) {
+              return;
+            }
+            // 如果处理失败，仍然作为应用文件类型添加
+            setDraggedPath({ 
+              path: filePath, 
+              name: extractAppName(filePath), 
+              type: 'app' 
+            });
+            setShowDragModal(true);
             return;
           }
+          
           // 本地文件路径（非应用文件）
+          console.log('[PathManager] file:// 识别为本地路径:', filePath);
           await handleDroppedPath(filePath, 'local');
           return;
         }
         // 检查是否是网页 URL（只有明确的 http:// 或 https:// 才识别为网页）
         if (textUriList.startsWith('http://') || textUriList.startsWith('https://')) {
+          console.log('[PathManager] 识别为网页 URL:', textUriList);
           await handleDroppedPath(textUriList, 'web');
+          return;
+        }
+        // 如果textUriList不是file://也不是http://，可能是其他协议，检查是否包含路径分隔符
+        if (textUriList.includes('\\') || textUriList.includes('/')) {
+          // 可能是本地路径，优先检查是否是应用文件
+          const lowerUri = textUriList.toLowerCase();
+          if (lowerUri.endsWith('.lnk') || lowerUri.endsWith('.exe')) {
+            if (await checkAndHandleAppFile(textUriList)) {
+              return;
+            }
+          }
+          // 作为本地路径处理
+          await handleDroppedPath(textUriList, 'local');
           return;
         }
       }
       
       // 处理 text/plain 数据
       if (text) {
+        console.log('[PathManager] 处理 text/plain 数据:', text);
+        
         // 优先检查是否是应用文件路径（.exe, .lnk）
-        if (await checkAndHandleAppFile(text)) {
-          return;
+        const lowerText = text.toLowerCase();
+        if (lowerText.endsWith('.lnk') || lowerText.endsWith('.exe')) {
+          console.log('[PathManager] text/plain 识别为应用文件:', text);
+          if (await checkAndHandleAppFile(text)) {
+            return;
+          }
         }
 
         // 判断是URL还是路径
         // 只有明确的 http:// 或 https:// 开头才识别为网页
         if (text.startsWith('http://') || text.startsWith('https://')) {
+          console.log('[PathManager] text/plain 识别为网页 URL:', text);
           await handleDroppedPath(text, 'web');
         } else if (text.startsWith('\\\\') || text.startsWith('//')) {
           // 网络路径
+          console.log('[PathManager] text/plain 识别为网络路径:', text);
           await handleDroppedPath(text, 'network');
         } else if (text.match(/^[A-Za-z]:[\\/]/) || text.startsWith('/') || text.match(/^[A-Za-z]:$/)) {
           // 本地路径（Windows 路径如 C:\ 或 C:/，或 Unix 路径）
+          console.log('[PathManager] text/plain 识别为本地路径:', text);
           await handleDroppedPath(text, 'local');
         } else if (text.includes('\\') || text.includes('/')) {
           // 包含路径分隔符，优先识别为本地路径
+          console.log('[PathManager] text/plain 包含路径分隔符，识别为本地路径:', text);
           await handleDroppedPath(text, 'local');
         } else {
           // 其他情况，尝试作为URL处理（但只有明确的协议才识别为网页）
@@ -276,13 +327,16 @@ const PathManager: React.FC = () => {
             const url = new URL(text);
             // 只有 http 或 https 协议才识别为网页
             if (url.protocol === 'http:' || url.protocol === 'https:') {
+              console.log('[PathManager] text/plain URL 解析为网页:', text);
               await handleDroppedPath(text, 'web');
             } else {
               // 其他协议（如 file://）识别为本地路径
+              console.log('[PathManager] text/plain URL 其他协议，识别为本地路径:', text);
               await handleDroppedPath(text, 'local');
             }
           } catch {
             // 不是有效的URL，识别为本地路径
+            console.log('[PathManager] text/plain 不是有效URL，识别为本地路径:', text);
             await handleDroppedPath(text, 'local');
           }
         }
@@ -503,30 +557,43 @@ const PathManager: React.FC = () => {
   };
 
   const handleJump = async (item: PathItem) => {
+    console.log('[PathManager] handleJump 被调用:', item.type, item.path);
+    
     try {
-      if (item.type === 'app') {
+      // 首先检查路径本身是否是应用文件（无论类型是什么）
+      const lowerPath = item.path.toLowerCase();
+      const isAppFilePath = lowerPath.endsWith('.lnk') || lowerPath.endsWith('.exe');
+      
+      if (item.type === 'app' || isAppFilePath) {
         // 应用类型：启动应用（.exe 或 .lnk）
+        // 即使类型不是'app'，但路径是应用文件，也启动应用
+        console.log('[PathManager] 启动应用:', item.path);
         try {
           await launchApp(item.path);
+          return;
         } catch (error) {
           console.error('启动应用失败:', error);
           copyToClipboard(item.path, item.id);
+          return;
         }
-      } else if (item.type === 'web') {
-        // 网页类型：直接在新标签页打开（只有明确的 URL 类型才打开网页）
-        window.open(item.path, '_blank');
-      } else if (item.type === 'local') {
-        // 本地路径：必须直接打开本地的资源管理器，不打开网页
-        // 检查是否是应用文件（.exe, .lnk），如果是则启动应用
-        if (isAppFile(item.path)) {
-          try {
-            await launchApp(item.path);
-            return;
-          } catch (error) {
-            console.error('启动应用失败:', error);
-          }
+      }
+      
+      // 只有明确的 web 类型才打开网页
+      if (item.type === 'web') {
+        // 再次确认路径确实是URL（防止误判）
+        if (item.path.startsWith('http://') || item.path.startsWith('https://')) {
+          console.log('[PathManager] 打开网页:', item.path);
+          window.open(item.path, '_blank');
+          return;
+        } else {
+          // 如果类型是web但路径不是URL，按本地路径处理
+          console.warn('[PathManager] 类型是web但路径不是URL，按本地路径处理:', item.path);
         }
-        // 否则打开资源管理器
+      }
+      
+      // 本地路径和网络路径：必须直接打开本地的资源管理器，绝不打开网页
+      if (item.type === 'local' || item.type === 'network') {
+        console.log('[PathManager] 打开资源管理器/网络路径:', item.path);
         try {
           if (isTauriEnvironment()) {
             const { open } = await import('@tauri-apps/api/shell');
@@ -534,7 +601,9 @@ const PathManager: React.FC = () => {
             await open(item.path);
           } else {
             // 非 Tauri 环境，使用 file:// 协议打开本地路径
-            const pathToOpen = 'file:///' + item.path.replace(/\\/g, '/');
+            const pathToOpen = item.type === 'network' 
+              ? 'file:' + item.path.replace(/\\/g, '/')
+              : 'file:///' + item.path.replace(/\\/g, '/');
             window.open(pathToOpen, '_blank');
           }
         } catch (shellError) {
@@ -542,19 +611,27 @@ const PathManager: React.FC = () => {
           // 如果失败，复制到剪贴板
           copyToClipboard(item.path, item.id);
         }
-      } else if (item.type === 'network') {
-        // 局域网路径：使用 Tauri shell.open 打开网络资源管理器
+        return;
+      }
+      
+      // 如果类型未知或为空，根据路径判断
+      // 但绝不打开网页，除非路径明确是http://或https://
+      if (item.path.startsWith('http://') || item.path.startsWith('https://')) {
+        console.log('[PathManager] 未知类型但路径是URL，打开网页:', item.path);
+        window.open(item.path, '_blank');
+      } else {
+        // 其他情况都按本地路径处理
+        console.log('[PathManager] 未知类型，按本地路径处理:', item.path);
         try {
           if (isTauriEnvironment()) {
             const { open } = await import('@tauri-apps/api/shell');
             await open(item.path);
           } else {
-            // 非 Tauri 环境，使用 file:// 协议
-            const pathToOpen = 'file:' + item.path.replace(/\\/g, '/');
+            const pathToOpen = 'file:///' + item.path.replace(/\\/g, '/');
             window.open(pathToOpen, '_blank');
           }
         } catch (shellError) {
-          console.warn('打开网络路径失败:', shellError);
+          console.warn('打开路径失败:', shellError);
           copyToClipboard(item.path, item.id);
         }
       }
@@ -712,7 +789,11 @@ const PathManager: React.FC = () => {
     e.preventDefault();
     e.stopPropagation();
     
-    if (!draggedItem) {
+    // 检查是否有拖拽的路径项
+    const types = Array.from(e.dataTransfer.types);
+    const isPathItemDrag = draggedItem || types.includes('application/x-path-item');
+    
+    if (!isPathItemDrag || !draggedItem) {
       setDraggedItem(null);
       setDragOverGroup(null);
       setDragOverIndex(null);
@@ -726,43 +807,50 @@ const PathManager: React.FC = () => {
       setGroupOrder([...groupOrder, targetGroup]);
     }
     
-    // 更新路径项的分组
-    const updatedPaths = paths.map(p => {
-      if (p.id === draggedItem.id) {
-        return { ...p, group: targetGroup };
-      }
-      return p;
-    });
+    // 更新路径项的分组和位置
+    const updatedPaths = [...paths];
     
-    // 分离目标分组和其他分组的项
-    const targetGroupItems = updatedPaths.filter(p => (p.group || '默认分组') === targetGroup);
-    const otherItems = updatedPaths.filter(p => (p.group || '默认分组') !== targetGroup);
-    
-    // 获取被拖拽的项（已更新分组）
-    const draggedItemUpdated = updatedPaths.find(p => p.id === draggedItem.id)!;
-    
-    // 如果项已经在目标分组中，从目标分组中移除
-    const currentIndexInTarget = targetGroupItems.findIndex(p => p.id === draggedItem.id);
-    if (currentIndexInTarget >= 0) {
-      targetGroupItems.splice(currentIndexInTarget, 1);
-    } else {
-      // 如果项不在目标分组中，从源分组中移除
-      const sourceGroupItems = otherItems.filter(p => (p.group || '默认分组') === sourceGroup);
-      const remainingItems = otherItems.filter(p => (p.group || '默认分组') !== sourceGroup);
-      const itemIndexInSource = sourceGroupItems.findIndex(p => p.id === draggedItem.id);
-      if (itemIndexInSource >= 0) {
-        sourceGroupItems.splice(itemIndexInSource, 1);
-      }
-      // 重新组合其他项
-      otherItems.splice(0, otherItems.length, ...remainingItems, ...sourceGroupItems);
+    // 找到被拖拽的项在原数组中的索引
+    const draggedIndex = updatedPaths.findIndex(p => p.id === draggedItem.id);
+    if (draggedIndex === -1) {
+      setDraggedItem(null);
+      setDragOverGroup(null);
+      setDragOverIndex(null);
+      return;
     }
     
-    // 将项插入到目标位置
-    const insertIndex = Math.min(targetIndex, targetGroupItems.length);
-    targetGroupItems.splice(insertIndex, 0, draggedItemUpdated);
+    // 移除被拖拽的项
+    const [draggedItemData] = updatedPaths.splice(draggedIndex, 1);
+    
+    // 更新分组
+    draggedItemData.group = targetGroup;
+    
+    // 找到目标分组中所有项的索引
+    const targetGroupIndices: number[] = [];
+    updatedPaths.forEach((p, idx) => {
+      if ((p.group || '默认分组') === targetGroup) {
+        targetGroupIndices.push(idx);
+      }
+    });
+    
+    // 计算插入位置
+    let insertIndex: number;
+    if (targetGroupIndices.length === 0) {
+      // 目标分组为空，插入到末尾
+      insertIndex = updatedPaths.length;
+    } else {
+      // 找到目标索引对应的实际位置
+      const targetActualIndex = targetIndex < targetGroupIndices.length 
+        ? targetGroupIndices[targetIndex]
+        : targetGroupIndices[targetGroupIndices.length - 1] + 1;
+      insertIndex = targetActualIndex;
+    }
+    
+    // 插入到目标位置
+    updatedPaths.splice(insertIndex, 0, draggedItemData);
     
     // 更新路径列表
-    setPaths([...otherItems, ...targetGroupItems]);
+    setPaths(updatedPaths);
     
     setDraggedItem(null);
     setDragOverGroup(null);
@@ -773,16 +861,38 @@ const PathManager: React.FC = () => {
     e.preventDefault();
     e.stopPropagation();
     
-    if (draggedGroup && draggedGroup !== targetGroup) {
+    // 检查是否是分组拖拽
+    const types = Array.from(e.dataTransfer.types);
+    const isGroupDrag = draggedGroup || types.includes('application/x-group');
+    
+    if (!isGroupDrag || !draggedGroup) {
+      setDraggedGroup(null);
+      setDragOverGroup(null);
+      return;
+    }
+    
+    if (draggedGroup !== targetGroup) {
       // 确保分组顺序数组包含所有分组
       const allGroups = Array.from(new Set([...groupOrder, ...Object.keys(groupedPaths)]));
       const newOrder = [...allGroups];
       const draggedIndex = newOrder.indexOf(draggedGroup);
       const targetIndex = newOrder.indexOf(targetGroup);
       
-      if (draggedIndex >= 0 && targetIndex >= 0) {
+      if (draggedIndex >= 0 && targetIndex >= 0 && draggedIndex !== targetIndex) {
+        // 移除被拖拽的分组
         newOrder.splice(draggedIndex, 1);
-        newOrder.splice(targetIndex, 0, draggedGroup);
+        // 插入到目标位置
+        const finalTargetIndex = draggedIndex < targetIndex ? targetIndex : targetIndex;
+        newOrder.splice(finalTargetIndex, 0, draggedGroup);
+        setGroupOrder(newOrder);
+      } else if (draggedIndex === -1) {
+        // 如果分组不在顺序中，添加到目标位置之前
+        const targetIndex = newOrder.indexOf(targetGroup);
+        if (targetIndex >= 0) {
+          newOrder.splice(targetIndex, 0, draggedGroup);
+        } else {
+          newOrder.push(draggedGroup);
+        }
         setGroupOrder(newOrder);
       }
     }

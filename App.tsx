@@ -333,6 +333,7 @@ const App: React.FC = () => {
           </main>
 
           {/* 设置面板 - 始终渲染以静默加载数据，但只在 showSettings 为 true 时显示 */}
+          {/* 即使isOpen=false也渲染，这样组件会挂载并执行useEffect加载数据 */}
           <Suspense fallback={null}>
             <SettingsPanel 
               isOpen={showSettings} 

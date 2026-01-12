@@ -36,26 +36,48 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ isOpen, onClose, triggerR
   // 静默加载设置数据（即使面板未打开也加载）
   useEffect(() => {
     // 立即加载所有设置数据
-    setGeminiKey(localStorage.getItem('arthub_gemini_key') || '');
-    setBaiduAppId(localStorage.getItem('arthub_baidu_appid') || '');
-    setBaiduSecret(localStorage.getItem('arthub_baidu_secret') || '');
+    const loadSettings = () => {
+      setGeminiKey(localStorage.getItem('arthub_gemini_key') || '');
+      setBaiduAppId(localStorage.getItem('arthub_baidu_appid') || '');
+      setBaiduSecret(localStorage.getItem('arthub_baidu_secret') || '');
+      
+      const config = getStorageConfig();
+      setStorageEnabled(config.enabled);
+      setSelectedDirectory(config.directoryPath);
+      setLastSyncTime(config.lastSyncTime);
+      
+      if (config.enabled) {
+        getSavedStoragePath().then(path => {
+          if (path) {
+            setSelectedDirectory(path);
+          }
+        }).catch(() => {});
+      }
+    };
     
-    const config = getStorageConfig();
-    setStorageEnabled(config.enabled);
-    setSelectedDirectory(config.directoryPath);
-    setLastSyncTime(config.lastSyncTime);
+    // 立即加载
+    loadSettings();
     
-    if (config.enabled) {
-      getSavedStoragePath().catch(() => {});
-    }
+    // 监听localStorage变化，实时更新
+    const handleStorageChange = () => {
+      loadSettings();
+    };
+    window.addEventListener('storage', handleStorageChange);
     
     // 定期更新同步时间
     const interval = setInterval(() => {
       const currentConfig = getStorageConfig();
       setLastSyncTime(currentConfig.lastSyncTime);
-    }, 60000);
+      // 同时更新其他设置
+      setGeminiKey(localStorage.getItem('arthub_gemini_key') || '');
+      setBaiduAppId(localStorage.getItem('arthub_baidu_appid') || '');
+      setBaiduSecret(localStorage.getItem('arthub_baidu_secret') || '');
+    }, 1000); // 每秒更新一次，确保数据同步
     
-    return () => clearInterval(interval);
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener('storage', handleStorageChange);
+    };
   }, []); // 组件挂载时立即加载，不依赖 isOpen
 
   const showStatus = (type: 'success' | 'error' | 'info', text: string) => {
@@ -138,7 +160,12 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ isOpen, onClose, triggerR
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, [isOpen, onClose, triggerRef]);
 
-  if (!isOpen) return null;
+  // 即使面板未打开也渲染（静默加载数据），但隐藏显示
+  // 这样useEffect会在组件挂载时立即执行，加载数据
+  if (!isOpen) {
+    // 返回一个隐藏的div，保持组件挂载状态
+    return <div style={{ display: 'none' }} />;
+  }
 
   return (
     <>
