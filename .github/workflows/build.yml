@@ -21,7 +21,7 @@ on:
           - 'false'
           - 'true'
       platform:
-        description: '构建平台（选择 all 会构建所有平台，成本较高）'
+        description: '构建平台（windows=仅Windows, macos=仅macOS, all=所有平台）'
         required: false
         default: 'windows'
         type: choice
@@ -52,25 +52,24 @@ jobs:
             target: x86_64-pc-windows-msvc
             name: Windows
             build_platform: windows
-            should_build: ${{ !github.event.inputs.platform || github.event.inputs.platform == 'all' || github.event.inputs.platform == 'windows' }}
           
           # macOS Intel 构建（macOS runner 成本较高，约 $0.08/分钟）
           - platform: macos-latest
             target: x86_64-apple-darwin
             name: macOS-Intel
             build_platform: macos
-            should_build: ${{ !github.event.inputs.platform || github.event.inputs.platform == 'all' || github.event.inputs.platform == 'macos' }}
           
           # macOS Apple Silicon 构建
           - platform: macos-latest
             target: aarch64-apple-darwin
             name: macOS-ARM
             build_platform: macos
-            should_build: ${{ !github.event.inputs.platform || github.event.inputs.platform == 'all' || github.event.inputs.platform == 'macos' }}
 
     runs-on: ${{ matrix.platform }}
     # 根据选择的平台过滤构建任务
-    if: matrix.should_build == 'true'
+    # 如果没有选择平台或选择 all，构建所有平台
+    # 如果选择了特定平台，只构建匹配的平台
+    if: ${{ !github.event.inputs.platform || github.event.inputs.platform == 'all' || (github.event.inputs.platform == 'windows' && matrix.build_platform == 'windows') || (github.event.inputs.platform == 'macos' && matrix.build_platform == 'macos') }}
     
     steps:
       # 1. 检出代码
