@@ -6,6 +6,7 @@ import {
 import { getStorageConfig, saveStorageConfig } from './services/fileStorageService';
 import { getUserInfo, clearUserInfo, UserInfo } from './services/userAuthService';
 import { initAutoSync } from './utils/autoSync';
+import { preloadAllData } from './services/preloadService';
 import { ToastProvider } from './components/Toast';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { Sidebar, MenuGroup } from './components/ui';
@@ -19,6 +20,62 @@ const UserAuthModal = lazy(() => import('./components/UserAuthModal'));
 const AITool = lazy(() => import('./components/AITool'));
 const UpdateNotification = lazy(() => import('./components/UpdateNotification'));
 const HomePage = lazy(() => import('./components/HomePage'));
+
+// 预加载所有组件的函数
+const preloadComponents = () => {
+  // 使用 requestIdleCallback 在浏览器空闲时预加载，如果浏览器不支持则使用 setTimeout
+  const schedulePreload = (callback: () => void, delay = 0) => {
+    if (delay > 0) {
+      setTimeout(() => {
+        if ('requestIdleCallback' in window) {
+          requestIdleCallback(callback, { timeout: 2000 });
+        } else {
+          callback();
+        }
+      }, delay);
+    } else {
+      if ('requestIdleCallback' in window) {
+        requestIdleCallback(callback, { timeout: 2000 });
+      } else {
+        setTimeout(callback, 100);
+      }
+    }
+  };
+
+  // 立即预加载主要页面组件（高优先级）
+  schedulePreload(() => {
+    import('./components/HomePage').catch(() => {});
+  }, 0);
+
+  schedulePreload(() => {
+    import('./components/AITool').catch(() => {});
+  }, 50);
+
+  schedulePreload(() => {
+    import('./components/PathManager').catch(() => {});
+  }, 100);
+
+  schedulePreload(() => {
+    import('./components/NamingTool/index').catch(() => {});
+  }, 150);
+
+  schedulePreload(() => {
+    import('./components/NamingHistory').catch(() => {});
+  }, 200);
+
+  // 预加载设置面板（提前加载，因为用户可能会快速打开设置）
+  schedulePreload(() => {
+    import('./components/SettingsPanel').catch(() => {});
+    // 同时预加载设置面板依赖的服务
+    import('./services/fileStorageService').catch(() => {});
+    import('./services/translationService').catch(() => {});
+  }, 250);
+
+  // 预加载其他辅助组件（延迟更久，优先级较低）
+  schedulePreload(() => {
+    import('./components/UpdateNotification').catch(() => {});
+  }, 600);
+};
 
 // 加载占位符组件
 const LoadingPlaceholder = () => (
@@ -92,6 +149,9 @@ const App: React.FC = () => {
     if (savedUserInfo) {
       setIsUserVerified(true);
       setUserInfo(savedUserInfo);
+      // 用户验证通过后，开始预加载所有组件和数据
+      preloadComponents();
+      preloadAllData();
     }
     initAutoSync();
   }, []);
@@ -109,6 +169,9 @@ const App: React.FC = () => {
     if (savedUserInfo) {
       setUserInfo(savedUserInfo);
     }
+    // 用户验证通过后，开始预加载所有组件和数据
+    preloadComponents();
+    preloadAllData();
   };
 
   const handleLogout = () => {

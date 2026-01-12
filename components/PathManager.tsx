@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { 
   Folder, Globe, Server, ExternalLink, Copy, Trash2, Plus, 
-  AlertCircle, Check, ChevronDown, ChevronRight, Pencil, Star, X, Save, Upload, Play
+  AlertCircle, Check, ChevronDown, ChevronRight, Pencil, Star, X, Save, Upload, Play, Grid3X3, Settings
 } from 'lucide-react';
 import { PathItem, PathType } from '../types';
 import { MOCK_PATHS } from '../constants';
@@ -54,6 +54,15 @@ const PathManager: React.FC = () => {
   
   // 分组顺序状态
   const [groupOrder, setGroupOrder] = useState<string[]>([]);
+  
+  // 列数设置状态
+  const [columnsPerRow, setColumnsPerRow] = useState<number>(() => {
+    const saved = localStorage.getItem('arthub_path_columns');
+    return saved ? parseInt(saved, 10) : 1;
+  });
+  
+  // 显示列数设置菜单
+  const [showColumnsMenu, setShowColumnsMenu] = useState(false);
 
   // 从本地存储加载或使用 Mock 数据
   useEffect(() => {
@@ -343,6 +352,11 @@ const PathManager: React.FC = () => {
       localStorage.setItem('arthub_group_order', JSON.stringify(groupOrder));
     }
   }, [groupOrder]);
+  
+  // 保存列数设置
+  useEffect(() => {
+    localStorage.setItem('arthub_path_columns', columnsPerRow.toString());
+  }, [columnsPerRow]);
 
   const handleAddPath = () => {
     if (!newName || !newPath) return;
@@ -567,6 +581,8 @@ const PathManager: React.FC = () => {
   const handleDragStart = (item: PathItem, e: React.DragEvent) => {
     e.dataTransfer.effectAllowed = 'move';
     setDraggedItem(item);
+    // 设置拖拽数据，支持跨组拖动
+    e.dataTransfer.setData('text/plain', item.id);
   };
 
   const handleDragStartGroup = (groupName: string, e: React.DragEvent) => {
@@ -577,9 +593,12 @@ const PathManager: React.FC = () => {
 
   const handleDragOver = (groupName: string, index: number, e: React.DragEvent) => {
     e.preventDefault();
+    e.stopPropagation();
     e.dataTransfer.dropEffect = 'move';
-    setDragOverGroup(groupName);
-    setDragOverIndex(index);
+    if (draggedItem) {
+      setDragOverGroup(groupName);
+      setDragOverIndex(index);
+    }
   };
 
   const handleDragOverGroup = (groupName: string, e: React.DragEvent) => {
@@ -695,18 +714,76 @@ const PathManager: React.FC = () => {
             <p className="text-sm text-[#666666]">管理本地、网络和网页路径</p>
           </div>
         </div>
-        <button 
-          onClick={() => setIsModalOpen(true)}
-          className="
-            flex items-center gap-2 px-4 py-2.5
-            bg-blue-600 hover:bg-blue-700
-            text-white font-medium rounded-lg
-            transition-colors duration-150
-          "
-        >
-          <Plus size={18} />
-          添加路径
-        </button>
+        <div className="flex items-center gap-2">
+          {/* 列数设置按钮 */}
+          <div className="relative">
+            <button
+              onClick={() => setShowColumnsMenu(!showColumnsMenu)}
+              className="
+                flex items-center gap-2 px-4 py-2.5
+                bg-[#1a1a1a] hover:bg-[#222222]
+                text-[#a0a0a0] hover:text-white
+                border border-[#2a2a2a] hover:border-[#3a3a3a]
+                rounded-lg
+                transition-colors duration-150
+              "
+              title="设置列数"
+            >
+              <Grid3X3 size={18} />
+              <span className="text-sm">{columnsPerRow}列</span>
+            </button>
+            
+            {/* 列数选择菜单 */}
+            {showColumnsMenu && (
+              <>
+                <div 
+                  className="fixed inset-0 z-40" 
+                  onClick={() => setShowColumnsMenu(false)}
+                />
+                <div className="
+                  absolute top-full right-0 mt-2 z-50
+                  bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg
+                  shadow-lg shadow-black/50
+                  min-w-[120px]
+                  overflow-hidden
+                ">
+                  {[1, 2, 3, 4].map(cols => (
+                    <button
+                      key={cols}
+                      onClick={() => {
+                        setColumnsPerRow(cols);
+                        setShowColumnsMenu(false);
+                      }}
+                      className={`
+                        w-full px-4 py-2.5 text-left text-sm
+                        transition-colors duration-150
+                        ${columnsPerRow === cols
+                          ? 'bg-blue-500/20 text-blue-400'
+                          : 'text-[#a0a0a0] hover:bg-[#222222] hover:text-white'
+                        }
+                      `}
+                    >
+                      {cols} 列
+                    </button>
+                  ))}
+                </div>
+              </>
+            )}
+          </div>
+          
+          <button 
+            onClick={() => setIsModalOpen(true)}
+            className="
+              flex items-center gap-2 px-4 py-2.5
+              bg-blue-600 hover:bg-blue-700
+              text-white font-medium rounded-lg
+              transition-colors duration-150
+            "
+          >
+            <Plus size={18} />
+            添加路径
+          </button>
+        </div>
       </div>
 
       {/* 拖拽区域 */}
@@ -738,18 +815,25 @@ const PathManager: React.FC = () => {
                   {/* 分组标题 */}
                   <div 
                     draggable
-                    onDragStart={(e) => handleDragStartGroup(groupName, e)}
-                    onDragOver={(e) => handleDragOverGroup(groupName, e)}
+                    onDragStart={(e) => {
+                      handleDragStartGroup(groupName, e);
+                      e.dataTransfer.effectAllowed = 'move';
+                    }}
+                    onDragOver={(e) => {
+                      e.preventDefault();
+                      handleDragOverGroup(groupName, e);
+                      e.dataTransfer.dropEffect = 'move';
+                    }}
                     onDrop={(e) => handleDropGroup(groupName, e)}
                     onDragEnd={handleDragEnd}
                     onClick={() => toggleGroup(groupName)}
                     className={`
                       flex items-center gap-2 px-2 py-1.5 rounded-lg
                       cursor-move select-none
-                      text-[#808080] hover:text-white
-                      transition-colors duration-150
-                      ${draggedGroup === groupName ? 'opacity-50' : ''}
-                      ${dragOverGroup === groupName && draggedGroup ? 'border border-blue-500' : ''}
+                      text-[#808080] hover:text-white hover:bg-[#1a1a1a]
+                      transition-all duration-150
+                      ${draggedGroup === groupName ? 'opacity-50 scale-95' : ''}
+                      ${dragOverGroup === groupName && draggedGroup && draggedGroup !== groupName ? 'border-2 border-blue-500 bg-blue-500/10' : ''}
                     `}
                   >
                     {collapsedGroups.has(groupName) 
@@ -770,7 +854,12 @@ const PathManager: React.FC = () => {
                   {/* 分组内容 */}
                   {!collapsedGroups.has(groupName) && (
                     <div 
-                      className="space-y-1.5 ml-2"
+                      className={`ml-2 ${
+                        columnsPerRow === 1 
+                          ? 'space-y-1.5' 
+                          : 'grid gap-3'
+                      }`}
+                      style={columnsPerRow > 1 ? { gridTemplateColumns: `repeat(${columnsPerRow}, minmax(0, 1fr))` } : undefined}
                       onDragOver={(e) => {
                         e.preventDefault();
                         e.dataTransfer.dropEffect = 'move';
@@ -779,7 +868,11 @@ const PathManager: React.FC = () => {
                           setDragOverIndex(groupedPaths[groupName].length);
                         }
                       }}
-                      onDrop={(e) => handleDrop(groupName, groupedPaths[groupName].length, e)}
+                      onDrop={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        handleDrop(groupName, groupedPaths[groupName].length, e);
+                      }}
                     >
                       {groupedPaths[groupName].map((item, index) => (
                         <div 
@@ -800,7 +893,9 @@ const PathManager: React.FC = () => {
                             transition-all duration-150
                             ${draggedItem?.id === item.id ? 'opacity-50' : ''}
                             ${dragOverGroup === groupName && dragOverIndex === index ? 'border-blue-500' : ''}
+                            ${columnsPerRow > 1 ? 'min-w-0' : ''}
                           `}
+                          style={columnsPerRow > 1 ? {} : undefined}
                         >
                           {/* 复制成功反馈 */}
                           {copiedId === item.id && (
@@ -826,12 +921,12 @@ const PathManager: React.FC = () => {
                           </div>
 
                           {/* 内容 */}
-                          <div className="flex-1 min-w-0">
+                          <div className={`flex-1 min-w-0 ${columnsPerRow > 1 ? 'overflow-hidden' : ''}`}>
                             <h3 className="
                               text-[14px] font-medium text-white
                               group-hover:text-blue-400
                               truncate transition-colors
-                            ">
+                            " title={item.name}>
                               {item.name}
                             </h3>
                             <p className="
