@@ -206,13 +206,36 @@ const PathManager: React.FC = () => {
         // 尝试从浏览器地址栏拖拽
         const url = e.dataTransfer.getData('text/uri-list') || e.dataTransfer.getData('URL');
         if (url) {
-          await handleDroppedPath(url, 'web');
-          return;
+          // 检查是否是文件路径（file:// 协议）
+          if (url.startsWith('file://')) {
+            // 提取文件路径
+            const filePath = url.replace(/^file:\/\/\//, '').replace(/\//g, '\\');
+            // 检查是否是应用文件
+            if (isAppFile(filePath)) {
+              const appInfo = await handleDroppedAppFile(filePath);
+              if (appInfo) {
+                setDraggedPath({ 
+                  path: appInfo.path, 
+                  name: appInfo.name, 
+                  type: 'app' 
+                });
+                setShowDragModal(true);
+                return;
+              }
+            }
+            await handleDroppedPath(filePath, 'local');
+            return;
+          }
+          // 只有明确的 http:// 或 https:// 才识别为网页
+          if (url.startsWith('http://') || url.startsWith('https://')) {
+            await handleDroppedPath(url, 'web');
+            return;
+          }
         }
         return;
       }
 
-      // 检查是否是应用文件路径
+      // 优先检查是否是应用文件路径（.exe, .lnk）
       if (isAppFile(text)) {
         const appInfo = await handleDroppedAppFile(text);
         if (appInfo) {
@@ -227,19 +250,31 @@ const PathManager: React.FC = () => {
       }
 
       // 判断是URL还是路径
+      // 只有明确的 http:// 或 https:// 开头才识别为网页
       if (text.startsWith('http://') || text.startsWith('https://')) {
         await handleDroppedPath(text, 'web');
       } else if (text.startsWith('\\\\') || text.startsWith('//')) {
+        // 网络路径
         await handleDroppedPath(text, 'network');
-      } else if (text.match(/^[A-Za-z]:\\/) || text.startsWith('/')) {
+      } else if (text.match(/^[A-Za-z]:[\\/]/) || text.startsWith('/') || text.match(/^[A-Za-z]:$/)) {
+        // 本地路径（Windows 路径如 C:\ 或 C:/，或 Unix 路径）
+        await handleDroppedPath(text, 'local');
+      } else if (text.includes('\\') || text.includes('/')) {
+        // 包含路径分隔符，优先识别为本地路径
         await handleDroppedPath(text, 'local');
       } else {
-        // 尝试作为URL处理
+        // 其他情况，尝试作为URL处理（但只有明确的协议才识别为网页）
         try {
-          new URL(text);
-          await handleDroppedPath(text, 'web');
+          const url = new URL(text);
+          // 只有 http 或 https 协议才识别为网页
+          if (url.protocol === 'http:' || url.protocol === 'https:') {
+            await handleDroppedPath(text, 'web');
+          } else {
+            // 其他协议（如 file://）识别为本地路径
+            await handleDroppedPath(text, 'local');
+          }
         } catch {
-          // 不是有效的URL，尝试作为路径
+          // 不是有效的URL，识别为本地路径
           await handleDroppedPath(text, 'local');
         }
       }
@@ -463,8 +498,29 @@ const PathManager: React.FC = () => {
       } else if (item.type === 'web') {
         // 网页类型：直接在新标签页打开
         window.open(item.path, '_blank');
-      } else if (item.type === 'local' || item.type === 'network') {
-        // 本地和局域网路径：使用 Tauri shell.open 打开资源管理器
+      } else if (item.type === 'local') {
+        // 本地路径：使用 Tauri shell.open 打开资源管理器（文件夹）或文件
+        try {
+          const { open } = await import('@tauri-apps/api/shell');
+          // shell.open 会自动识别是文件夹还是文件，并打开相应的资源管理器或应用
+          await open(item.path);
+        } catch (shellError) {
+          console.warn('shell.open failed, trying file:// protocol:', shellError);
+          // 如果 shell.open 失败，尝试 file:// 协议
+          try {
+            const pathToOpen = 'file:///' + item.path.replace(/\\/g, '/');
+            const w = window.open(pathToOpen);
+            setTimeout(() => {
+              if (!w || w.closed) {
+                copyToClipboard(item.path, item.id);
+              }
+            }, 100);
+          } catch {
+            copyToClipboard(item.path, item.id);
+          }
+        }
+      } else if (item.type === 'network') {
+        // 局域网路径：使用 Tauri shell.open 打开网络资源管理器
         try {
           const { open } = await import('@tauri-apps/api/shell');
           await open(item.path);
@@ -472,12 +528,7 @@ const PathManager: React.FC = () => {
           console.warn('shell.open failed, trying file:// protocol:', shellError);
           // 如果 shell.open 失败，尝试 file:// 协议
           try {
-            let pathToOpen = item.path;
-            if (item.type === 'local') {
-              pathToOpen = 'file:///' + item.path.replace(/\\/g, '/');
-            } else {
-              pathToOpen = 'file:' + item.path.replace(/\\/g, '/');
-            }
+            const pathToOpen = 'file:' + item.path.replace(/\\/g, '/');
             const w = window.open(pathToOpen);
             setTimeout(() => {
               if (!w || w.closed) {
