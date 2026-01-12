@@ -1140,20 +1140,26 @@ const PathManager: React.FC = () => {
                   key={groupName} 
                   className="space-y-2"
                   onDragOver={(e) => {
-                    // 允许分组拖拽到分组容器
-                    if (draggedGroup && draggedGroup !== groupName) {
-                      e.preventDefault();
-                      e.stopPropagation();
-                      e.dataTransfer.dropEffect = 'move';
-                      // 判断是拖到当前分组上方还是下方
-                      const rect = e.currentTarget.getBoundingClientRect();
-                      const midpoint = rect.top + rect.height / 2;
-                      if (e.clientY < midpoint) {
-                        // 拖到上方，插入到当前分组之前
-                        setDragOverGroup(groupName);
-                      } else {
-                        // 拖到下方，插入到当前分组之后
-                        setDragOverGroup(null);
+                    // 检查是否是分组拖拽
+                    const types = Array.from(e.dataTransfer.types);
+                    const isGroupDrag = types.includes('application/x-group') || draggedGroup;
+                    
+                    if (isGroupDrag) {
+                      const currentDraggedGroup = draggedGroup;
+                      if (currentDraggedGroup && currentDraggedGroup !== groupName) {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        e.dataTransfer.dropEffect = 'move';
+                        // 判断是拖到当前分组上方还是下方
+                        const rect = e.currentTarget.getBoundingClientRect();
+                        const midpoint = rect.top + rect.height / 2;
+                        if (e.clientY < midpoint) {
+                          // 拖到上方，插入到当前分组之前
+                          setDragOverGroup(groupName);
+                        } else {
+                          // 拖到下方，插入到当前分组之后
+                          setDragOverGroup(null);
+                        }
                       }
                     }
                   }}
