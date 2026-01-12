@@ -70,8 +70,8 @@ jobs:
     if: |
       github.event.inputs.platform == '' || 
       github.event.inputs.platform == 'all' || 
-      github.event.inputs.platform == matrix.build_platform ||
-      (github.event.inputs.platform == 'macos' && matrix.build_platform == 'macos')
+      github.event.inputs.platform == '${{ matrix.build_platform }}' ||
+      (github.event.inputs.platform == 'macos' && '${{ matrix.build_platform }}' == 'macos')
     
     steps:
       # 1. 检出代码
