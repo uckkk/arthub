@@ -10,6 +10,7 @@ import { preloadAllData } from './services/preloadService';
 import { ToastProvider } from './components/Toast';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { Sidebar, MenuGroup } from './components/ui';
+import { CURRENT_VERSION } from './services/updateService';
 
 // 懒加载组件以提升初始加载性能
 const PathManager = lazy(() => import('./components/PathManager'));
@@ -323,6 +324,13 @@ const App: React.FC = () => {
                     </button>
                   </div>
                 )}
+
+                {/* 版本号 - 显示在左下角，很弱的样式 */}
+                <div className="px-3 py-1.5 border-t border-[#1a1a1a] mt-2">
+                  <span className="text-[10px] text-[#333333] font-mono">
+                    v{CURRENT_VERSION}
+                  </span>
+                </div>
               </div>
             }
           />
