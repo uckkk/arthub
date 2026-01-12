@@ -3,6 +3,7 @@ import { Copy, Trash2, History as HistoryIcon, FileText, X, RefreshCw, Check } f
 import { NamingHistoryItem } from '../types';
 import { loadNotesFromLocalStorage, saveNotesToLocalStorage, saveNotesToFile, loadNotesFromFile } from '../services/notesService';
 import { getStorageConfig } from '../services/fileStorageService';
+import { useMiddleMouseScroll } from '../utils/useMiddleMouseScroll';
 
 // URL正则表达式
 const URL_REGEX = /(https?:\/\/[^\s]+)/g;
@@ -22,6 +23,12 @@ const NamingHistory: React.FC = () => {
   const notesTextareaRef = useRef<HTMLDivElement>(null);
   const currentPresetIdRef = useRef<string>(currentPresetId);
   const isInitialLoadRef = useRef<boolean>(true);
+  
+  // 鼠标中键滚动
+  const scrollContainerRef = useMiddleMouseScroll<HTMLDivElement>({
+    enabled: true,
+    scrollSpeed: 1.5
+  });
   
   // 容器高度调整
   const [topHeight, setTopHeight] = useState<number>(50);
@@ -466,7 +473,11 @@ const NamingHistory: React.FC = () => {
             </button>
           )}
         </div>
-        <div className="flex-1 overflow-y-auto p-4">
+        <div 
+          ref={scrollContainerRef}
+          className="flex-1 overflow-y-auto p-4"
+          style={{ scrollbarWidth: 'thin' }}
+        >
           {history.length === 0 ? (
             <div className="flex flex-col items-center justify-center h-full text-center">
               <div className="w-12 h-12 rounded-full bg-[#1a1a1a] flex items-center justify-center mb-3">

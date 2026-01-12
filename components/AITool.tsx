@@ -11,6 +11,7 @@ import {
   isFavorited as checkIsFavorited,
   FavoriteItem 
 } from '../services/favoritesService';
+import { useMiddleMouseScroll } from '../utils/useMiddleMouseScroll';
 
 interface AIConfig {
   id: string;
@@ -76,6 +77,12 @@ const AITool: React.FC = () => {
 
   const jsonFileInputRef = useRef<HTMLInputElement>(null);
   const thumbnailInputRef = useRef<HTMLInputElement>(null);
+  
+  // 鼠标中键滚动
+  const scrollContainerRef = useMiddleMouseScroll<HTMLDivElement>({
+    enabled: true,
+    scrollSpeed: 1.5
+  });
 
   const STORAGE_KEY = 'arthub_ai_configs';
 
@@ -689,7 +696,11 @@ const AITool: React.FC = () => {
       </div>
 
       {/* 内容区域 */}
-      <div className="flex-1 overflow-auto p-6">
+      <div 
+        ref={scrollContainerRef}
+        className="flex-1 overflow-auto p-6"
+        style={{ scrollbarWidth: 'thin' }}
+      >
         {filteredConfigs.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-full text-center">
             <div className="w-20 h-20 rounded-full bg-[#1a1a1a] flex items-center justify-center mb-4">

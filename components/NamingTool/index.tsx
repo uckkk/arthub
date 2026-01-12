@@ -13,6 +13,7 @@ import { FormatSelector } from './FormatSelector';
 import DanmakuNamingTool from './DanmakuNamingTool';
 import TraditionalNamingTool from './TraditionalNamingTool';
 import DanmakuNamingRulesPanel from '../DanmakuNamingRulesPanel';
+import { useMiddleMouseScroll } from '../../utils/useMiddleMouseScroll';
 
 // 预设下拉框组件（与 FilterDropdown 样式一致）
 interface PresetDropdownProps {
@@ -125,6 +126,12 @@ const NamingTool: React.FC = () => {
 
   const [isLoadingPreset, setIsLoadingPreset] = useState(false);
   const [presetError, setPresetError] = useState<string>('');
+  
+  // 鼠标中键滚动
+  const scrollContainerRef = useMiddleMouseScroll<HTMLDivElement>({
+    enabled: true,
+    scrollSpeed: 1.5
+  });
   
   // 弹幕游戏专用状态
   const [danmakuResourceTypes, setDanmakuResourceTypes] = useState<DanmakuResourceType[]>([]);
@@ -272,7 +279,11 @@ const NamingTool: React.FC = () => {
       )}
 
       {/* 主内容区域 */}
-      <div className="flex-1 overflow-y-auto p-6">
+      <div 
+        ref={scrollContainerRef}
+        className="flex-1 overflow-y-auto p-6"
+        style={{ scrollbarWidth: 'thin' }}
+      >
         {isDanmaku ? (
           <DanmakuNamingTool
             resourceTypes={danmakuResourceTypes}

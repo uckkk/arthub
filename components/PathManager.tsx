@@ -12,6 +12,7 @@ import {
   FavoriteItem 
 } from '../services/favoritesService';
 import { handleDroppedAppFile, launchApp, isAppFile } from '../services/appService';
+import { useMiddleMouseScroll } from '../utils/useMiddleMouseScroll';
 
 // 检查是否在 Tauri 环境中
 const isTauriEnvironment = (): boolean => {
@@ -63,6 +64,12 @@ const PathManager: React.FC = () => {
   
   // 显示列数设置菜单
   const [showColumnsMenu, setShowColumnsMenu] = useState(false);
+  
+  // 鼠标中键滚动
+  const scrollContainerRef = useMiddleMouseScroll<HTMLDivElement>({
+    enabled: true,
+    scrollSpeed: 1.5
+  });
 
   // 从本地存储加载或使用 Mock 数据
   useEffect(() => {
@@ -900,6 +907,7 @@ const PathManager: React.FC = () => {
 
       {/* 拖拽区域 */}
       <div
+        ref={scrollContainerRef}
         onDragEnter={handleDragEnter}
         onDragLeave={handleDragLeave}
         onDragOver={handleDragOverCreatePath}
@@ -908,6 +916,7 @@ const PathManager: React.FC = () => {
           flex-1 overflow-y-auto p-6 transition-colors duration-200
           ${isDraggingOver ? 'bg-blue-500/10 border-2 border-dashed border-blue-500' : ''}
         `}
+        style={{ scrollbarWidth: 'thin' }}
       >
         {paths.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-full text-center">

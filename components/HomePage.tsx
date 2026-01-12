@@ -6,6 +6,7 @@ import {
 import { FavoriteItem, getAllFavorites, removeFavorite } from '../services/favoritesService';
 import { PathItem } from '../types';
 import { Tag } from './ui';
+import { useMiddleMouseScroll } from '../utils/useMiddleMouseScroll';
 
 const HomePage: React.FC = () => {
   const [favorites, setFavorites] = useState<FavoriteItem[]>([]);
@@ -149,7 +150,11 @@ const HomePage: React.FC = () => {
       </div>
 
       {/* 内容区域 */}
-      <div className="flex-1 overflow-y-auto p-6">
+      <div 
+        ref={scrollContainerRef}
+        className="flex-1 overflow-y-auto p-6"
+        style={{ scrollbarWidth: 'thin' }}
+      >
         {totalCount === 0 ? (
           <div className="flex flex-col items-center justify-center h-full text-center">
             <div className="w-20 h-20 rounded-full bg-[#1a1a1a] flex items-center justify-center mb-4">

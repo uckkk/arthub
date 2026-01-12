@@ -88,13 +88,41 @@ body, #root {
   background: #444444;
 }
 
-/* 对于可滚动元素，滚动条始终可见（当内容溢出时） */
+/* 对于可滚动元素，确保滚动条在内容溢出时显示 */
+.overflow-y-auto,
+.overflow-auto,
+.overflow-y-scroll,
+.overflow-scroll,
+.overflow-x-auto {
+  scrollbar-width: thin;
+  scrollbar-color: var(--comfy-border-light) transparent;
+}
+
+.overflow-y-auto::-webkit-scrollbar,
+.overflow-auto::-webkit-scrollbar,
+.overflow-y-scroll::-webkit-scrollbar,
+.overflow-scroll::-webkit-scrollbar,
+.overflow-x-auto::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+.overflow-y-auto::-webkit-scrollbar-track,
+.overflow-auto::-webkit-scrollbar-track,
+.overflow-y-scroll::-webkit-scrollbar-track,
+.overflow-scroll::-webkit-scrollbar-track,
+.overflow-x-auto::-webkit-scrollbar-track {
+  background: transparent;
+}
+
 .overflow-y-auto::-webkit-scrollbar-thumb,
 .overflow-auto::-webkit-scrollbar-thumb,
 .overflow-y-scroll::-webkit-scrollbar-thumb,
 .overflow-scroll::-webkit-scrollbar-thumb,
 .overflow-x-auto::-webkit-scrollbar-thumb {
   background: var(--comfy-border-light);
+  border-radius: 4px;
+  transition: background 0.2s ease;
 }
 
 .overflow-y-auto::-webkit-scrollbar-thumb:hover,
