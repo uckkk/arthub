@@ -11,10 +11,11 @@
     "preview": "vite preview",
     "clean": "powershell -Command \"if (Test-Path dist) { Remove-Item -Recurse -Force dist }; if (Test-Path node_modules\\.vite) { Remove-Item -Recurse -Force node_modules\\.vite }; Write-Host '清理完成！' -ForegroundColor Green\"",
     "clean:build": "npm run clean && npm run build",
+    "sync-version": "node scripts/sync-version.js",
     "tauri": "tauri",
-    "tauri:dev": "tauri dev",
-    "tauri:build": "tauri build",
-    "tauri:build:clean": "npm run clean && npm run tauri:build"
+    "tauri:dev": "npm run sync-version && tauri dev",
+    "tauri:build": "npm run sync-version && tauri build",
+    "tauri:build:clean": "npm run clean && npm run sync-version && npm run build && tauri build"
   },
   "dependencies": {
     "@google/genai": "^1.34.0",

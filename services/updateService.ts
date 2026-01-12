@@ -4,7 +4,26 @@
  */
 
 const GITHUB_REPO = 'uckkk/arthub';
-const CURRENT_VERSION = '1.0.1'; // 需与 tauri.conf.json 中的版本保持一致
+
+// 从 package.json 读取版本号（构建时会被替换）
+// 如果无法读取，使用默认值
+let CURRENT_VERSION = '1.0.1';
+
+// 尝试从环境变量或 package.json 读取版本号
+try {
+  // 优先使用构建时注入的版本号
+  if (typeof process !== 'undefined' && process.env?.APP_VERSION) {
+    CURRENT_VERSION = process.env.APP_VERSION;
+  } else {
+    // 尝试从 window 对象读取（构建时注入）
+    if (typeof window !== 'undefined' && (window as any).__APP_VERSION__) {
+      CURRENT_VERSION = (window as any).__APP_VERSION__;
+    }
+  }
+} catch (e) {
+  // 如果读取失败，使用默认值
+  console.warn('无法读取版本号，使用默认值:', e);
+}
 
 interface ReleaseInfo {
   version: string;

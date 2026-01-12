@@ -1,6 +1,20 @@
 import path from 'path';
 import { defineConfig, loadEnv } from 'vite';
 import react from '@vitejs/plugin-react';
+import { readFileSync } from 'fs';
+
+// 读取 package.json 获取版本号
+function getVersion(): string {
+  try {
+    const packageJson = JSON.parse(readFileSync('./package.json', 'utf-8'));
+    return packageJson.version || '1.0.1';
+  } catch (e) {
+    console.warn('无法读取 package.json 版本号，使用默认值');
+    return '1.0.1';
+  }
+}
+
+const APP_VERSION = getVersion();
 
 export default defineConfig(({ mode }) => {
     const env = loadEnv(mode, '.', '');
@@ -17,7 +31,9 @@ export default defineConfig(({ mode }) => {
       plugins: [react()],
       define: {
         'process.env.API_KEY': JSON.stringify(env.GEMINI_API_KEY),
-        'process.env.GEMINI_API_KEY': JSON.stringify(env.GEMINI_API_KEY)
+        'process.env.GEMINI_API_KEY': JSON.stringify(env.GEMINI_API_KEY),
+        'process.env.APP_VERSION': JSON.stringify(APP_VERSION),
+        'window.__APP_VERSION__': JSON.stringify(APP_VERSION),
       },
       resolve: {
         alias: {

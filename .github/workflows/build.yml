@@ -76,7 +76,30 @@ jobs:
         with:
           targets: ${{ matrix.target }}
 
-      # 4. 安装 npm 依赖
+      # 4. 提取版本号（如果打了标签，从标签提取；否则使用 package.json）
+      - name: Extract version
+        id: version
+        run: |
+          if [[ "${{ github.ref }}" == refs/tags/v* ]]; then
+            # 从 Git tag 提取版本号（例如 v1.0.2 -> 1.0.2）
+            VERSION=$(echo "${{ github.ref }}" | sed 's/refs\/tags\/v//')
+            echo "从 Git tag 提取版本号: $VERSION"
+          else
+            # 从 package.json 读取版本号
+            VERSION=$(node -p "require('./package.json').version")
+            echo "从 package.json 读取版本号: $VERSION"
+          fi
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "当前版本号: $VERSION"
+      
+      # 4.5. 更新版本号到 package.json（如果从 tag 提取）
+      - name: Update version in package.json
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          npm pkg set version=${{ steps.version.outputs.version }}
+          echo "已更新 package.json 版本号为: ${{ steps.version.outputs.version }}"
+
+      # 5. 安装 npm 依赖
       - name: Install npm dependencies
         run: npm ci
 
@@ -141,6 +164,13 @@ jobs:
               echo "macOS 图标生成完成"
             fi
           fi
+
+      # 5.5. 同步版本号（从 package.json 到其他配置文件）
+      - name: Sync version
+        run: |
+          echo "同步版本号..."
+          npm run sync-version
+          echo "版本号同步完成"
 
       # 6. 构建前端（清理缓存后重新构建）
       - name: Build frontend
