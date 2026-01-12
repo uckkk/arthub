@@ -166,6 +166,10 @@ const PathManager: React.FC = () => {
 
   // 处理拖拽悬停（创建新路径）
   const handleDragOverCreatePath = (e: React.DragEvent) => {
+    // 如果是分组拖拽，不处理（让分组容器处理）
+    if (draggedGroup) {
+      return;
+    }
     e.preventDefault();
     e.stopPropagation();
     setIsDraggingOver(true);
@@ -173,6 +177,11 @@ const PathManager: React.FC = () => {
 
   // 处理拖拽放下（创建新路径）
   const handleDropCreatePath = async (e: React.DragEvent) => {
+    // 如果是分组拖拽，不处理（让分组容器处理）
+    if (draggedGroup) {
+      return;
+    }
+    
     e.preventDefault();
     e.stopPropagation();
     setIsDraggingOver(false);
