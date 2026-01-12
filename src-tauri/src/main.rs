@@ -39,6 +39,7 @@ struct AppState {
     drag_start_mouse: Mutex<IconPosition>,  // 拖拽开始时鼠标的屏幕坐标
     drag_start_window: Mutex<IconPosition>, // 拖拽开始时窗口的位置
     ai_tabs: Mutex<Vec<String>>, // 存储AI标签页窗口标签
+    main_window_visible: Mutex<bool>, // 主窗口是否真的可见（在前台，非最小化）
 }
 
 const ICON_SIZE: i32 = 64;
@@ -340,20 +341,44 @@ fn icon_mouse_up(app: tauri::AppHandle, x: f64, y: f64) {
 fn icon_click(app: tauri::AppHandle) {
     println!("Icon clicked!");
     if let Some(main_window) = app.get_window("main") {
-        match main_window.is_visible() {
-            Ok(true) => {
-                println!("Main window is visible, closing...");
-                let _ = main_window.hide();
+        let state = app.state::<AppState>();
+        let mut window_visible = state.main_window_visible.lock().unwrap();
+        
+        // 先检查窗口当前状态（在恢复之前）
+        let was_visible_before = main_window.is_visible().unwrap_or(false);
+        
+        // 总是先尝试显示和聚焦窗口（这会恢复最小化的窗口）
+        let show_result = main_window.show();
+        std::thread::sleep(std::time::Duration::from_millis(50));
+        let focus_result = main_window.set_focus();
+        
+        // 等待窗口响应
+        std::thread::sleep(std::time::Duration::from_millis(100));
+        
+        // 检查窗口是否真的可见
+        let is_visible_after = main_window.is_visible().unwrap_or(false);
+        let focus_success = focus_result.is_ok();
+        
+        println!("Main window state - was_visible: {}, is_visible_after: {}, focus_success: {}, tracked: {}", 
+                 was_visible_before, is_visible_after, focus_success, *window_visible);
+        
+        // 如果窗口之前就是可见的（且跟踪状态也是可见的），且现在聚焦成功，则切换为隐藏
+        // 这样可以避免刚恢复的窗口立即被隐藏
+        if *window_visible && was_visible_before && focus_success {
+            // 窗口之前就是可见的，且聚焦成功，则隐藏（切换行为）
+            println!("Main window was visible, hiding...");
+            let _ = main_window.hide();
+            *window_visible = false;
+        } else {
+            // 窗口之前不可见，或者需要恢复，则显示
+            println!("Main window needs to be shown/restored...");
+            // 确保窗口显示
+            if show_result.is_err() {
+                let _ = main_window.show();
             }
-            Ok(false) => {
-                println!("Main window is hidden, opening...");
-                animate_window_open(&app, main_window);
-            }
-            Err(e) => {
-                println!("Error checking visibility: {:?}", e);
-                // 尝试显示窗口
-                animate_window_open(&app, main_window);
-            }
+            std::thread::sleep(std::time::Duration::from_millis(50));
+            let _ = main_window.set_focus();
+            *window_visible = true;
         }
     } else {
         println!("Main window not found!");
@@ -365,12 +390,10 @@ fn animate_window_open(_app: &tauri::AppHandle, main_window: tauri::Window) {
     println!("Opening main window...");
     
     // 先检查当前状态
-    match main_window.is_visible() {
-        Ok(visible) => println!("Main window visibility before show: {}", visible),
-        Err(e) => println!("Error checking visibility before show: {:?}", e),
-    }
+    let is_visible = main_window.is_visible().unwrap_or(false);
+    println!("Main window state before show - visible: {}", is_visible);
     
-    // 显示并聚焦窗口
+    // 显示窗口（这会自动恢复最小化的窗口）
     match main_window.show() {
         Ok(_) => println!("Main window show() called successfully"),
         Err(e) => {
@@ -379,23 +402,25 @@ fn animate_window_open(_app: &tauri::AppHandle, main_window: tauri::Window) {
         }
     }
     
-    // 等待一小段时间确保窗口显示
-    std::thread::sleep(std::time::Duration::from_millis(50));
+    // 等待窗口显示
+    std::thread::sleep(std::time::Duration::from_millis(100));
     
+    // 聚焦窗口（确保窗口在前台）
     match main_window.set_focus() {
         Ok(_) => println!("Main window focused successfully"),
         Err(e) => println!("Error focusing window: {:?}", e),
     }
     
     // 再次检查窗口可见性
-    match main_window.is_visible() {
-        Ok(visible) => println!("Main window visibility after show: {}", visible),
-        Err(e) => println!("Error checking visibility after show: {:?}", e),
-    }
+    let final_visible = main_window.is_visible().unwrap_or(false);
+    println!("Main window state after show - visible: {}", final_visible);
     
-    // 尝试居中窗口
-    if let Err(e) = main_window.center() {
-        println!("Error centering window: {:?}", e);
+    // 如果窗口仍然不可见，尝试再次显示
+    if !final_visible {
+        println!("Window still not visible, trying show() again...");
+        let _ = main_window.show();
+        std::thread::sleep(std::time::Duration::from_millis(50));
+        let _ = main_window.set_focus();
     }
 }
 
@@ -1284,6 +1309,7 @@ fn main() {
             drag_start_mouse: Mutex::new(IconPosition { x: 0, y: 0 }),
             drag_start_window: Mutex::new(IconPosition { x: 0, y: 0 }),
             ai_tabs: Mutex::new(Vec::new()),
+            main_window_visible: Mutex::new(true), // 默认主窗口是可见的
         })
         .setup(|app| {
             println!("=== Tauri setup started ===");
