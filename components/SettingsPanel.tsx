@@ -33,7 +33,9 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ isOpen, onClose, triggerR
   const [statusMsg, setStatusMsg] = useState<{type: 'success' | 'error' | 'info', text: string} | null>(null);
   const [isTesting, setIsTesting] = useState(false);
 
+  // 静默加载设置数据（即使面板未打开也加载）
   useEffect(() => {
+    // 立即加载所有设置数据
     setGeminiKey(localStorage.getItem('arthub_gemini_key') || '');
     setBaiduAppId(localStorage.getItem('arthub_baidu_appid') || '');
     setBaiduSecret(localStorage.getItem('arthub_baidu_secret') || '');
@@ -47,13 +49,14 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ isOpen, onClose, triggerR
       getSavedStoragePath().catch(() => {});
     }
     
+    // 定期更新同步时间
     const interval = setInterval(() => {
       const currentConfig = getStorageConfig();
       setLastSyncTime(currentConfig.lastSyncTime);
     }, 60000);
     
     return () => clearInterval(interval);
-  }, []);
+  }, []); // 组件挂载时立即加载，不依赖 isOpen
 
   const showStatus = (type: 'success' | 'error' | 'info', text: string) => {
     setStatusMsg({ type, text });

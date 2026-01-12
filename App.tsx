@@ -332,16 +332,14 @@ const App: React.FC = () => {
             {renderContent()}
           </main>
 
-          {/* 设置面板 */}
-          {showSettings && (
-            <Suspense fallback={<LoadingPlaceholder />}>
-              <SettingsPanel 
-                isOpen={showSettings} 
-                onClose={() => setShowSettings(false)}
-                triggerRef={settingsButtonRef}
-              />
-            </Suspense>
-          )}
+          {/* 设置面板 - 始终渲染以静默加载数据，但只在 showSettings 为 true 时显示 */}
+          <Suspense fallback={null}>
+            <SettingsPanel 
+              isOpen={showSettings} 
+              onClose={() => setShowSettings(false)}
+              triggerRef={settingsButtonRef}
+            />
+          </Suspense>
         </div>
       </ToastProvider>
     </ErrorBoundary>

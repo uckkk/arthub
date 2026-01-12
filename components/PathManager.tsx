@@ -220,7 +220,7 @@ const PathManager: React.FC = () => {
           // 统一路径分隔符
           filePath = filePath.replace(/\//g, '\\');
           
-          // 检查是否是应用文件
+          // 优先检查是否是应用文件（.exe, .lnk）- 必须在判断URL之前
           if (isAppFile(filePath)) {
             const appInfo = await handleDroppedAppFile(filePath);
             if (appInfo) {
@@ -233,11 +233,11 @@ const PathManager: React.FC = () => {
               return;
             }
           }
-          // 本地文件路径
+          // 本地文件路径（非应用文件）
           await handleDroppedPath(filePath, 'local');
           return;
         }
-        // 检查是否是网页 URL
+        // 检查是否是网页 URL（只有明确的 http:// 或 https:// 才识别为网页）
         if (textUriList.startsWith('http://') || textUriList.startsWith('https://')) {
           await handleDroppedPath(textUriList, 'web');
           return;
@@ -508,7 +508,7 @@ const PathManager: React.FC = () => {
   const handleJump = async (item: PathItem) => {
     try {
       if (item.type === 'app') {
-        // 应用类型：启动应用
+        // 应用类型：启动应用（.exe 或 .lnk）
         try {
           await launchApp(item.path);
         } catch (error) {
@@ -516,51 +516,53 @@ const PathManager: React.FC = () => {
           copyToClipboard(item.path, item.id);
         }
       } else if (item.type === 'web') {
-        // 网页类型：直接在新标签页打开
+        // 网页类型：直接在新标签页打开（只有明确的 URL 类型才打开网页）
         window.open(item.path, '_blank');
       } else if (item.type === 'local') {
-        // 本地路径：使用 Tauri shell.open 打开资源管理器（文件夹）或文件
-        try {
-          const { open } = await import('@tauri-apps/api/shell');
-          // shell.open 会自动识别是文件夹还是文件，并打开相应的资源管理器或应用
-          await open(item.path);
-        } catch (shellError) {
-          console.warn('shell.open failed, trying file:// protocol:', shellError);
-          // 如果 shell.open 失败，尝试 file:// 协议
+        // 本地路径：必须直接打开本地的资源管理器，不打开网页
+        // 检查是否是应用文件（.exe, .lnk），如果是则启动应用
+        if (isAppFile(item.path)) {
           try {
-            const pathToOpen = 'file:///' + item.path.replace(/\\/g, '/');
-            const w = window.open(pathToOpen);
-            setTimeout(() => {
-              if (!w || w.closed) {
-                copyToClipboard(item.path, item.id);
-              }
-            }, 100);
-          } catch {
-            copyToClipboard(item.path, item.id);
+            await launchApp(item.path);
+            return;
+          } catch (error) {
+            console.error('启动应用失败:', error);
           }
+        }
+        // 否则打开资源管理器
+        try {
+          if (isTauriEnvironment()) {
+            const { open } = await import('@tauri-apps/api/shell');
+            // shell.open 会自动识别是文件夹还是文件，并打开相应的资源管理器或应用
+            await open(item.path);
+          } else {
+            // 非 Tauri 环境，使用 file:// 协议打开本地路径
+            const pathToOpen = 'file:///' + item.path.replace(/\\/g, '/');
+            window.open(pathToOpen, '_blank');
+          }
+        } catch (shellError) {
+          console.warn('打开路径失败:', shellError);
+          // 如果失败，复制到剪贴板
+          copyToClipboard(item.path, item.id);
         }
       } else if (item.type === 'network') {
         // 局域网路径：使用 Tauri shell.open 打开网络资源管理器
         try {
-          const { open } = await import('@tauri-apps/api/shell');
-          await open(item.path);
-        } catch (shellError) {
-          console.warn('shell.open failed, trying file:// protocol:', shellError);
-          // 如果 shell.open 失败，尝试 file:// 协议
-          try {
+          if (isTauriEnvironment()) {
+            const { open } = await import('@tauri-apps/api/shell');
+            await open(item.path);
+          } else {
+            // 非 Tauri 环境，使用 file:// 协议
             const pathToOpen = 'file:' + item.path.replace(/\\/g, '/');
-            const w = window.open(pathToOpen);
-            setTimeout(() => {
-              if (!w || w.closed) {
-                copyToClipboard(item.path, item.id);
-              }
-            }, 100);
-          } catch {
-            copyToClipboard(item.path, item.id);
+            window.open(pathToOpen, '_blank');
           }
+        } catch (shellError) {
+          console.warn('打开网络路径失败:', shellError);
+          copyToClipboard(item.path, item.id);
         }
       }
-    } catch {
+    } catch (error) {
+      console.error('打开路径失败:', error);
       copyToClipboard(item.path, item.id);
     }
   };
@@ -760,14 +762,17 @@ const PathManager: React.FC = () => {
     e.stopPropagation();
     
     if (draggedGroup && draggedGroup !== targetGroup) {
-      const newOrder = [...groupOrder];
+      // 确保分组顺序数组包含所有分组
+      const allGroups = Array.from(new Set([...groupOrder, ...Object.keys(groupedPaths)]));
+      const newOrder = [...allGroups];
       const draggedIndex = newOrder.indexOf(draggedGroup);
       const targetIndex = newOrder.indexOf(targetGroup);
       
-      newOrder.splice(draggedIndex, 1);
-      newOrder.splice(targetIndex, 0, draggedGroup);
-      
-      setGroupOrder(newOrder);
+      if (draggedIndex >= 0 && targetIndex >= 0) {
+        newOrder.splice(draggedIndex, 1);
+        newOrder.splice(targetIndex, 0, draggedGroup);
+        setGroupOrder(newOrder);
+      }
     }
     
     setDraggedGroup(null);
