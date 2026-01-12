@@ -54,6 +54,7 @@ const PathManager: React.FC = () => {
   const [draggedGroup, setDraggedGroup] = useState<string | null>(null);
   const [dragOverGroup, setDragOverGroup] = useState<string | null>(null);
   const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
+  const [isDragging, setIsDragging] = useState(false); // 跟踪是否正在拖拽
 
   // 表单状态
   const [newName, setNewName] = useState('');
@@ -207,10 +208,25 @@ const PathManager: React.FC = () => {
         // 在 Tauri 环境中，文件对象可能有 path 属性
         // 在浏览器环境中，只能获取文件名
         const filePath = (file as any).path || file.name;
-        const fileName = file.name.toLowerCase();
+        const fileName = file.name;
+        const lowerFileName = fileName.toLowerCase();
         
         // 优先检查是否是应用文件（通过扩展名判断）
-        if (await checkAndHandleAppFile(filePath) || await checkAndHandleAppFile(fileName)) {
+        // 检查文件名是否以 .exe 或 .lnk 结尾
+        if (lowerFileName.endsWith('.exe') || lowerFileName.endsWith('.lnk')) {
+          console.log('[PathManager] 文件拖拽识别为应用文件:', filePath, fileName);
+          // 尝试处理应用文件
+          if (await checkAndHandleAppFile(filePath)) {
+            return;
+          }
+          // 如果处理失败，仍然作为应用文件类型添加
+          const appName = extractAppName(filePath || fileName);
+          setDraggedPath({ 
+            path: filePath || fileName, 
+            name: appName, 
+            type: 'app' 
+          });
+          setShowDragModal(true);
           return;
         }
         
@@ -730,6 +746,7 @@ const PathManager: React.FC = () => {
     e.dataTransfer.effectAllowed = 'move';
     e.dataTransfer.dropEffect = 'move';
     setDraggedItem(item);
+    setIsDragging(true); // 标记开始拖拽
     // 设置拖拽数据，支持跨组拖动
     e.dataTransfer.setData('text/plain', item.id);
     // 设置自定义数据格式
@@ -741,6 +758,7 @@ const PathManager: React.FC = () => {
     e.dataTransfer.effectAllowed = 'move';
     e.dataTransfer.dropEffect = 'move';
     setDraggedGroup(groupName);
+    setIsDragging(true); // 标记开始拖拽
     // 设置拖拽数据
     e.dataTransfer.setData('text/plain', groupName);
     e.dataTransfer.setData('application/x-group', JSON.stringify({ name: groupName, type: 'group' }));
@@ -769,19 +787,17 @@ const PathManager: React.FC = () => {
     e.preventDefault();
     e.stopPropagation();
     // 检查是否是分组拖拽（使用状态而不是 getData）
-    if (draggedGroup) {
+    const types = Array.from(e.dataTransfer.types);
+    const isGroupDrag = draggedGroup || types.includes('application/x-group');
+    
+    if (isGroupDrag) {
       e.dataTransfer.dropEffect = 'move';
-      if (draggedGroup !== groupName) {
+      // 如果拖拽到不同的分组，设置拖拽悬停状态
+      if (draggedGroup && draggedGroup !== groupName) {
         setDragOverGroup(groupName);
       }
     } else {
-      // 检查拖拽类型（通过 types 数组）
-      const types = Array.from(e.dataTransfer.types);
-      if (types.includes('application/x-group') || types.includes('text/plain')) {
-        e.dataTransfer.dropEffect = 'move';
-      } else {
-        e.dataTransfer.dropEffect = 'none';
-      }
+      e.dataTransfer.dropEffect = 'none';
     }
   };
 
@@ -871,30 +887,36 @@ const PathManager: React.FC = () => {
       return;
     }
     
-    if (draggedGroup !== targetGroup) {
-      // 确保分组顺序数组包含所有分组
-      const allGroups = Array.from(new Set([...groupOrder, ...Object.keys(groupedPaths)]));
-      const newOrder = [...allGroups];
-      const draggedIndex = newOrder.indexOf(draggedGroup);
-      const targetIndex = newOrder.indexOf(targetGroup);
-      
-      if (draggedIndex >= 0 && targetIndex >= 0 && draggedIndex !== targetIndex) {
-        // 移除被拖拽的分组
-        newOrder.splice(draggedIndex, 1);
-        // 插入到目标位置
-        const finalTargetIndex = draggedIndex < targetIndex ? targetIndex : targetIndex;
-        newOrder.splice(finalTargetIndex, 0, draggedGroup);
-        setGroupOrder(newOrder);
-      } else if (draggedIndex === -1) {
-        // 如果分组不在顺序中，添加到目标位置之前
-        const targetIndex = newOrder.indexOf(targetGroup);
-        if (targetIndex >= 0) {
-          newOrder.splice(targetIndex, 0, draggedGroup);
-        } else {
-          newOrder.push(draggedGroup);
-        }
-        setGroupOrder(newOrder);
+    // 如果拖拽到同一个分组，不做任何操作
+    if (draggedGroup === targetGroup) {
+      setDraggedGroup(null);
+      setDragOverGroup(null);
+      return;
+    }
+    
+    // 确保分组顺序数组包含所有分组
+    const allGroups = Array.from(new Set([...groupOrder, ...Object.keys(groupedPaths)]));
+    const newOrder = [...allGroups];
+    const draggedIndex = newOrder.indexOf(draggedGroup);
+    const targetIndex = newOrder.indexOf(targetGroup);
+    
+    if (draggedIndex >= 0 && targetIndex >= 0 && draggedIndex !== targetIndex) {
+      // 移除被拖拽的分组
+      newOrder.splice(draggedIndex, 1);
+      // 计算新的目标索引（因为已经移除了一个元素）
+      const newTargetIndex = draggedIndex < targetIndex ? targetIndex - 1 : targetIndex;
+      // 插入到目标位置
+      newOrder.splice(newTargetIndex, 0, draggedGroup);
+      setGroupOrder(newOrder);
+    } else if (draggedIndex === -1) {
+      // 如果分组不在顺序中，添加到目标位置之前
+      const targetIdx = newOrder.indexOf(targetGroup);
+      if (targetIdx >= 0) {
+        newOrder.splice(targetIdx, 0, draggedGroup);
+      } else {
+        newOrder.push(draggedGroup);
       }
+      setGroupOrder(newOrder);
     }
     
     setDraggedGroup(null);
@@ -902,10 +924,14 @@ const PathManager: React.FC = () => {
   };
 
   const handleDragEnd = () => {
-    setDraggedItem(null);
-    setDraggedGroup(null);
-    setDragOverGroup(null);
-    setDragOverIndex(null);
+    // 延迟清除状态，确保拖拽事件完全结束
+    setTimeout(() => {
+      setDraggedItem(null);
+      setDraggedGroup(null);
+      setDragOverGroup(null);
+      setDragOverIndex(null);
+      setIsDragging(false); // 清除拖拽标记
+    }, 100);
   };
 
   // 类型选择按钮组件
@@ -1051,9 +1077,12 @@ const PathManager: React.FC = () => {
                     onDragEnd={handleDragEnd}
                     onClick={(e) => {
                       // 如果正在拖拽，不触发折叠/展开
-                      if (!draggedGroup) {
-                        toggleGroup(groupName);
+                      if (isDragging || draggedGroup) {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        return;
                       }
+                      toggleGroup(groupName);
                     }}
                     className={`
                       flex items-center gap-2 px-2 py-1.5 rounded-lg
@@ -1116,12 +1145,13 @@ const PathManager: React.FC = () => {
                           onDragEnd={handleDragEnd}
                           onClick={(e) => {
                             // 如果正在拖拽，不触发跳转
-                            // 使用setTimeout确保拖拽状态已清除
-                            setTimeout(() => {
-                              if (!draggedItem) {
-                                handleJump(item);
-                              }
-                            }, 50);
+                            if (isDragging || draggedItem) {
+                              e.preventDefault();
+                              e.stopPropagation();
+                              return;
+                            }
+                            // 直接执行跳转
+                            handleJump(item);
                           }}
                           className={`
                             group relative
