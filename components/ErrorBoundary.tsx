@@ -5,6 +5,7 @@
 
 import React, { Component, ErrorInfo, ReactNode } from 'react';
 import { AlertCircle, RefreshCw } from 'lucide-react';
+import { consoleService } from '../services/consoleService';
 
 interface Props {
   children: ReactNode;
@@ -41,6 +42,9 @@ export class ErrorBoundary extends Component<Props, State> {
       error,
       errorInfo,
     });
+    
+    // 记录到控制台服务
+    consoleService.logErrorBoundary(error, errorInfo);
     
     // 可以在这里上报错误到监控服务
     // reportErrorToService(error, errorInfo);
