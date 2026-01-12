@@ -12,6 +12,7 @@ import { ErrorBoundary } from './components/ErrorBoundary';
 import { Sidebar, MenuGroup } from './components/ui';
 import { CURRENT_VERSION } from './services/updateService';
 import { consoleService } from './services/consoleService';
+import Console from './components/Console';
 
 // 懒加载组件以提升初始加载性能
 const PathManager = lazy(() => import('./components/PathManager'));
@@ -125,79 +126,22 @@ const App: React.FC = () => {
   // 版本号点击状态
   const [versionClickCount, setVersionClickCount] = useState(0);
   const versionClickTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-  const consoleWindowRef = useRef<any>(null);
+  
+  // 控制台显示状态（使用模态框，不打开新窗口）
+  const [showConsole, setShowConsole] = useState(false);
+  const [consoleLogs, setConsoleLogs] = useState(consoleService.getLogs());
 
-  // 检查是否在 Tauri 环境中
-  const isTauriEnvironment = (): boolean => {
-    return typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
-  };
+  // 订阅控制台日志更新
+  useEffect(() => {
+    const unsubscribe = consoleService.subscribe((logs) => {
+      setConsoleLogs(logs);
+    });
+    return unsubscribe;
+  }, []);
 
-  // 打开控制台窗口
-  const openConsoleWindow = async () => {
-    if (!isTauriEnvironment()) {
-      // 非 Tauri 环境，使用新标签页
-      window.open('/console.html', '_blank', 'width=1000,height=700');
-      return;
-    }
-
-    try {
-      // 检查窗口是否已存在
-      const { getAllWindows } = await import('@tauri-apps/api/window');
-      const allWindows = await getAllWindows();
-      const existingWindow = allWindows.find(w => w.label === 'console');
-
-      if (existingWindow) {
-        // 如果窗口已存在，显示并聚焦
-        await existingWindow.show();
-        await existingWindow.setFocus();
-        consoleWindowRef.current = existingWindow;
-        return;
-      }
-
-      // 使用 Tauri 命令打开控制台窗口（在 Rust 端正确处理 URL）
-      const { invoke } = await import('@tauri-apps/api/tauri');
-      try {
-        const windowLabel = await invoke('open_console_window');
-        consoleWindowRef.current = windowLabel;
-      } catch (error) {
-        console.error('打开控制台窗口失败:', error);
-        // 降级方案：尝试使用 WebviewWindow
-        try {
-          const { WebviewWindow } = await import('@tauri-apps/api/window');
-          const { appWindow } = await import('@tauri-apps/api/window');
-          const position = await appWindow.outerPosition();
-          
-          const isDev = import.meta.env.DEV;
-          const consoleUrl = isDev 
-            ? 'http://localhost:3000/console.html'
-            : 'console.html';
-          
-          const consoleWindow = new WebviewWindow('console', {
-            url: consoleUrl,
-            title: '错误日志控制台',
-            width: 1000,
-            height: 700,
-            minWidth: 600,
-            minHeight: 400,
-            resizable: true,
-            x: position.x + 50,
-            y: position.y + 50,
-            decorations: true,
-            alwaysOnTop: false,
-            skipTaskbar: false,
-          });
-          consoleWindowRef.current = consoleWindow;
-        } catch (fallbackError) {
-          console.error('降级方案也失败:', fallbackError);
-          // 最后降级：使用浏览器新标签页
-          window.open('/console.html', '_blank', 'width=1000,height=700');
-        }
-      }
-    } catch (error) {
-      console.error('打开控制台窗口失败:', error);
-      // 降级方案：使用新标签页
-      window.open('/console.html', '_blank', 'width=1000,height=700');
-    }
+  // 打开控制台（切换显示状态）
+  const openConsoleWindow = () => {
+    setShowConsole(true);
   };
 
   // 处理版本号点击
@@ -464,6 +408,14 @@ const App: React.FC = () => {
               triggerRef={settingsButtonRef}
             />
           </Suspense>
+
+          {/* 控制台面板 - 在主窗口中显示，不打开新窗口 */}
+          <Console
+            isOpen={showConsole}
+            onClose={() => setShowConsole(false)}
+            logs={consoleLogs}
+            onClear={() => consoleService.clearLogs()}
+          />
         </div>
       </ToastProvider>
     </ErrorBoundary>

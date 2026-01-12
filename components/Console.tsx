@@ -134,12 +134,12 @@ const Console: React.FC<ConsoleProps> = ({ isOpen, onClose, logs, onClear }) => 
         {/* 标题栏 */}
         <div className="flex items-center justify-between px-5 py-4 border-b border-[#2a2a2a] shrink-0">
           <div className="flex items-center gap-3">
-            <h3 className="text-lg font-semibold text-white">控制台</h3>
+            <h3 className="text-lg font-semibold text-white">错误日志控制台</h3>
             <span className="
               px-2 py-0.5 rounded text-xs font-medium
               bg-[#1a1a1a] text-[#666666]
             ">
-              {logs.length} 条日志
+              {logs.length} 条错误
             </span>
           </div>
           <div className="flex items-center gap-2">
@@ -213,7 +213,7 @@ const Console: React.FC<ConsoleProps> = ({ isOpen, onClose, logs, onClear }) => 
         >
           {logs.length === 0 ? (
             <div className="flex items-center justify-center h-full text-[#666666]">
-              <p>暂无日志</p>
+              <p>暂无错误日志</p>
             </div>
           ) : (
             logs.map((log) => (
@@ -252,7 +252,7 @@ const Console: React.FC<ConsoleProps> = ({ isOpen, onClose, logs, onClear }) => 
         {/* 底部提示 */}
         <div className="px-5 py-2 border-t border-[#2a2a2a] shrink-0">
           <p className="text-[10px] text-[#555555]">
-            提示：可以选中文本复制，或使用"复制全部"按钮复制所有日志
+            提示：可以选中文本复制，或使用"复制全部"按钮复制所有错误日志
           </p>
         </div>
       </div>
