@@ -763,6 +763,7 @@ const PathManager: React.FC = () => {
   };
 
   const handleDragStartGroup = (groupName: string, e: React.DragEvent) => {
+    console.log('[PathManager] 开始拖拽分组:', groupName);
     e.stopPropagation(); // 阻止事件冒泡，避免触发点击事件
     e.dataTransfer.effectAllowed = 'move';
     e.dataTransfer.dropEffect = 'move';
@@ -772,9 +773,10 @@ const PathManager: React.FC = () => {
     try {
       e.dataTransfer.setData('text/plain', groupName);
       e.dataTransfer.setData('application/x-group', 'true');
+      console.log('[PathManager] 拖拽数据已设置:', groupName);
     } catch (err) {
       // 某些浏览器可能不支持 setData，使用状态管理
-      console.warn('Failed to set drag data:', err);
+      console.warn('[PathManager] 设置拖拽数据失败:', err);
     }
   };
 
@@ -806,6 +808,7 @@ const PathManager: React.FC = () => {
     e.stopPropagation();
     e.dataTransfer.dropEffect = 'move';
     setDragOverGroup(groupName);
+    console.log('[PathManager] 拖拽悬停在分组上:', groupName, '被拖拽的分组:', draggedGroup);
   };
 
   const handleDrop = (targetGroup: string, targetIndex: number, e: React.DragEvent) => {
@@ -1092,14 +1095,18 @@ const PathManager: React.FC = () => {
                     />
                   )}
                   
-                  {/* 分组容器 */}
+                  {/* 分组容器 - 处理拖拽放下 */}
                   <div 
                     className="space-y-2"
                     onDragOver={(e) => {
-                      // 只处理分组拖拽
-                      if (!draggedGroup || draggedGroup === groupName) {
+                      // 检查是否是分组拖拽
+                      const types = Array.from(e.dataTransfer.types);
+                      const isGroupDrag = draggedGroup || types.includes('application/x-group');
+                      
+                      if (!isGroupDrag || !draggedGroup || draggedGroup === groupName) {
                         return;
                       }
+                      
                       e.preventDefault();
                       e.stopPropagation();
                       e.dataTransfer.dropEffect = 'move';
@@ -1112,32 +1119,52 @@ const PathManager: React.FC = () => {
                       } else {
                         setDragOverGroup(null);
                       }
+                      console.log('[PathManager] 分组容器 onDragOver:', groupName, 'draggedGroup:', draggedGroup);
                     }}
                     onDrop={(e) => {
                       e.preventDefault();
                       e.stopPropagation();
                       
+                      const types = Array.from(e.dataTransfer.types);
+                      const isGroupDrag = draggedGroup || types.includes('application/x-group');
+                      
+                      if (!isGroupDrag) {
+                        console.log('[PathManager] onDrop: 不是分组拖拽，忽略');
+                        return;
+                      }
+                      
                       const draggedGroupName = e.dataTransfer.getData('text/plain') || draggedGroup;
+                      console.log('[PathManager] onDrop: 分组拖拽放下', {
+                        draggedGroupName,
+                        targetGroup: groupName,
+                        draggedGroup,
+                        types
+                      });
+                      
                       if (draggedGroupName && draggedGroupName !== groupName) {
                         // 判断是插入到分组之前还是之后
                         const rect = e.currentTarget.getBoundingClientRect();
                         const midpoint = rect.top + rect.height / 2;
-                        reorderGroups(draggedGroupName, groupName, e.clientY < midpoint);
+                        const insertBefore = e.clientY < midpoint;
+                        console.log('[PathManager] 执行重新排序:', {
+                          draggedGroupName,
+                          targetGroup: groupName,
+                          insertBefore
+                        });
+                        reorderGroups(draggedGroupName, groupName, insertBefore);
                         setDraggedGroup(null);
                         setDragOverGroup(null);
                       }
                     }}
                   >
-                    {/* 分组标题 */}
+                    {/* 分组标题 - 只负责启动拖拽 */}
                     <div 
                       draggable={true}
                       onDragStart={(e) => {
                         handleDragStartGroup(groupName, e);
                       }}
-                      onDragOver={(e) => {
-                        handleDragOverGroup(groupName, e);
-                      }}
                       onDragEnd={() => {
+                        console.log('[PathManager] 拖拽结束');
                         handleDragEnd();
                       }}
                     onClick={(e) => {
