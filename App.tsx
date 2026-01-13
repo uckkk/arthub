@@ -124,10 +124,6 @@ const App: React.FC = () => {
     return getStorageConfig().enabled;
   });
 
-  // 版本号点击状态
-  const [versionClickCount, setVersionClickCount] = useState(0);
-  const versionClickTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-  
   // 控制台显示状态（使用模态框，不打开新窗口）
   const [showConsole, setShowConsole] = useState(false);
   const [consoleLogs, setConsoleLogs] = useState(consoleService.getLogs());
@@ -153,38 +149,6 @@ const App: React.FC = () => {
     window.addEventListener('open-console', handleOpenConsole);
     return () => {
       window.removeEventListener('open-console', handleOpenConsole);
-    };
-  }, []);
-
-  // 处理版本号点击
-  const handleVersionClick = () => {
-    // 清除之前的超时
-    if (versionClickTimeoutRef.current) {
-      clearTimeout(versionClickTimeoutRef.current);
-    }
-
-    // 增加点击计数
-    const newCount = versionClickCount + 1;
-    setVersionClickCount(newCount);
-
-    // 如果达到5次，打开控制台窗口
-    if (newCount >= 5) {
-      openConsoleWindow();
-      setVersionClickCount(0);
-    } else {
-      // 设置超时，如果2秒内没有继续点击，重置计数
-      versionClickTimeoutRef.current = setTimeout(() => {
-        setVersionClickCount(0);
-      }, 2000);
-    }
-  };
-
-  // 清理超时
-  useEffect(() => {
-    return () => {
-      if (versionClickTimeoutRef.current) {
-        clearTimeout(versionClickTimeoutRef.current);
-      }
     };
   }, []);
 
@@ -390,13 +354,9 @@ const App: React.FC = () => {
                   </div>
                 )}
 
-                {/* 版本号 - 显示在左下角，很弱的样式，连续点击5次打开控制台 */}
+                {/* 版本号 - 显示在左下角 */}
                 <div className="px-3 py-1.5 border-t border-[#1a1a1a] mt-2">
-                  <span 
-                    onClick={handleVersionClick}
-                    className="text-[10px] text-[#333333] font-mono cursor-pointer hover:text-[#555555] transition-colors select-none"
-                    title="连续点击5次打开控制台"
-                  >
+                  <span className="text-[10px] text-[#333333] font-mono select-none">
                     v{CURRENT_VERSION}
                   </span>
                 </div>

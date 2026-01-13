@@ -6,30 +6,22 @@
 const GITHUB_REPO = 'uckkk/arthub';
 
 // 从 package.json 读取版本号（构建时会被替换）
-// 如果无法读取，使用默认值
+// Vite 的 define 配置会在构建时将 process.env.APP_VERSION 替换为实际的版本号字符串
+// 例如：process.env.APP_VERSION 会被替换为 "1.0.1"
 let CURRENT_VERSION = '1.0.1';
 
-// 尝试从环境变量或 window 对象读取版本号（构建时注入）
+// 尝试从构建时注入的版本号读取
 try {
-  // 优先使用构建时注入的版本号（process.env 在 Vite 构建时会被替换为字符串字面量）
-  // 注意：在浏览器环境中，process.env 可能不存在，但 Vite 会在构建时替换
-  if (typeof process !== 'undefined' && (process as any).env) {
-    const envVersion = (process as any).env.APP_VERSION;
-    // Vite 会将 process.env.APP_VERSION 替换为 JSON.stringify(APP_VERSION)
-    // 所以这里需要检查是否是有效的字符串（不是 "undefined"）
-    if (envVersion && typeof envVersion === 'string' && envVersion !== 'undefined' && envVersion !== 'null') {
-      // 移除可能的引号（Vite 可能已经添加了）
-      CURRENT_VERSION = envVersion.replace(/^["']|["']$/g, '');
-    }
-  }
-  
-  // 尝试从 window 对象读取（构建时注入）
-  // Vite 会将 window.__APP_VERSION__ 替换为 JSON.stringify(APP_VERSION)
-  if (typeof window !== 'undefined') {
+  // Vite 会将 process.env.APP_VERSION 替换为 JSON.stringify(APP_VERSION)
+  // 所以在构建后的代码中，这里会直接是字符串字面量，例如 "1.0.1"
+  const envVersion = (process as any).env?.APP_VERSION;
+  if (envVersion && typeof envVersion === 'string') {
+    CURRENT_VERSION = envVersion;
+  } else {
+    // 如果 process.env.APP_VERSION 不可用，尝试从 window 对象读取
     const windowVersion = (window as any).__APP_VERSION__;
-    if (windowVersion && typeof windowVersion === 'string' && windowVersion !== 'undefined' && windowVersion !== 'null') {
-      // 移除可能的引号
-      CURRENT_VERSION = windowVersion.replace(/^["']|["']$/g, '');
+    if (windowVersion && typeof windowVersion === 'string') {
+      CURRENT_VERSION = windowVersion;
     }
   }
 } catch (e) {
@@ -38,7 +30,7 @@ try {
 }
 
 // 确保版本号是字符串类型且不为空
-if (typeof CURRENT_VERSION !== 'string' || !CURRENT_VERSION || CURRENT_VERSION === 'undefined' || CURRENT_VERSION === 'null') {
+if (typeof CURRENT_VERSION !== 'string' || !CURRENT_VERSION) {
   CURRENT_VERSION = '1.0.1';
 }
 
