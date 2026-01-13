@@ -804,21 +804,38 @@ const PathManager: React.FC = () => {
   };
 
   const handleDragStartGroup = (groupName: string, e: React.DragEvent) => {
-    console.log('[PathManager] 开始拖拽分组:', groupName);
-    e.stopPropagation(); // 阻止事件冒泡，避免触发点击事件
+    console.log('[PathManager] 开始拖拽分组:', groupName, {
+      target: e.target,
+      currentTarget: e.currentTarget,
+      button: e.button,
+      buttons: e.buttons
+    });
+    
+    // 不阻止事件传播，让拖拽事件正常传播
+    // e.stopPropagation(); // 移除这个，可能阻止了拖拽操作
+    
     e.dataTransfer.effectAllowed = 'move';
     e.dataTransfer.dropEffect = 'move';
-    setDraggedGroup(groupName);
-    setIsDragging(true);
+    
     // 设置拖拽数据 - 使用简单的文本格式
     try {
       e.dataTransfer.setData('text/plain', groupName);
       e.dataTransfer.setData('application/x-group', 'true');
-      console.log('[PathManager] 拖拽数据已设置:', groupName);
+      console.log('[PathManager] 拖拽数据已设置:', groupName, {
+        types: Array.from(e.dataTransfer.types),
+        effectAllowed: e.dataTransfer.effectAllowed
+      });
     } catch (err) {
       // 某些浏览器可能不支持 setData，使用状态管理
       console.warn('[PathManager] 设置拖拽数据失败:', err);
     }
+    
+    // 延迟设置状态，确保拖拽操作已经开始
+    setTimeout(() => {
+      setDraggedGroup(groupName);
+      setIsDragging(true);
+      console.log('[PathManager] 拖拽状态已设置:', groupName);
+    }, 0);
   };
 
   const handleDragOver = (groupName: string, index: number, e: React.DragEvent) => {
