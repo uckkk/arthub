@@ -1065,82 +1065,81 @@ const PathManager: React.FC = () => {
             {groupOrder.map((groupName, groupIndex) => {
               if (!groupedPaths[groupName]) return null;
               
+              // 计算插入点位置
+              const showInsertBefore = draggedGroup && draggedGroup !== groupName && dragOverGroup === groupName;
+              
               return (
-                <div 
-                  key={groupName} 
-                  className="space-y-2"
-                  onDragOver={(e) => {
-                    // 检查是否是分组拖拽
-                    const types = Array.from(e.dataTransfer.types);
-                    const isGroupDrag = types.includes('application/x-group') || draggedGroup;
-                    
-                    if (isGroupDrag) {
-                      const currentDraggedGroup = draggedGroup;
-                      if (currentDraggedGroup && currentDraggedGroup !== groupName) {
+                <React.Fragment key={groupName}>
+                  {/* 插入点 - 在分组之前 */}
+                  {showInsertBefore && (
+                    <div
+                      className="h-1 bg-blue-500 rounded-full mx-2 my-1"
+                      onDragOver={(e) => {
                         e.preventDefault();
                         e.stopPropagation();
                         e.dataTransfer.dropEffect = 'move';
-                        // 判断是拖到当前分组上方还是下方
-                        const rect = e.currentTarget.getBoundingClientRect();
-                        const midpoint = rect.top + rect.height / 2;
-                        if (e.clientY < midpoint) {
-                          // 拖到上方，插入到当前分组之前
-                          setDragOverGroup(groupName);
-                        } else {
-                          // 拖到下方，插入到当前分组之后
+                      }}
+                      onDrop={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        const draggedGroupName = e.dataTransfer.getData('text/plain') || draggedGroup;
+                        if (draggedGroupName && draggedGroupName !== groupName) {
+                          reorderGroups(draggedGroupName, groupName, true);
+                          setDraggedGroup(null);
                           setDragOverGroup(null);
                         }
+                      }}
+                    />
+                  )}
+                  
+                  {/* 分组容器 */}
+                  <div 
+                    className="space-y-2"
+                    onDragOver={(e) => {
+                      // 只处理分组拖拽
+                      if (!draggedGroup || draggedGroup === groupName) {
+                        return;
                       }
-                    }
-                  }}
-                  onDrop={(e) => {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    
-                    // 从 dataTransfer 获取被拖拽的分组名称
-                    const draggedGroupName = e.dataTransfer.getData('text/plain') || draggedGroup;
-                    const types = Array.from(e.dataTransfer.types);
-                    const isGroupDrag = types.includes('application/x-group') || draggedGroupName;
-                    
-                    if (isGroupDrag && draggedGroupName && draggedGroupName !== groupName) {
-                      // 判断是拖到当前分组上方还是下方
+                      e.preventDefault();
+                      e.stopPropagation();
+                      e.dataTransfer.dropEffect = 'move';
+                      
+                      // 判断是拖到分组上方还是下方
                       const rect = e.currentTarget.getBoundingClientRect();
                       const midpoint = rect.top + rect.height / 2;
                       if (e.clientY < midpoint) {
-                        // 插入到当前分组之前
-                        handleDropGroupBefore(groupName, draggedGroupName);
+                        setDragOverGroup(groupName);
                       } else {
-                        // 插入到当前分组之后
-                        handleDropGroupAfter(groupName, draggedGroupName);
+                        setDragOverGroup(null);
                       }
-                    }
-                  }}
-                >
-                  {/* 分组标题 */}
-                  <div 
-                    draggable={true}
-                    onDragStart={(e) => {
-                      handleDragStartGroup(groupName, e);
-                    }}
-                    onDragOver={(e) => {
-                      e.preventDefault();
-                      e.stopPropagation();
-                      handleDragOverGroup(groupName, e);
                     }}
                     onDrop={(e) => {
-                      // 不阻止事件冒泡，让分组容器的 onDrop 处理跨组拖拽
-                      // 只有当拖拽到同一个分组标题时才在这里处理
+                      e.preventDefault();
+                      e.stopPropagation();
+                      
                       const draggedGroupName = e.dataTransfer.getData('text/plain') || draggedGroup;
-                      if (draggedGroupName === groupName) {
-                        e.preventDefault();
-                        e.stopPropagation();
-                        handleDropGroup(groupName, e);
+                      if (draggedGroupName && draggedGroupName !== groupName) {
+                        // 判断是插入到分组之前还是之后
+                        const rect = e.currentTarget.getBoundingClientRect();
+                        const midpoint = rect.top + rect.height / 2;
+                        reorderGroups(draggedGroupName, groupName, e.clientY < midpoint);
+                        setDraggedGroup(null);
+                        setDragOverGroup(null);
                       }
-                      // 否则让事件冒泡到分组容器处理
                     }}
-                    onDragEnd={(e) => {
-                      handleDragEnd();
-                    }}
+                  >
+                    {/* 分组标题 */}
+                    <div 
+                      draggable={true}
+                      onDragStart={(e) => {
+                        handleDragStartGroup(groupName, e);
+                      }}
+                      onDragOver={(e) => {
+                        handleDragOverGroup(groupName, e);
+                      }}
+                      onDragEnd={() => {
+                        handleDragEnd();
+                      }}
                     onClick={(e) => {
                       // 如果正在拖拽，不触发折叠/展开
                       if (isDragging || draggedGroup) {
