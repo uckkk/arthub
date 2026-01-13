@@ -1014,6 +1014,13 @@ async fn send_workflow_to_comfyui(
     Ok("clipboard".to_string())
 }
 
+// Tauri 命令：打开开发者工具
+#[tauri::command]
+fn open_devtools(window: tauri::Window) -> Result<(), String> {
+    window.open_devtools();
+    Ok(())
+}
+
 // Tauri 命令：打开AI窗口并注入JSON（保留以兼容旧代码）
 #[tauri::command]
 async fn open_ai_window(app: tauri::AppHandle, url: String, json_content: String) -> Result<(), String> {
