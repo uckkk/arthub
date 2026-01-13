@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { 
   Folder, Globe, Server, ExternalLink, Copy, Trash2, Plus, 
   AlertCircle, Check, ChevronDown, ChevronRight, Pencil, Star, X, Save, Upload, Play, Grid3X3, Settings
@@ -145,7 +145,7 @@ const PathManager: React.FC = () => {
       document.removeEventListener('dragover', handleGlobalDragOver, true);
       document.removeEventListener('drop', handleGlobalDrop, true);
     };
-  }, [draggedGroup]);
+  }, [draggedGroup, reorderGroups]);
 
   // 监听快速路径更新事件和模板切换
   useEffect(() => {
@@ -1180,6 +1180,7 @@ const PathManager: React.FC = () => {
                   {/* 分组容器 - 处理拖拽放下 */}
                   <div 
                     className="space-y-2"
+                    data-group-name={groupName}
                     onDragOver={(e) => {
                       // 确保事件能够到达这里
                       console.log('[PathManager] 分组容器 onDragOver 被调用:', groupName, 'draggedGroup:', draggedGroup);
