@@ -1017,6 +1017,8 @@ async fn send_workflow_to_comfyui(
 // Tauri 命令：打开开发者工具
 #[tauri::command]
 fn open_devtools(window: tauri::Window) -> Result<(), String> {
+    // 在 Tauri v1 中，open_devtools 方法需要启用 devtools feature
+    // 启用 devtools feature 后，Window 结构体会有 open_devtools 方法
     window.open_devtools();
     Ok(())
 }
