@@ -142,14 +142,26 @@ const NamingTool: React.FC = () => {
 
   // 命名格式选项
   const [caseFormat, setCaseFormat] = useState<'pascal' | 'camel' | 'lower'>(() => {
-    const savedPresetId = localStorage.getItem('arthub_naming_preset') || PRESET_IDS[0];
-    const defaultFormat = getDefaultFormat(savedPresetId);
-    return (localStorage.getItem('arthub_case_format') as 'pascal' | 'camel' | 'lower') || defaultFormat.case;
+    try {
+      const savedPresetId = localStorage.getItem('arthub_naming_preset') || PRESET_IDS[0];
+      const defaultFormat = getDefaultFormat(savedPresetId);
+      const savedFormat = localStorage.getItem('arthub_case_format') as 'pascal' | 'camel' | 'lower' | null;
+      return savedFormat || defaultFormat.case;
+    } catch (error) {
+      console.error('初始化 caseFormat 失败:', error);
+      return 'pascal';
+    }
   });
   const [separatorFormat, setSeparatorFormat] = useState<'underscore' | 'hyphen' | 'none'>(() => {
-    const savedPresetId = localStorage.getItem('arthub_naming_preset') || PRESET_IDS[0];
-    const defaultFormat = getDefaultFormat(savedPresetId);
-    return (localStorage.getItem('arthub_separator_format') as 'underscore' | 'hyphen' | 'none') || defaultFormat.separator;
+    try {
+      const savedPresetId = localStorage.getItem('arthub_naming_preset') || PRESET_IDS[0];
+      const defaultFormat = getDefaultFormat(savedPresetId);
+      const savedFormat = localStorage.getItem('arthub_separator_format') as 'underscore' | 'hyphen' | 'none' | null;
+      return savedFormat || defaultFormat.separator;
+    } catch (error) {
+      console.error('初始化 separatorFormat 失败:', error);
+      return 'underscore';
+    }
   });
 
   // 加载弹幕游戏预设
