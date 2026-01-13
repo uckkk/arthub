@@ -510,45 +510,7 @@ const DanmakuNamingTool: React.FC<DanmakuNamingToolProps> = ({
     setActiveSuffixes(newActiveSuffixes);
   };
 
-  // 确保 selectedResourceType 存在
-  useEffect(() => {
-    if (!selectedResourceType && resourceTypes.length > 0) {
-      const firstType = resourceTypes[0];
-      if (firstType) {
-        onResourceTypeChange(firstType);
-      }
-    }
-  }, [resourceTypes, selectedResourceType, onResourceTypeChange]);
-
-  if (resourceTypes.length === 0) {
-    return (
-      <div className="text-center py-12 text-slate-400">
-        <p>正在加载资源类型...</p>
-      </div>
-    );
-  }
-
-  // 如果 selectedResourceType 为 null，显示加载提示
-  if (!selectedResourceType) {
-    return (
-      <div className="text-center py-12 text-slate-400">
-        <p>正在初始化资源类型...</p>
-      </div>
-    );
-  }
-
-  const neededDicts = getDictionariesForResourceCategory(selectedResourceType.category, dictionaries);
-  const filteredDicts = neededDicts.filter(dict => {
-    const dictKey = dict.category.split('(')[0].trim();
-    return dictKey !== '怪物阶级';
-  });
-
-  const rule = getRulesByCategory(selectedResourceType.category, selectedResourceType.subCategory);
-  const needsSkillId = rule && rule.rules.some(r => r.requiresSkillId);
-  const needsUnitId = rule && rule.rules.some(r => r.requiresUnitId);
-  const needsItemId = rule && rule.rules.some(r => r.requiresItemId);
-
-  // 准备资源类型选项
+  // 准备资源类型选项（必须在所有条件返回之前调用，避免 React Hooks 顺序问题）
   const resourceTypeOptions = useMemo(() => {
     const options: { value: string; label: string }[] = [];
     const grouped = new Map<string, DanmakuResourceType[]>();
