@@ -1333,6 +1333,38 @@ const PathManager: React.FC = () => {
                     </div>
                   )}
                 </div>
+                
+                {/* 插入点 - 在分组之后（最后一个分组） */}
+                {groupIndex === groupOrder.length - 1 && draggedGroup && draggedGroup !== groupName && !dragOverGroup && (
+                  <div
+                    className="h-1 bg-blue-500 rounded-full mx-2 my-1"
+                    onDragOver={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      e.dataTransfer.dropEffect = 'move';
+                    }}
+                    onDrop={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      const draggedGroupName = e.dataTransfer.getData('text/plain') || draggedGroup;
+                      if (draggedGroupName && draggedGroupName !== groupName) {
+                        // 插入到最后一个分组之后
+                        const allGroups = Array.from(new Set([...groupOrder, ...Object.keys(groupedPaths)]));
+                        const newOrder = [...allGroups];
+                        const draggedIndex = newOrder.indexOf(draggedGroupName);
+                        if (draggedIndex >= 0) {
+                          newOrder.splice(draggedIndex, 1);
+                          newOrder.push(draggedGroupName);
+                          setGroupOrder(newOrder);
+                          localStorage.setItem('arthub_group_order', JSON.stringify(newOrder));
+                        }
+                        setDraggedGroup(null);
+                        setDragOverGroup(null);
+                      }
+                    }}
+                  />
+                )}
+              </React.Fragment>
               );
             })}
           </div>
