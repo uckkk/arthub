@@ -24,8 +24,9 @@ class ConsoleService {
 
   constructor() {
     // 保存原始的 console 方法
+    this.originalLog = console.log.bind(console);
     this.originalConsole = {
-      log: console.log.bind(console),
+      log: this.originalLog,
       info: console.info.bind(console),
       warn: console.warn.bind(console),
       error: console.error.bind(console),
@@ -39,6 +40,15 @@ class ConsoleService {
   private interceptConsole() {
     // 拦截 console.error（错误日志）
     console.error = (...args: any[]) => {
+      // 过滤掉预期的错误（如开发者工具打开失败）
+      const firstArg = args[0];
+      if (typeof firstArg === 'string' && 
+          (firstArg.includes('无法打开开发者工具') || 
+           firstArg.includes('Failed to open developer tools'))) {
+        // 这是预期的错误，只输出到原始控制台，不记录到日志服务
+        this.originalConsole.error(...args);
+        return;
+      }
       this.addLog('error', args, this.getStackTrace());
       this.originalConsole.error(...args);
     };
@@ -47,6 +57,19 @@ class ConsoleService {
     console.warn = (...args: any[]) => {
       this.addLog('warn', args, this.getStackTrace());
       this.originalConsole.warn(...args);
+    };
+
+    // 拦截 console.log（普通日志）- 记录调试信息
+    console.log = (...args: any[]) => {
+      // 记录包含 [PathManager] 等调试标记的日志
+      const firstArg = args[0];
+      if (typeof firstArg === 'string' && 
+          (firstArg.includes('[PathManager]') ||
+           firstArg.includes('[调试]') ||
+           firstArg.includes('[DEBUG]'))) {
+        this.addLog('info', args);
+      }
+      this.originalLog(...args);
     };
 
     // 拦截 console.info（信息日志）- 记录重要操作
