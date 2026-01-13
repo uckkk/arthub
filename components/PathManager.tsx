@@ -1079,12 +1079,18 @@ const PathManager: React.FC = () => {
           <div 
             className="space-y-4"
             onDragOver={(e) => {
-              // 允许分组拖拽到空白区域
-              if (draggedGroup) {
+              // 检查是否是分组拖拽
+              const types = Array.from(e.dataTransfer.types);
+              const isGroupDrag = draggedGroup || types.includes('application/x-group');
+              
+              if (isGroupDrag && draggedGroup) {
+                // 分组拖拽：允许事件传播到子元素，但设置 dropEffect
                 e.preventDefault();
-                e.stopPropagation();
+                // 不调用 stopPropagation，让事件传播到分组容器
                 e.dataTransfer.dropEffect = 'move';
+                console.log('[PathManager] 外层容器 onDragOver: 分组拖拽', draggedGroup);
               }
+              // 如果不是分组拖拽，不处理，让其他处理器处理
             }}
           >
             {groupOrder.map((groupName, groupIndex) => {
