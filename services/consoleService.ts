@@ -21,6 +21,7 @@ class ConsoleService {
     error: typeof console.error;
     debug: typeof console.debug;
   };
+  private originalLog: typeof console.log;
 
   constructor() {
     // 保存原始的 console 方法
