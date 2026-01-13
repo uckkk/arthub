@@ -1131,12 +1131,25 @@ const PathManager: React.FC = () => {
                       const types = Array.from(e.dataTransfer.types);
                       const isGroupDrag = draggedGroup || types.includes('application/x-group');
                       
+                      console.log('[PathManager] 分组容器 onDragOver 触发:', {
+                        groupName,
+                        draggedGroup,
+                        isGroupDrag,
+                        types: Array.from(e.dataTransfer.types)
+                      });
+                      
                       if (!isGroupDrag || !draggedGroup || draggedGroup === groupName) {
+                        console.log('[PathManager] 分组容器 onDragOver: 跳过处理', {
+                          isGroupDrag,
+                          draggedGroup,
+                          groupName,
+                          isSame: draggedGroup === groupName
+                        });
                         return;
                       }
                       
                       e.preventDefault();
-                      e.stopPropagation();
+                      e.stopPropagation(); // 阻止事件继续传播
                       e.dataTransfer.dropEffect = 'move';
                       
                       // 判断是拖到分组上方还是下方
@@ -1144,10 +1157,12 @@ const PathManager: React.FC = () => {
                       const midpoint = rect.top + rect.height / 2;
                       if (e.clientY < midpoint) {
                         setDragOverGroup(groupName);
+                        console.log('[PathManager] 分组容器 onDragOver: 设置 dragOverGroup 为', groupName);
                       } else {
                         setDragOverGroup(null);
+                        console.log('[PathManager] 分组容器 onDragOver: 清除 dragOverGroup');
                       }
-                      console.log('[PathManager] 分组容器 onDragOver:', groupName, 'draggedGroup:', draggedGroup);
+                      console.log('[PathManager] 分组容器 onDragOver: 处理完成', groupName);
                     }}
                     onDrop={(e) => {
                       e.preventDefault();
