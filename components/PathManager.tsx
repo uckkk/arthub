@@ -767,10 +767,15 @@ const PathManager: React.FC = () => {
     e.dataTransfer.effectAllowed = 'move';
     e.dataTransfer.dropEffect = 'move';
     setDraggedGroup(groupName);
-    setIsDragging(true); // 标记开始拖拽
-    // 设置拖拽数据
-    e.dataTransfer.setData('text/plain', groupName);
-    e.dataTransfer.setData('application/x-group', JSON.stringify({ name: groupName, type: 'group' }));
+    setIsDragging(true);
+    // 设置拖拽数据 - 使用简单的文本格式
+    try {
+      e.dataTransfer.setData('text/plain', groupName);
+      e.dataTransfer.setData('application/x-group', 'true');
+    } catch (err) {
+      // 某些浏览器可能不支持 setData，使用状态管理
+      console.warn('Failed to set drag data:', err);
+    }
   };
 
   const handleDragOver = (groupName: string, index: number, e: React.DragEvent) => {
@@ -793,21 +798,14 @@ const PathManager: React.FC = () => {
   };
 
   const handleDragOverGroup = (groupName: string, e: React.DragEvent) => {
+    // 只处理分组拖拽
+    if (!draggedGroup || draggedGroup === groupName) {
+      return;
+    }
     e.preventDefault();
     e.stopPropagation();
-    // 检查是否是分组拖拽（使用状态而不是 getData）
-    const types = Array.from(e.dataTransfer.types);
-    const isGroupDrag = draggedGroup || types.includes('application/x-group');
-    
-    if (isGroupDrag) {
-      e.dataTransfer.dropEffect = 'move';
-      // 如果拖拽到不同的分组，设置拖拽悬停状态
-      if (draggedGroup && draggedGroup !== groupName) {
-        setDragOverGroup(groupName);
-      }
-    } else {
-      e.dataTransfer.dropEffect = 'none';
-    }
+    e.dataTransfer.dropEffect = 'move';
+    setDragOverGroup(groupName);
   };
 
   const handleDrop = (targetGroup: string, targetIndex: number, e: React.DragEvent) => {
@@ -882,113 +880,45 @@ const PathManager: React.FC = () => {
     setDragOverIndex(null);
   };
 
-  const handleDropGroup = (targetGroup: string, e: React.DragEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    
-    // 检查是否是分组拖拽
-    const types = Array.from(e.dataTransfer.types);
-    const isGroupDrag = draggedGroup || types.includes('application/x-group');
-    
-    if (!isGroupDrag || !draggedGroup) {
-      setDraggedGroup(null);
-      setDragOverGroup(null);
+  // 重新排序分组 - 简化版本
+  const reorderGroups = (draggedGroupName: string, targetGroupName: string, insertBefore: boolean) => {
+    if (!draggedGroupName || !targetGroupName || draggedGroupName === targetGroupName) {
       return;
     }
     
-    // 如果拖拽到同一个分组，不做任何操作
-    if (draggedGroup === targetGroup) {
-      setDraggedGroup(null);
-      setDragOverGroup(null);
-      return;
-    }
-    
-    // 确保分组顺序数组包含所有分组
+    // 获取所有分组
     const allGroups = Array.from(new Set([...groupOrder, ...Object.keys(groupedPaths)]));
     const newOrder = [...allGroups];
-    const draggedIndex = newOrder.indexOf(draggedGroup);
-    const targetIndex = newOrder.indexOf(targetGroup);
     
-    if (draggedIndex >= 0 && targetIndex >= 0 && draggedIndex !== targetIndex) {
-      // 移除被拖拽的分组
-      newOrder.splice(draggedIndex, 1);
-      // 计算新的目标索引（因为已经移除了一个元素）
-      const newTargetIndex = draggedIndex < targetIndex ? targetIndex - 1 : targetIndex;
-      // 插入到目标位置
-      newOrder.splice(newTargetIndex, 0, draggedGroup);
-      setGroupOrder(newOrder);
-    } else if (draggedIndex === -1) {
-      // 如果分组不在顺序中，添加到目标位置之前
-      const targetIdx = newOrder.indexOf(targetGroup);
-      if (targetIdx >= 0) {
-        newOrder.splice(targetIdx, 0, draggedGroup);
-      } else {
-        newOrder.push(draggedGroup);
-      }
-      setGroupOrder(newOrder);
+    const draggedIndex = newOrder.indexOf(draggedGroupName);
+    const targetIndex = newOrder.indexOf(targetGroupName);
+    
+    if (draggedIndex === -1 || targetIndex === -1) {
+      return;
     }
     
-    setDraggedGroup(null);
-    setDragOverGroup(null);
+    // 移除被拖拽的分组
+    newOrder.splice(draggedIndex, 1);
+    
+    // 计算插入位置
+    let insertIndex: number;
+    if (insertBefore) {
+      // 插入到目标之前
+      insertIndex = draggedIndex < targetIndex ? targetIndex - 1 : targetIndex;
+    } else {
+      // 插入到目标之后
+      insertIndex = draggedIndex < targetIndex ? targetIndex : targetIndex + 1;
+    }
+    
+    // 插入到新位置
+    newOrder.splice(insertIndex, 0, draggedGroupName);
+    
+    // 更新顺序
+    setGroupOrder(newOrder);
+    localStorage.setItem('arthub_group_order', JSON.stringify(newOrder));
   };
 
   // 拖拽分组到指定分组之前
-  const handleDropGroupBefore = (targetGroup: string, draggedGroupName?: string) => {
-    const currentDraggedGroup = draggedGroupName || draggedGroup;
-    if (!currentDraggedGroup || currentDraggedGroup === targetGroup) {
-      setDraggedGroup(null);
-      setDragOverGroup(null);
-      return;
-    }
-    
-    // 确保分组顺序数组包含所有分组
-    const allGroups = Array.from(new Set([...groupOrder, ...Object.keys(groupedPaths)]));
-    const newOrder = [...allGroups];
-    const draggedIndex = newOrder.indexOf(currentDraggedGroup);
-    const targetIndex = newOrder.indexOf(targetGroup);
-    
-    if (draggedIndex >= 0 && targetIndex >= 0 && draggedIndex !== targetIndex) {
-      // 移除被拖拽的分组
-      newOrder.splice(draggedIndex, 1);
-      // 计算新的目标索引
-      const newTargetIndex = draggedIndex < targetIndex ? targetIndex - 1 : targetIndex;
-      // 插入到目标位置之前
-      newOrder.splice(newTargetIndex, 0, currentDraggedGroup);
-      setGroupOrder(newOrder);
-    }
-    
-    setDraggedGroup(null);
-    setDragOverGroup(null);
-  };
-
-  // 拖拽分组到指定分组之后
-  const handleDropGroupAfter = (targetGroup: string, draggedGroupName?: string) => {
-    const currentDraggedGroup = draggedGroupName || draggedGroup;
-    if (!currentDraggedGroup || currentDraggedGroup === targetGroup) {
-      setDraggedGroup(null);
-      setDragOverGroup(null);
-      return;
-    }
-    
-    // 确保分组顺序数组包含所有分组
-    const allGroups = Array.from(new Set([...groupOrder, ...Object.keys(groupedPaths)]));
-    const newOrder = [...allGroups];
-    const draggedIndex = newOrder.indexOf(currentDraggedGroup);
-    const targetIndex = newOrder.indexOf(targetGroup);
-    
-    if (draggedIndex >= 0 && targetIndex >= 0 && draggedIndex !== targetIndex) {
-      // 移除被拖拽的分组
-      newOrder.splice(draggedIndex, 1);
-      // 计算新的目标索引（插入到目标之后）
-      const newTargetIndex = draggedIndex < targetIndex ? targetIndex : targetIndex + 1;
-      // 插入到目标位置之后
-      newOrder.splice(newTargetIndex, 0, currentDraggedGroup);
-      setGroupOrder(newOrder);
-    }
-    
-    setDraggedGroup(null);
-    setDragOverGroup(null);
-  };
 
   const handleDragEnd = () => {
     // 延迟清除状态，确保拖拽事件完全结束
