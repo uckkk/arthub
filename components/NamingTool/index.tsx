@@ -14,6 +14,7 @@ import DanmakuNamingTool from './DanmakuNamingTool';
 import TraditionalNamingTool from './TraditionalNamingTool';
 import DanmakuNamingRulesPanel from '../DanmakuNamingRulesPanel';
 import { useMiddleMouseScroll } from '../../utils/useMiddleMouseScroll';
+import { consoleService } from '../../services/consoleService';
 
 // 预设下拉框组件（与 FilterDropdown 样式一致）
 interface PresetDropdownProps {
@@ -181,8 +182,22 @@ const NamingTool: React.FC = () => {
         setSelectedResourceType(savedType || data.resourceTypes[0]);
       }
     } catch (error) {
-      console.error('Error loading danmaku preset:', error);
-      setPresetError('加载数据失败，请检查网络连接');
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      const errorStack = error instanceof Error ? error.stack : undefined;
+      console.error('[弹幕游戏] 加载预设失败:', errorMessage, error);
+      
+      // 记录详细错误信息到控制台服务
+      try {
+        const errorObj = error instanceof Error ? error : new Error(String(error));
+        consoleService.logErrorBoundary(
+          errorObj,
+          { componentStack: errorStack || '无堆栈信息' }
+        );
+      } catch (logError) {
+        console.error('记录错误到控制台服务失败:', logError);
+      }
+      
+      setPresetError(`加载数据失败: ${errorMessage}`);
     } finally {
       setIsLoadingPreset(false);
     }
