@@ -110,30 +110,80 @@ const PathManager: React.FC = () => {
     }
   }, []);
 
-  // 全局拖拽事件监听器 - 用于调试和跟踪分组拖拽
+  // 全局拖拽事件监听器 - 使用原生 DOM 事件处理分组拖拽
   useEffect(() => {
     const handleGlobalDragOver = (e: DragEvent) => {
-      // 只在分组拖拽时记录
-      if (draggedGroup) {
-        const target = e.target as HTMLElement;
-        console.log('[PathManager] 全局 onDragOver 触发:', {
-          draggedGroup,
-          target: target?.tagName,
-          targetClass: target?.className,
-          types: Array.from(e.dataTransfer?.types || []),
-          clientX: e.clientX,
-          clientY: e.clientY
+      // 记录所有 dragover 事件
+      const types = Array.from(e.dataTransfer?.types || []);
+      const isGroupDrag = draggedGroup || types.includes('application/x-group') || types.includes('text/plain');
+      
+      console.log('[PathManager] 全局 onDragOver 触发:', {
+        draggedGroup,
+        isGroupDrag,
+        target: (e.target as HTMLElement)?.tagName,
+        targetClass: (e.target as HTMLElement)?.className?.substring(0, 50),
+        types,
+        clientX: e.clientX,
+        clientY: e.clientY
+      });
+      
+      // 如果是分组拖拽，阻止默认行为并设置 dropEffect
+      if (isGroupDrag && draggedGroup) {
+        e.preventDefault();
+        if (e.dataTransfer) {
+          e.dataTransfer.dropEffect = 'move';
+        }
+        
+        // 查找当前悬停的分组容器
+        const groupContainers = document.querySelectorAll('[data-group-name]');
+        let hoveredGroup: string | null = null;
+        
+        groupContainers.forEach((container) => {
+          const rect = container.getBoundingClientRect();
+          if (e.clientX >= rect.left && e.clientX <= rect.right &&
+              e.clientY >= rect.top && e.clientY <= rect.bottom) {
+            hoveredGroup = container.getAttribute('data-group-name');
+          }
         });
+        
+        if (hoveredGroup && hoveredGroup !== draggedGroup) {
+          console.log('[PathManager] 检测到悬停在分组上:', hoveredGroup);
+          setDragOverGroup(hoveredGroup);
+        }
       }
     };
 
     const handleGlobalDrop = (e: DragEvent) => {
-      if (draggedGroup) {
-        console.log('[PathManager] 全局 onDrop 触发:', {
-          draggedGroup,
-          target: (e.target as HTMLElement)?.tagName,
-          types: Array.from(e.dataTransfer?.types || [])
-        });
+      const types = Array.from(e.dataTransfer?.types || []);
+      const isGroupDrag = draggedGroup || types.includes('application/x-group');
+      
+      console.log('[PathManager] 全局 onDrop 触发:', {
+        draggedGroup,
+        isGroupDrag,
+        target: (e.target as HTMLElement)?.tagName,
+        types
+      });
+      
+      if (isGroupDrag && draggedGroup) {
+        e.preventDefault();
+        const target = e.target as HTMLElement;
+        const groupContainer = target.closest('[data-group-name]');
+        if (groupContainer) {
+          const targetGroupName = groupContainer.getAttribute('data-group-name');
+          if (targetGroupName && targetGroupName !== draggedGroup) {
+            const rect = groupContainer.getBoundingClientRect();
+            const midpoint = rect.top + rect.height / 2;
+            const insertBefore = e.clientY < midpoint;
+            console.log('[PathManager] 全局 onDrop: 执行重新排序', {
+              draggedGroup,
+              targetGroupName,
+              insertBefore
+            });
+            reorderGroups(draggedGroup, targetGroupName, insertBefore);
+            setDraggedGroup(null);
+            setDragOverGroup(null);
+          }
+        }
       }
     };
 
