@@ -1198,9 +1198,15 @@ const PathManager: React.FC = () => {
                       handleDragOverGroup(groupName, e);
                     }}
                     onDrop={(e) => {
-                      e.preventDefault();
-                      e.stopPropagation();
-                      handleDropGroup(groupName, e);
+                      // 不阻止事件冒泡，让分组容器的 onDrop 处理跨组拖拽
+                      // 只有当拖拽到同一个分组标题时才在这里处理
+                      const draggedGroupName = e.dataTransfer.getData('text/plain') || draggedGroup;
+                      if (draggedGroupName === groupName) {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        handleDropGroup(groupName, e);
+                      }
+                      // 否则让事件冒泡到分组容器处理
                     }}
                     onDragEnd={(e) => {
                       handleDragEnd();
