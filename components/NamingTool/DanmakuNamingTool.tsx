@@ -3,8 +3,8 @@
  * 从原 NamingTool.tsx 迁移的弹幕游戏模板逻辑
  */
 
-import React, { useState, useEffect, useCallback } from 'react';
-import { X, Wand2, Copy } from 'lucide-react';
+import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import { X, Wand2, Copy, ChevronDown, Check } from 'lucide-react';
 import { DanmakuResourceType, DanmakuDictionary, SpecialSuffix } from '../../types';
 import { getPresetLabel } from '../../services/namingDataService';
 import { getDictionariesForResourceCategory } from '../../services/danmakuNamingService';
@@ -16,6 +16,101 @@ import { SpecialSuffixSelector } from './SpecialSuffixSelector';
 import { NamingPreview } from './NamingPreview';
 import { Input } from '../common';
 import { useToast } from '../Toast';
+
+// 统一的下拉组件（与 FormatSelector 中的 Dropdown 样式一致）
+interface UnifiedDropdownProps {
+  options: { value: string; label: string }[];
+  value: string;
+  onChange: (value: string) => void;
+  disabled?: boolean;
+  placeholder?: string;
+  className?: string;
+}
+
+const UnifiedDropdown: React.FC<UnifiedDropdownProps> = ({ 
+  options, 
+  value, 
+  onChange, 
+  disabled, 
+  placeholder = '选择',
+  className = ''
+}) => {
+  const [isOpen, setIsOpen] = useState(false);
+  const dropdownRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+        setIsOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  const selectedOption = options.find(opt => opt.value === value);
+
+  return (
+    <div ref={dropdownRef} className={`relative ${className}`}>
+      <button
+        type="button"
+        onClick={() => !disabled && setIsOpen(!isOpen)}
+        disabled={disabled}
+        className={`
+          w-full flex items-center gap-2 px-3 py-2
+          bg-[#0f0f0f] border border-[#2a2a2a] rounded-lg
+          text-white hover:border-[#3a3a3a]
+          transition-all duration-150
+          ${disabled ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}
+        `}
+      >
+        <span className="flex-1 text-left text-sm">
+          {selectedOption?.label || placeholder}
+        </span>
+        <ChevronDown 
+          size={14} 
+          className={`text-[#666666] transition-transform duration-150 ${isOpen ? 'rotate-180' : ''}`}
+        />
+      </button>
+
+      {isOpen && (
+        <div className="
+          absolute top-full left-0 mt-1 w-full min-w-[100px]
+          bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg
+          shadow-lg shadow-black/50
+          z-50 overflow-hidden
+          animate-scale-in
+          max-h-[300px] overflow-y-auto
+        " style={{ scrollbarWidth: 'thin', scrollbarColor: '#2a2a2a #1a1a1a' }}>
+          {options.map((option) => (
+            <button
+              key={option.value}
+              type="button"
+              onClick={() => {
+                onChange(option.value);
+                setIsOpen(false);
+              }}
+              className={`
+                w-full flex items-center gap-2 px-3 py-2
+                text-sm text-left
+                transition-colors duration-150
+                ${option.value === value 
+                  ? 'bg-[#252525] text-white' 
+                  : 'text-[#a0a0a0] hover:bg-[#222222] hover:text-white'
+                }
+              `}
+            >
+              <span className="flex-1">{option.label}</span>
+              {option.value === value && (
+                <Check size={12} className="text-blue-400" />
+              )}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+};
 
 interface DanmakuNamingToolProps {
   resourceTypes: DanmakuResourceType[];
@@ -435,32 +530,44 @@ const DanmakuNamingTool: React.FC<DanmakuNamingToolProps> = ({
   const needsUnitId = rule && rule.rules.some(r => r.requiresUnitId);
   const needsItemId = rule && rule.rules.some(r => r.requiresItemId);
 
+  // 准备资源类型选项
+  const resourceTypeOptions = useMemo(() => {
+    const options: { value: string; label: string }[] = [];
+    const grouped = new Map<string, DanmakuResourceType[]>();
+    resourceTypes.forEach(rt => {
+      if (!grouped.has(rt.category)) {
+        grouped.set(rt.category, []);
+      }
+      grouped.get(rt.category)!.push(rt);
+    });
+    
+    grouped.forEach((types) => {
+      types.forEach(type => {
+        options.push({
+          value: type.id,
+          label: `${type.subCategory}`
+        });
+      });
+    });
+    return options;
+  }, [resourceTypes]);
+
   return (
-    <div className="space-y-6 flex-1">
+    <div className="space-y-6 flex-1 min-h-0 overflow-y-auto" style={{ scrollbarWidth: 'thin', scrollbarColor: '#2a2a2a #0a0a0a' }}>
       {/* 资源类型选择 */}
       <div>
         <label className="block text-sm font-medium text-slate-400 mb-2">资源类型</label>
-        <select 
-          className="w-full bg-slate-900 border border-slate-700 rounded-lg p-3 text-white focus:ring-2 focus:ring-blue-500 outline-none"
+        <UnifiedDropdown
+          options={resourceTypeOptions}
           value={selectedResourceType?.id || ''}
-          onChange={(e) => {
-            const selected = resourceTypes.find(t => t.id === e.target.value);
+          onChange={(value) => {
+            const selected = resourceTypes.find(t => t.id === value);
             if (selected) {
               onResourceTypeChange(selected);
               localStorage.setItem('arthub_danmaku_resource_type_id', selected.id);
             }
           }}
-        >
-          {Array.from(new Map(resourceTypes.map(rt => [rt.category, rt])).entries()).map(([category, _]) => (
-            <optgroup key={category} label={category}>
-              {resourceTypes.filter(rt => rt.category === category).map(type => (
-                <option key={type.id} value={type.id}>
-                  {type.subCategory}
-                </option>
-              ))}
-            </optgroup>
-          ))}
-        </select>
+        />
       </div>
 
       {/* 词典选择 */}
@@ -475,24 +582,18 @@ const DanmakuNamingTool: React.FC<DanmakuNamingToolProps> = ({
                 <label className="block text-sm font-medium text-slate-400 mb-2">
                   {dictKey}
                 </label>
-                <select 
+                <UnifiedDropdown
+                  options={dict.items.map(item => ({ value: item.abbr, label: item.label }))}
                   value={currentValue}
-                  onChange={(e) => {
+                  onChange={(value) => {
                     const newValues = new Map(placeholderValues);
-                    newValues.set(dictKey, e.target.value);
+                    newValues.set(dictKey, value);
                     setPlaceholderValues(newValues);
                     if (selectedResourceType) {
-                      localStorage.setItem(`arthub_danmaku_${selectedResourceType.id}_${dictKey}`, e.target.value);
+                      localStorage.setItem(`arthub_danmaku_${selectedResourceType.id}_${dictKey}`, value);
                     }
                   }}
-                  className="w-full bg-slate-900 border border-slate-700 rounded-lg p-3 text-white focus:ring-2 focus:ring-blue-500 outline-none"
-                >
-                  {dict.items.map(item => (
-                    <option key={item.id} value={item.abbr}>
-                      {item.label}
-                    </option>
-                  ))}
-                </select>
+                />
               </div>
             );
           })}
@@ -533,22 +634,22 @@ const DanmakuNamingTool: React.FC<DanmakuNamingToolProps> = ({
             <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-3">
               <div>
                 <label className="block text-xs text-slate-500 mb-1">A位：技能类型</label>
-                <select
-                  className="w-full bg-slate-800 border border-slate-700 rounded-lg p-2 text-white text-sm focus:ring-2 focus:ring-blue-500 outline-none"
-                  value={skillType}
-                  onChange={(e) => {
-                    const value = parseInt(e.target.value, 10);
-                    setSkillType(value);
-                    setStarLevel(value);
-                    localStorage.setItem('arthub_danmaku_skill_type', value.toString());
-                    localStorage.setItem('arthub_danmaku_star_level', value.toString());
+                <UnifiedDropdown
+                  options={[
+                    { value: '1', label: '1-地图技能' },
+                    { value: '2', label: '2-物品技能' },
+                    { value: '3', label: '3-怪物技能' },
+                    { value: '4', label: '4-英雄技能' }
+                  ]}
+                  value={skillType.toString()}
+                  onChange={(value) => {
+                    const numValue = parseInt(value, 10);
+                    setSkillType(numValue);
+                    setStarLevel(numValue);
+                    localStorage.setItem('arthub_danmaku_skill_type', numValue.toString());
+                    localStorage.setItem('arthub_danmaku_star_level', numValue.toString());
                   }}
-                >
-                  <option value={1}>1-地图技能</option>
-                  <option value={2}>2-物品技能</option>
-                  <option value={3}>3-怪物技能</option>
-                  <option value={4}>4-英雄技能</option>
-                </select>
+                />
               </div>
               
               <div>
@@ -639,19 +740,19 @@ const DanmakuNamingTool: React.FC<DanmakuNamingToolProps> = ({
               <label className="block text-sm font-medium text-slate-400 mb-2">
                 升级等级（可选，仅子弹资源）
               </label>
-              <select
-                className="w-full bg-slate-900 border border-slate-700 rounded-lg p-3 text-white focus:ring-2 focus:ring-blue-500 outline-none"
+              <UnifiedDropdown
+                options={[
+                  { value: '', label: '0星（无后缀）' },
+                  { value: '1', label: '1星（_1后缀）' },
+                  { value: '2', label: '2星（_2后缀）' }
+                ]}
                 value={upgradeLevel === undefined ? '' : upgradeLevel.toString()}
-                onChange={(e) => {
-                  const value = e.target.value === '' ? undefined : parseInt(e.target.value, 10);
-                  setUpgradeLevel(value);
-                  localStorage.setItem('arthub_danmaku_upgrade_level', value === undefined ? '' : value.toString());
+                onChange={(value) => {
+                  const numValue = value === '' ? undefined : parseInt(value, 10);
+                  setUpgradeLevel(numValue);
+                  localStorage.setItem('arthub_danmaku_upgrade_level', numValue === undefined ? '' : numValue.toString());
                 }}
-              >
-                <option value="">0星（无后缀）</option>
-                <option value="1">1星（_1后缀）</option>
-                <option value="2">2星（_2后缀）</option>
-              </select>
+              />
             </div>
           )}
         </div>
