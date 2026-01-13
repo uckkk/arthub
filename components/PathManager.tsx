@@ -899,12 +899,15 @@ const PathManager: React.FC = () => {
       target: e.target,
       currentTarget: e.currentTarget,
       button: e.button,
-      buttons: e.buttons
+      buttons: e.buttons,
+      dataTransfer: e.dataTransfer
     });
     
-    // 不阻止事件传播，让拖拽事件正常传播
-    // e.stopPropagation(); // 移除这个，可能阻止了拖拽操作
+    // 立即设置状态，不要延迟
+    setDraggedGroup(groupName);
+    setIsDragging(true);
     
+    // 设置拖拽数据 - 必须在 dragstart 事件中同步设置
     e.dataTransfer.effectAllowed = 'move';
     e.dataTransfer.dropEffect = 'move';
     
@@ -914,19 +917,15 @@ const PathManager: React.FC = () => {
       e.dataTransfer.setData('application/x-group', 'true');
       console.log('[PathManager] 拖拽数据已设置:', groupName, {
         types: Array.from(e.dataTransfer.types),
-        effectAllowed: e.dataTransfer.effectAllowed
+        effectAllowed: e.dataTransfer.effectAllowed,
+        dropEffect: e.dataTransfer.dropEffect
       });
     } catch (err) {
       // 某些浏览器可能不支持 setData，使用状态管理
       console.warn('[PathManager] 设置拖拽数据失败:', err);
     }
     
-    // 延迟设置状态，确保拖拽操作已经开始
-    setTimeout(() => {
-      setDraggedGroup(groupName);
-      setIsDragging(true);
-      console.log('[PathManager] 拖拽状态已设置:', groupName);
-    }, 0);
+    console.log('[PathManager] 拖拽状态已设置:', groupName);
   };
 
   const handleDragOver = (groupName: string, index: number, e: React.DragEvent) => {
@@ -1315,6 +1314,7 @@ const PathManager: React.FC = () => {
                     {/* 分组标题 - 只负责启动拖拽 */}
                     <div 
                       draggable={true}
+                      data-drag-group={groupName}
                       onDragStart={(e) => {
                         handleDragStartGroup(groupName, e);
                       }}
