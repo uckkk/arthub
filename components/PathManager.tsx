@@ -1128,44 +1128,45 @@ const PathManager: React.FC = () => {
                     className="space-y-2"
                     onDragOver={(e) => {
                       // 确保事件能够到达这里
-                      console.log('[PathManager] 分组容器 onDragOver 被调用:', groupName);
+                      console.log('[PathManager] 分组容器 onDragOver 被调用:', groupName, 'draggedGroup:', draggedGroup);
                       
                       // 检查是否是分组拖拽
                       const types = Array.from(e.dataTransfer.types);
-                      const isGroupDrag = draggedGroup || types.includes('application/x-group');
+                      const isGroupDrag = draggedGroup || types.includes('application/x-group') || types.includes('text/plain');
                       
                       console.log('[PathManager] 分组容器 onDragOver 触发:', {
                         groupName,
                         draggedGroup,
                         isGroupDrag,
-                        types: Array.from(e.dataTransfer.types)
+                        types: Array.from(e.dataTransfer.types),
+                        clientY: e.clientY
                       });
                       
-                      if (!isGroupDrag || !draggedGroup || draggedGroup === groupName) {
+                      // 如果是分组拖拽，必须处理
+                      if (isGroupDrag && draggedGroup && draggedGroup !== groupName) {
+                        e.preventDefault();
+                        e.stopPropagation(); // 阻止事件继续传播
+                        e.dataTransfer.dropEffect = 'move';
+                        
+                        // 判断是拖到分组上方还是下方
+                        const rect = e.currentTarget.getBoundingClientRect();
+                        const midpoint = rect.top + rect.height / 2;
+                        if (e.clientY < midpoint) {
+                          setDragOverGroup(groupName);
+                          console.log('[PathManager] 分组容器 onDragOver: 设置 dragOverGroup 为', groupName);
+                        } else {
+                          setDragOverGroup(null);
+                          console.log('[PathManager] 分组容器 onDragOver: 清除 dragOverGroup');
+                        }
+                        console.log('[PathManager] 分组容器 onDragOver: 处理完成', groupName);
+                      } else {
                         console.log('[PathManager] 分组容器 onDragOver: 跳过处理', {
                           isGroupDrag,
                           draggedGroup,
                           groupName,
                           isSame: draggedGroup === groupName
                         });
-                        return;
                       }
-                      
-                      e.preventDefault();
-                      e.stopPropagation(); // 阻止事件继续传播
-                      e.dataTransfer.dropEffect = 'move';
-                      
-                      // 判断是拖到分组上方还是下方
-                      const rect = e.currentTarget.getBoundingClientRect();
-                      const midpoint = rect.top + rect.height / 2;
-                      if (e.clientY < midpoint) {
-                        setDragOverGroup(groupName);
-                        console.log('[PathManager] 分组容器 onDragOver: 设置 dragOverGroup 为', groupName);
-                      } else {
-                        setDragOverGroup(null);
-                        console.log('[PathManager] 分组容器 onDragOver: 清除 dragOverGroup');
-                      }
-                      console.log('[PathManager] 分组容器 onDragOver: 处理完成', groupName);
                     }}
                     onDrop={(e) => {
                       e.preventDefault();
