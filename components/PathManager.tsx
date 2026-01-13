@@ -1041,8 +1041,26 @@ const PathManager: React.FC = () => {
         ref={scrollContainerRef}
         onDragEnter={handleDragEnter}
         onDragLeave={handleDragLeave}
-        onDragOver={handleDragOverCreatePath}
-        onDrop={handleDropCreatePath}
+        onDragOver={(e) => {
+          // 检查是否是分组拖拽，如果是则不处理，让分组容器处理
+          const types = Array.from(e.dataTransfer.types);
+          const isGroupDrag = draggedGroup || types.includes('application/x-group');
+          if (isGroupDrag) {
+            // 分组拖拽，不阻止默认行为，让事件传播到分组容器
+            return;
+          }
+          handleDragOverCreatePath(e);
+        }}
+        onDrop={(e) => {
+          // 检查是否是分组拖拽，如果是则不处理，让分组容器处理
+          const types = Array.from(e.dataTransfer.types);
+          const isGroupDrag = draggedGroup || types.includes('application/x-group');
+          if (isGroupDrag) {
+            // 分组拖拽，不阻止默认行为，让事件传播到分组容器
+            return;
+          }
+          handleDropCreatePath(e);
+        }}
         className={`
           flex-1 min-h-0 overflow-y-auto px-6 py-6 transition-colors duration-200
           ${isDraggingOver ? 'bg-blue-500/10 border-2 border-dashed border-blue-500' : ''}
