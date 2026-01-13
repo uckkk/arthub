@@ -177,8 +177,12 @@ const PathManager: React.FC = () => {
 
   // 处理拖拽放下（创建新路径）
   const handleDropCreatePath = async (e: React.DragEvent) => {
-    // 如果是分组拖拽，不处理（让分组容器处理）
-    if (draggedGroup) {
+    // 检查是否是分组拖拽
+    const types = Array.from(e.dataTransfer.types);
+    const isGroupDrag = draggedGroup || types.includes('application/x-group');
+    
+    if (isGroupDrag) {
+      // 分组拖拽，不处理文件拖拽，让分组容器处理
       return;
     }
     
