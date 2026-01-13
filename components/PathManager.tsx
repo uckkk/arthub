@@ -1032,44 +1032,6 @@ const PathManager: React.FC = () => {
     setDragOverIndex(null);
   };
 
-  // 重新排序分组 - 简化版本
-  const reorderGroups = (draggedGroupName: string, targetGroupName: string, insertBefore: boolean) => {
-    if (!draggedGroupName || !targetGroupName || draggedGroupName === targetGroupName) {
-      return;
-    }
-    
-    // 获取所有分组
-    const allGroups = Array.from(new Set([...groupOrder, ...Object.keys(groupedPaths)]));
-    const newOrder = [...allGroups];
-    
-    const draggedIndex = newOrder.indexOf(draggedGroupName);
-    const targetIndex = newOrder.indexOf(targetGroupName);
-    
-    if (draggedIndex === -1 || targetIndex === -1) {
-      return;
-    }
-    
-    // 移除被拖拽的分组
-    newOrder.splice(draggedIndex, 1);
-    
-    // 计算插入位置
-    let insertIndex: number;
-    if (insertBefore) {
-      // 插入到目标之前
-      insertIndex = draggedIndex < targetIndex ? targetIndex - 1 : targetIndex;
-    } else {
-      // 插入到目标之后
-      insertIndex = draggedIndex < targetIndex ? targetIndex : targetIndex + 1;
-    }
-    
-    // 插入到新位置
-    newOrder.splice(insertIndex, 0, draggedGroupName);
-    
-    // 更新顺序
-    setGroupOrder(newOrder);
-    localStorage.setItem('arthub_group_order', JSON.stringify(newOrder));
-  };
-
   // 拖拽分组到指定分组之前
 
   const handleDragEnd = () => {
