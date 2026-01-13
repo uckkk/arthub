@@ -525,17 +525,22 @@ const DanmakuNamingTool: React.FC<DanmakuNamingToolProps> = ({
     );
   }
 
-  const neededDicts = selectedResourceType 
-    ? getDictionariesForResourceCategory(selectedResourceType.category, dictionaries)
-    : [];
+  // 如果 selectedResourceType 为 null，显示加载提示
+  if (!selectedResourceType) {
+    return (
+      <div className="text-center py-12 text-slate-400">
+        <p>正在初始化资源类型...</p>
+      </div>
+    );
+  }
+
+  const neededDicts = getDictionariesForResourceCategory(selectedResourceType.category, dictionaries);
   const filteredDicts = neededDicts.filter(dict => {
     const dictKey = dict.category.split('(')[0].trim();
     return dictKey !== '怪物阶级';
   });
 
-  const rule = selectedResourceType 
-    ? getRulesByCategory(selectedResourceType.category, selectedResourceType.subCategory)
-    : null;
+  const rule = getRulesByCategory(selectedResourceType.category, selectedResourceType.subCategory);
   const needsSkillId = rule && rule.rules.some(r => r.requiresSkillId);
   const needsUnitId = rule && rule.rules.some(r => r.requiresUnitId);
   const needsItemId = rule && rule.rules.some(r => r.requiresItemId);
