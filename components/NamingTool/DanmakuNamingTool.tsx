@@ -507,24 +507,22 @@ const DanmakuNamingTool: React.FC<DanmakuNamingToolProps> = ({
     setActiveSuffixes(newActiveSuffixes);
   };
 
+  // 确保 selectedResourceType 存在
+  useEffect(() => {
+    if (!selectedResourceType && resourceTypes.length > 0) {
+      const firstType = resourceTypes[0];
+      if (firstType) {
+        onResourceTypeChange(firstType);
+      }
+    }
+  }, [resourceTypes, selectedResourceType, onResourceTypeChange]);
+
   if (resourceTypes.length === 0) {
     return (
       <div className="text-center py-12 text-slate-400">
         <p>正在加载资源类型...</p>
       </div>
     );
-  }
-
-  // 确保 selectedResourceType 存在
-  if (!selectedResourceType && resourceTypes.length > 0) {
-    // 如果没有选中的资源类型，选择第一个
-    const firstType = resourceTypes[0];
-    if (firstType) {
-      // 使用 setTimeout 避免在渲染期间更新状态
-      setTimeout(() => {
-        onResourceTypeChange(firstType);
-      }, 0);
-    }
   }
 
   const neededDicts = selectedResourceType 
