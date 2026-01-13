@@ -202,12 +202,10 @@ const App: React.FC = () => {
       if (e.key === 'F12' || (e.ctrlKey && e.shiftKey && e.key === 'I')) {
         e.preventDefault();
         try {
-          // 尝试使用 Tauri API 打开开发者工具
+          // 尝试使用 Tauri 命令打开开发者工具
           if (window.__TAURI__) {
-            // Tauri v1 API
-            const { getCurrentWindow } = await import('@tauri-apps/api/window');
-            const currentWindow = getCurrentWindow();
-            await currentWindow.openDevtools();
+            const { invoke } = await import('@tauri-apps/api/tauri');
+            await invoke('open_devtools');
           } else {
             // 如果 Tauri API 不可用，尝试打开控制台模态框
             setShowConsole(true);

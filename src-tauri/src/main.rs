@@ -1424,7 +1424,8 @@ fn main() {
             open_ai_window,
             open_ai_tab,
             simulate_paste,
-            send_workflow_to_comfyui
+            send_workflow_to_comfyui,
+            open_devtools
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
