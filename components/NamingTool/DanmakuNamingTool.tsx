@@ -532,6 +532,45 @@ const DanmakuNamingTool: React.FC<DanmakuNamingToolProps> = ({
     return options;
   }, [resourceTypes]);
 
+  // 确保 selectedResourceType 存在
+  useEffect(() => {
+    if (!selectedResourceType && resourceTypes.length > 0) {
+      const firstType = resourceTypes[0];
+      if (firstType) {
+        onResourceTypeChange(firstType);
+      }
+    }
+  }, [resourceTypes, selectedResourceType, onResourceTypeChange]);
+
+  if (resourceTypes.length === 0) {
+    return (
+      <div className="text-center py-12 text-slate-400">
+        <p>正在加载资源类型...</p>
+      </div>
+    );
+  }
+
+  // 如果 selectedResourceType 为 null，显示加载提示
+  if (!selectedResourceType) {
+    return (
+      <div className="text-center py-12 text-slate-400">
+        <p>正在初始化资源类型...</p>
+      </div>
+    );
+  }
+
+  // 定义这些变量（在条件返回之后，但在 JSX 中使用之前）
+  const neededDicts = getDictionariesForResourceCategory(selectedResourceType.category, dictionaries);
+  const filteredDicts = neededDicts.filter(dict => {
+    const dictKey = dict.category.split('(')[0].trim();
+    return dictKey !== '怪物阶级';
+  });
+
+  const rule = getRulesByCategory(selectedResourceType.category, selectedResourceType.subCategory);
+  const needsSkillId = rule && rule.rules.some(r => r.requiresSkillId);
+  const needsUnitId = rule && rule.rules.some(r => r.requiresUnitId);
+  const needsItemId = rule && rule.rules.some(r => r.requiresItemId);
+
   return (
     <div className="space-y-6 flex-1 min-h-0 overflow-y-auto" style={{ scrollbarWidth: 'thin', scrollbarColor: '#2a2a2a #0a0a0a' }}>
       {/* 资源类型选择 */}
