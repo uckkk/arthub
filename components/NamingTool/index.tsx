@@ -261,8 +261,8 @@ const NamingTool: React.FC = () => {
       {/* 主内容区域 */}
       <div 
         ref={scrollContainerRef}
-        className="flex-1 overflow-y-auto p-6"
-        style={{ scrollbarWidth: 'thin' }}
+        className="flex-1 min-h-0 overflow-y-auto p-6"
+        style={{ scrollbarWidth: 'thin', scrollbarColor: '#2a2a2a #0a0a0a' }}
       >
         {isDanmaku ? (
           <DanmakuNamingTool
