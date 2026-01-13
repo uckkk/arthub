@@ -1191,8 +1191,16 @@ const PathManager: React.FC = () => {
                       onDragStart={(e) => {
                         handleDragStartGroup(groupName, e);
                       }}
-                      onDragEnd={() => {
-                        console.log('[PathManager] 拖拽结束');
+                      onDragEnd={(e) => {
+                        console.log('[PathManager] 拖拽结束', {
+                          groupName,
+                          draggedGroup,
+                          dataTransfer: {
+                            types: Array.from(e.dataTransfer.types),
+                            effectAllowed: e.dataTransfer.effectAllowed,
+                            dropEffect: e.dataTransfer.dropEffect
+                          }
+                        });
                         handleDragEnd();
                       }}
                     onClick={(e) => {
