@@ -81,4 +81,20 @@ writeJson(tauriConfigPath, tauriConfig);
 const cargoTomlPath = path.join(__dirname, '../src-tauri/Cargo.toml');
 updateCargoToml(cargoTomlPath, version);
 
+// 更新 services/updateService.ts
+const updateServicePath = path.join(__dirname, '../services/updateService.ts');
+try {
+  let updateService = fs.readFileSync(updateServicePath, 'utf-8');
+  // 替换 CURRENT_VERSION = 'x.x.x' 行
+  updateService = updateService.replace(
+    /let CURRENT_VERSION = '[\d.]+';/,
+    `let CURRENT_VERSION = '${version}';`
+  );
+  fs.writeFileSync(updateServicePath, updateService, 'utf-8');
+  console.log(`✓ 已更新 ${updateServicePath}`);
+} catch (e) {
+  console.error(`无法更新 ${updateServicePath}:`, e);
+  process.exit(1);
+}
+
 console.log(`\n✓ 版本号同步完成: ${version}`);
