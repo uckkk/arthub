@@ -1127,6 +1127,9 @@ const PathManager: React.FC = () => {
                   <div 
                     className="space-y-2"
                     onDragOver={(e) => {
+                      // 确保事件能够到达这里
+                      console.log('[PathManager] 分组容器 onDragOver 被调用:', groupName);
+                      
                       // 检查是否是分组拖拽
                       const types = Array.from(e.dataTransfer.types);
                       const isGroupDrag = draggedGroup || types.includes('application/x-group');
