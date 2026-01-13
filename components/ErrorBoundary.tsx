@@ -4,7 +4,7 @@
  */
 
 import React, { Component, ErrorInfo, ReactNode } from 'react';
-import { AlertCircle, RefreshCw } from 'lucide-react';
+import { AlertCircle, RefreshCw, Copy } from 'lucide-react';
 import { consoleService } from '../services/consoleService';
 
 interface Props {
@@ -58,6 +58,26 @@ export class ErrorBoundary extends Component<Props, State> {
     });
   };
 
+  handleCopyError = () => {
+    if (!this.state.error) return;
+    
+    const errorText = [
+      `错误: ${this.state.error.toString()}`,
+      '',
+      '堆栈信息:',
+      this.state.error.stack || '无堆栈信息',
+      '',
+      '组件堆栈:',
+      this.state.errorInfo?.componentStack || '无组件堆栈信息',
+    ].join('\n');
+    
+    navigator.clipboard.writeText(errorText).then(() => {
+      // 可以添加一个短暂的提示
+    }).catch(err => {
+      console.error('复制失败:', err);
+    });
+  };
+
   render() {
     if (this.state.hasError) {
       if (this.props.fallback) {
@@ -107,6 +127,13 @@ export class ErrorBoundary extends Component<Props, State> {
               >
                 <RefreshCw size={16} />
                 重试
+              </button>
+              <button
+                onClick={this.handleCopyError}
+                className="px-4 py-2 bg-slate-700 hover:bg-slate-600 text-white rounded-lg transition-colors flex items-center gap-2"
+              >
+                <Copy size={16} />
+                复制错误
               </button>
               <button
                 onClick={() => window.location.reload()}

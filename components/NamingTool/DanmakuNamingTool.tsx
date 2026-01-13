@@ -155,7 +155,10 @@ const DanmakuNamingTool: React.FC<DanmakuNamingToolProps> = ({
 
   // 当选择资源类型变化时，初始化词典选择
   useEffect(() => {
-    if (!selectedResourceType) return;
+    if (!selectedResourceType) {
+      // 确保即使 selectedResourceType 为 null 时也执行完整的 useEffect
+      return;
+    }
 
     const newValues = new Map<string, string>();
     const neededDicts = getDictionariesForResourceCategory(selectedResourceType.category, dictionaries);
