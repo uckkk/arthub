@@ -110,6 +110,43 @@ const PathManager: React.FC = () => {
     }
   }, []);
 
+  // 全局拖拽事件监听器 - 用于调试和跟踪分组拖拽
+  useEffect(() => {
+    const handleGlobalDragOver = (e: DragEvent) => {
+      // 只在分组拖拽时记录
+      if (draggedGroup) {
+        const target = e.target as HTMLElement;
+        console.log('[PathManager] 全局 onDragOver 触发:', {
+          draggedGroup,
+          target: target?.tagName,
+          targetClass: target?.className,
+          types: Array.from(e.dataTransfer?.types || []),
+          clientX: e.clientX,
+          clientY: e.clientY
+        });
+      }
+    };
+
+    const handleGlobalDrop = (e: DragEvent) => {
+      if (draggedGroup) {
+        console.log('[PathManager] 全局 onDrop 触发:', {
+          draggedGroup,
+          target: (e.target as HTMLElement)?.tagName,
+          types: Array.from(e.dataTransfer?.types || [])
+        });
+      }
+    };
+
+    // 使用捕获阶段监听，确保能捕获到所有事件
+    document.addEventListener('dragover', handleGlobalDragOver, true);
+    document.addEventListener('drop', handleGlobalDrop, true);
+
+    return () => {
+      document.removeEventListener('dragover', handleGlobalDragOver, true);
+      document.removeEventListener('drop', handleGlobalDrop, true);
+    };
+  }, [draggedGroup]);
+
   // 监听快速路径更新事件和模板切换
   useEffect(() => {
     const loadQuickPaths = () => {
