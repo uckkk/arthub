@@ -195,6 +195,35 @@ const App: React.FC = () => {
     return () => window.removeEventListener('openSettings', handleOpenSettings);
   }, []);
 
+  // 监听键盘快捷键打开开发者工具（F12 或 Ctrl+Shift+I）
+  useEffect(() => {
+    const handleKeyDown = async (e: KeyboardEvent) => {
+      // F12 或 Ctrl+Shift+I
+      if (e.key === 'F12' || (e.ctrlKey && e.shiftKey && e.key === 'I')) {
+        e.preventDefault();
+        try {
+          // 尝试使用 Tauri API 打开开发者工具
+          if (window.__TAURI__ && window.__TAURI__.window) {
+            const currentWindow = window.__TAURI__.window.getCurrent();
+            await currentWindow.openDevtools();
+          } else {
+            // 如果 Tauri API 不可用，尝试打开控制台模态框
+            setShowConsole(true);
+          }
+        } catch (error) {
+          console.error('无法打开开发者工具:', error);
+          // 如果打开开发者工具失败，打开控制台模态框
+          setShowConsole(true);
+        }
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, []);
+
   const handleUserVerified = () => {
     setIsUserVerified(true);
     const savedUserInfo = getUserInfo();
