@@ -208,8 +208,6 @@ const HomePage: React.FC = () => {
                             ">
                               {path.name}
                             </h3>
-                            {/* 收藏标识 */}
-                            <Star size={11} className="text-yellow-400 fill-current shrink-0" />
                           </div>
                           <div className="flex items-center gap-1.5 flex-wrap">
                             {path.group && (
@@ -284,17 +282,6 @@ const HomePage: React.FC = () => {
                           cursor-pointer
                         "
                       >
-                        {/* 收藏标识 */}
-                        <div className="absolute top-3 right-3 z-10">
-                          <div className="
-                            p-1.5 rounded-lg
-                            bg-yellow-500/20 backdrop-blur-sm
-                            border border-yellow-500/30
-                          ">
-                            <Star size={14} className="text-yellow-400" fill="currentColor" />
-                          </div>
-                        </div>
-
                         {/* 缩略图区域 */}
                         <div className="relative aspect-[16/10] bg-[#0f0f0f] overflow-hidden">
                           {workflow.thumbnail ? (

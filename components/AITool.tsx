@@ -678,21 +678,23 @@ const AITool: React.FC = () => {
           </div>
         </div>
         
-        <button
-          onClick={() => {
-            resetForm();
-            setShowAddModal(true);
-          }}
-          className="
-            flex items-center gap-2 px-4 py-2.5
-            bg-blue-600 hover:bg-blue-700
-            text-white font-medium rounded-lg
-            transition-colors duration-150
-          "
-        >
-          <Plus size={18} />
-          添加工作流
-        </button>
+        <div className="flex justify-end">
+          <button
+            onClick={() => {
+              resetForm();
+              setShowAddModal(true);
+            }}
+            className="
+              flex items-center gap-2 px-4 py-2.5
+              bg-blue-600 hover:bg-blue-700
+              text-white font-medium rounded-lg
+              transition-colors duration-150
+            "
+          >
+            <Plus size={18} />
+            添加工作流
+          </button>
+        </div>
       </div>
 
       {/* 内容区域 */}
