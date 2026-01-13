@@ -203,8 +203,10 @@ const App: React.FC = () => {
         e.preventDefault();
         try {
           // 尝试使用 Tauri API 打开开发者工具
-          if (window.__TAURI__ && window.__TAURI__.window) {
-            const currentWindow = window.__TAURI__.window.getCurrent();
+          if (window.__TAURI__) {
+            // Tauri v1 API
+            const { getCurrentWindow } = await import('@tauri-apps/api/window');
+            const currentWindow = getCurrentWindow();
             await currentWindow.openDevtools();
           } else {
             // 如果 Tauri API 不可用，尝试打开控制台模态框
