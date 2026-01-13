@@ -1360,7 +1360,7 @@ const PathManager: React.FC = () => {
                             e.stopPropagation();
                             handleDrop(groupName, index, e);
                           }}
-                          onDragEnd={handleDragEnd}
+                          onDragEnd={(e) => handleDragEnd(e)}
                           onClick={(e) => {
                             // 如果正在拖拽，不触发跳转
                             if (isDragging || draggedItem) {
