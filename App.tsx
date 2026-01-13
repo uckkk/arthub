@@ -13,6 +13,7 @@ import { Sidebar, MenuGroup } from './components/ui';
 import { CURRENT_VERSION } from './services/updateService';
 import { consoleService } from './services/consoleService';
 import Console from './components/Console';
+import ErrorNotification from './components/ErrorNotification';
 
 // 懒加载组件以提升初始加载性能
 const PathManager = lazy(() => import('./components/PathManager'));
@@ -143,6 +144,17 @@ const App: React.FC = () => {
   const openConsoleWindow = () => {
     setShowConsole(true);
   };
+
+  // 监听打开控制台事件（从 ErrorNotification 触发）
+  useEffect(() => {
+    const handleOpenConsole = () => {
+      openConsoleWindow();
+    };
+    window.addEventListener('open-console', handleOpenConsole);
+    return () => {
+      window.removeEventListener('open-console', handleOpenConsole);
+    };
+  }, []);
 
   // 处理版本号点击
   const handleVersionClick = () => {
@@ -414,6 +426,9 @@ const App: React.FC = () => {
             logs={consoleLogs}
             onClear={() => consoleService.clearLogs()}
           />
+
+          {/* 错误通知 - 右下角自动弹出 */}
+          <ErrorNotification maxHeight={400} />
         </div>
       </ToastProvider>
     </ErrorBoundary>

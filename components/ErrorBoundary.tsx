@@ -76,15 +76,26 @@ export class ErrorBoundary extends Component<Props, State> {
               应用遇到了一个错误。请尝试刷新页面或联系技术支持。
             </p>
             
-            {process.env.NODE_ENV === 'development' && this.state.error && (
+            {/* 始终显示错误详情，方便调试 */}
+            {this.state.error && (
               <div className="mb-4 p-4 bg-slate-900 rounded border border-slate-700">
-                <p className="text-red-400 font-mono text-sm mb-2">
+                <p className="text-red-400 font-mono text-sm mb-2 break-words">
                   {this.state.error.toString()}
                 </p>
-                {this.state.errorInfo && (
-                  <pre className="text-xs text-slate-400 overflow-auto max-h-64">
-                    {this.state.errorInfo.componentStack}
+                {this.state.error.stack && (
+                  <pre className="text-xs text-slate-400 overflow-auto max-h-48 mb-2 whitespace-pre-wrap break-words">
+                    {this.state.error.stack}
                   </pre>
+                )}
+                {this.state.errorInfo && (
+                  <details className="mt-2">
+                    <summary className="text-xs text-slate-500 cursor-pointer hover:text-slate-400 mb-2">
+                      组件堆栈信息
+                    </summary>
+                    <pre className="text-xs text-slate-400 overflow-auto max-h-48 whitespace-pre-wrap break-words">
+                      {this.state.errorInfo.componentStack}
+                    </pre>
+                  </details>
                 )}
               </div>
             )}
