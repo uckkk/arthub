@@ -1248,13 +1248,20 @@ const PathManager: React.FC = () => {
                         handleDragStartGroup(groupName, e);
                       }}
                       onDragOver={(e) => {
-                        // 分组标题上的 onDragOver：允许事件传播到父容器
+                        // 分组标题上的 onDragOver：处理拖拽悬停
+                        console.log('[PathManager] 分组标题 onDragOver 触发:', {
+                          groupName,
+                          draggedGroup,
+                          types: Array.from(e.dataTransfer.types)
+                        });
+                        
                         if (draggedGroup && draggedGroup !== groupName) {
                           e.preventDefault();
-                          e.stopPropagation();
+                          // 不阻止传播，让父容器也能处理
                           e.dataTransfer.dropEffect = 'move';
-                          console.log('[PathManager] 分组标题 onDragOver:', groupName, 'draggedGroup:', draggedGroup);
-                          // 不在这里设置 dragOverGroup，让父容器处理
+                          console.log('[PathManager] 分组标题 onDragOver: 允许拖拽', groupName);
+                          // 设置 dragOverGroup，让父容器知道悬停位置
+                          setDragOverGroup(groupName);
                         }
                       }}
                       onDragEnd={(e) => {
