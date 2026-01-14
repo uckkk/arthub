@@ -1023,6 +1023,50 @@ fn open_devtools(window: tauri::Window) -> Result<(), String> {
     Ok(())
 }
 
+// Windows: 查找并前置已打开的资源管理器窗口
+#[cfg(target_os = "windows")]
+struct FindWindowData {
+    target_path: String,
+    found_hwnd: Option<HWND>,
+}
+
+#[cfg(target_os = "windows")]
+unsafe extern "system" fn enum_windows_proc(hwnd: HWND, lparam: isize) -> BOOL {
+    // 只检查可见窗口
+    if IsWindowVisible(hwnd) == 0 {
+        return 1; // 继续枚举
+    }
+    
+    let find_data = &mut *(lparam as *mut FindWindowData);
+    
+    // 获取窗口标题
+    let mut title: [u16; 512] = [0; 512];
+    let length = GetWindowTextW(hwnd, title.as_mut_ptr(), title.len() as i32);
+    
+    if length > 0 {
+        let window_title = OsString::from_wide(&title[..length as usize])
+            .to_string_lossy()
+            .to_string();
+        
+        // 检查窗口标题是否包含目标路径
+        // Windows 资源管理器窗口标题格式通常是 "文件夹名 - 文件资源管理器" 或路径本身
+        let normalized_path = find_data.target_path.replace('\\', "/").to_lowercase();
+        let normalized_title = window_title.replace('\\', "/").to_lowercase();
+        
+        // 检查标题是否包含路径，或者路径是否包含标题中的文件夹名
+        if normalized_title.contains(&normalized_path) || 
+           normalized_path.contains(&normalized_title) ||
+           window_title.contains(&find_data.target_path) {
+            println!("[ArtHub] Found existing explorer window for path: {} (title: {})", 
+                     find_data.target_path, window_title);
+            find_data.found_hwnd = Some(hwnd);
+            return 0; // 停止枚举
+        }
+    }
+    
+    1 // 继续枚举
+}
+
 // Tauri 命令：打开文件夹（使用系统命令，最可靠的方法）
 #[tauri::command]
 fn open_folder(path: String) -> Result<(), String> {
@@ -1032,18 +1076,34 @@ fn open_folder(path: String) -> Result<(), String> {
     {
         use std::process::Command;
         
-        // 在 Windows 上使用 explorer 命令打开文件夹
-        // explorer 命令会自动处理本地路径和网络路径
-        // 注意：explorer 命令在后台运行，不会阻塞
+        // 首先尝试查找已打开的窗口
+        unsafe {
+            let mut find_data = FindWindowData {
+                target_path: path.clone(),
+                found_hwnd: None,
+            };
+            
+            let lparam = &mut find_data as *mut FindWindowData as isize;
+            EnumWindows(Some(enum_windows_proc), lparam);
+            
+            if let Some(hwnd) = find_data.found_hwnd {
+                println!("[ArtHub] Bringing existing window to front");
+                // 恢复窗口（如果最小化）
+                ShowWindow(hwnd, SW_RESTORE);
+                // 前置窗口
+                SetForegroundWindow(hwnd);
+                return Ok(());
+            }
+        }
+        
+        // 如果没有找到已打开的窗口，打开新窗口
+        println!("[ArtHub] No existing window found, opening new explorer window");
         let result = Command::new("explorer")
             .arg(&path)
             .spawn();
         
         match result {
-            Ok(mut child) => {
-                // 不等待子进程完成，让它立即返回
-                // explorer 会在后台打开文件夹
-                let _ = child.wait(); // 分离进程，不阻塞
+            Ok(_child) => {
                 println!("[ArtHub] Successfully spawned explorer for: {}", path);
                 Ok(())
             }
