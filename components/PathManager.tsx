@@ -803,14 +803,18 @@ const PathManager: React.FC = () => {
         try {
           if (isTauriEnvironment()) {
             // 使用 Rust 后端命令打开文件夹（最可靠的方法）
+            console.log('[PathManager] 调用 Rust 后端命令 open_folder');
             const { invoke } = await import('@tauri-apps/api/tauri');
-            await invoke('open_folder', { path: item.path });
+            const result = await invoke('open_folder', { path: item.path });
+            console.log('[PathManager] open_folder 调用成功:', result);
             return;
           }
           // 非 Tauri 环境，复制路径到剪贴板（浏览器无法直接打开本地路径）
+          console.warn('[PathManager] 非 Tauri 环境，复制路径到剪贴板');
           copyToClipboard(item.path, item.id);
         } catch (error) {
-          console.error('打开路径失败:', error);
+          console.error('[PathManager] 打开路径失败:', error);
+          console.error('[PathManager] 错误详情:', JSON.stringify(error, null, 2));
           // 如果失败，复制到剪贴板
           copyToClipboard(item.path, item.id);
         }

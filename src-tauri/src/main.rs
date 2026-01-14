@@ -1034,17 +1034,21 @@ fn open_folder(path: String) -> Result<(), String> {
         
         // 在 Windows 上使用 explorer 命令打开文件夹
         // explorer 命令会自动处理本地路径和网络路径
-        let output = Command::new("explorer")
+        // 注意：explorer 命令在后台运行，不会阻塞
+        let result = Command::new("explorer")
             .arg(&path)
-            .output();
+            .spawn();
         
-        match output {
-            Ok(_) => {
-                println!("[ArtHub] Successfully opened folder: {}", path);
+        match result {
+            Ok(mut child) => {
+                // 不等待子进程完成，让它立即返回
+                // explorer 会在后台打开文件夹
+                let _ = child.wait(); // 分离进程，不阻塞
+                println!("[ArtHub] Successfully spawned explorer for: {}", path);
                 Ok(())
             }
             Err(e) => {
-                let error_msg = format!("Failed to open folder: {}", e);
+                let error_msg = format!("Failed to spawn explorer: {}", e);
                 println!("[ArtHub] Error: {}", error_msg);
                 Err(error_msg)
             }
