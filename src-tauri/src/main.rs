@@ -6,9 +6,13 @@ use serde::{Deserialize, Serialize};
 use std::sync::Mutex;
 
 #[cfg(target_os = "windows")]
-use winapi::um::winuser::{MonitorFromPoint, GetMonitorInfoW, MONITOR_DEFAULTTONEAREST};
+use winapi::um::winuser::{
+    MonitorFromPoint, GetMonitorInfoW, MONITOR_DEFAULTTONEAREST,
+    EnumWindows, GetWindowTextW, SetForegroundWindow, ShowWindow, 
+    SW_RESTORE, IsWindowVisible
+};
 #[cfg(target_os = "windows")]
-use winapi::shared::windef::POINT;
+use winapi::shared::windef::{POINT, HWND};
 #[cfg(target_os = "windows")]
 use winapi::um::winuser::MONITORINFO;
 #[cfg(target_os = "windows")]
@@ -18,13 +22,17 @@ use winapi::um::handleapi::{INVALID_HANDLE_VALUE, CloseHandle};
 #[cfg(target_os = "windows")]
 use winapi::um::errhandlingapi::GetLastError;
 #[cfg(target_os = "windows")]
-use winapi::shared::minwindef::FALSE;
+use winapi::shared::minwindef::{FALSE, BOOL};
 #[cfg(target_os = "windows")]
 use std::mem;
 #[cfg(target_os = "windows")]
 use std::ffi::CString;
 #[cfg(target_os = "windows")]
 use std::ptr;
+#[cfg(target_os = "windows")]
+use std::os::windows::ffi::OsStringExt;
+#[cfg(target_os = "windows")]
+use std::ffi::OsString;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct IconPosition {
