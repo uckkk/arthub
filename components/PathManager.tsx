@@ -801,28 +801,11 @@ const PathManager: React.FC = () => {
       if (item.type === 'local' || item.type === 'network') {
         console.log('[PathManager] 打开资源管理器/网络路径:', item.path);
         try {
-          // 优先使用 Tauri shell.open API
           if (isTauriEnvironment()) {
-            try {
-              const { open } = await import('@tauri-apps/api/shell');
-              // shell.open 会自动识别是文件夹还是文件，并打开相应的资源管理器或应用
-              await open(item.path);
-              return;
-            } catch (shellError) {
-              console.warn('shell.open 失败，尝试使用 explorer 命令:', shellError);
-              // 降级方案：使用 Windows explorer 命令
-              try {
-                const { Command } = await import('@tauri-apps/api/shell');
-                // 使用 explorer 命令打开文件夹（Windows）
-                const command = Command.create('explorer', [item.path]);
-                await command.execute();
-                return;
-              } catch (explorerError) {
-                console.error('explorer 命令也失败:', explorerError);
-                // 如果还是失败，抛出错误，让外层 catch 处理
-                throw new Error('无法打开资源管理器');
-              }
-            }
+            // 使用 Rust 后端命令打开文件夹（最可靠的方法）
+            const { invoke } = await import('@tauri-apps/api/tauri');
+            await invoke('open_folder', { path: item.path });
+            return;
           }
           // 非 Tauri 环境，复制路径到剪贴板（浏览器无法直接打开本地路径）
           copyToClipboard(item.path, item.id);
@@ -844,21 +827,9 @@ const PathManager: React.FC = () => {
         console.log('[PathManager] 未知类型，按本地路径处理:', item.path);
         try {
           if (isTauriEnvironment()) {
-            try {
-              const { open } = await import('@tauri-apps/api/shell');
-              await open(item.path);
-            } catch (shellError) {
-              console.warn('shell.open 失败，尝试使用 explorer 命令:', shellError);
-              // 降级方案：使用 Windows explorer 命令
-              try {
-                const { Command } = await import('@tauri-apps/api/shell');
-                const command = Command.create('explorer', [item.path]);
-                await command.execute();
-              } catch (explorerError) {
-                console.error('explorer 命令也失败:', explorerError);
-                throw new Error('无法打开资源管理器');
-              }
-            }
+            // 使用 Rust 后端命令打开文件夹（最可靠的方法）
+            const { invoke } = await import('@tauri-apps/api/tauri');
+            await invoke('open_folder', { path: item.path });
           } else {
             // 非 Tauri 环境，复制路径到剪贴板
             copyToClipboard(item.path, item.id);

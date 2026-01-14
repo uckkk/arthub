@@ -1023,6 +1023,84 @@ fn open_devtools(window: tauri::Window) -> Result<(), String> {
     Ok(())
 }
 
+// Tauri 命令：打开文件夹（使用系统命令，最可靠的方法）
+#[tauri::command]
+fn open_folder(path: String) -> Result<(), String> {
+    println!("[ArtHub] Opening folder: {}", path);
+    
+    #[cfg(target_os = "windows")]
+    {
+        use std::process::Command;
+        
+        // 在 Windows 上使用 explorer 命令打开文件夹
+        // explorer 命令会自动处理本地路径和网络路径
+        let output = Command::new("explorer")
+            .arg(&path)
+            .output();
+        
+        match output {
+            Ok(_) => {
+                println!("[ArtHub] Successfully opened folder: {}", path);
+                Ok(())
+            }
+            Err(e) => {
+                let error_msg = format!("Failed to open folder: {}", e);
+                println!("[ArtHub] Error: {}", error_msg);
+                Err(error_msg)
+            }
+        }
+    }
+    
+    #[cfg(target_os = "macos")]
+    {
+        use std::process::Command;
+        
+        // 在 macOS 上使用 open 命令
+        let output = Command::new("open")
+            .arg(&path)
+            .output();
+        
+        match output {
+            Ok(_) => {
+                println!("[ArtHub] Successfully opened folder: {}", path);
+                Ok(())
+            }
+            Err(e) => {
+                let error_msg = format!("Failed to open folder: {}", e);
+                println!("[ArtHub] Error: {}", error_msg);
+                Err(error_msg)
+            }
+        }
+    }
+    
+    #[cfg(target_os = "linux")]
+    {
+        use std::process::Command;
+        
+        // 在 Linux 上尝试使用 xdg-open
+        let output = Command::new("xdg-open")
+            .arg(&path)
+            .output();
+        
+        match output {
+            Ok(_) => {
+                println!("[ArtHub] Successfully opened folder: {}", path);
+                Ok(())
+            }
+            Err(e) => {
+                let error_msg = format!("Failed to open folder: {}", e);
+                println!("[ArtHub] Error: {}", error_msg);
+                Err(error_msg)
+            }
+        }
+    }
+    
+    #[cfg(not(any(target_os = "windows", target_os = "macos", target_os = "linux")))]
+    {
+        Err("Unsupported platform".to_string())
+    }
+}
+
 // Tauri 命令：打开AI窗口并注入JSON（保留以兼容旧代码）
 #[tauri::command]
 async fn open_ai_window(app: tauri::AppHandle, url: String, json_content: String) -> Result<(), String> {
@@ -1434,7 +1512,8 @@ fn main() {
             open_ai_tab,
             simulate_paste,
             send_workflow_to_comfyui,
-            open_devtools
+            open_devtools,
+            open_folder
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
