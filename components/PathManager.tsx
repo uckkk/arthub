@@ -185,9 +185,10 @@ const PathManager: React.FC = () => {
       const isGroupDrag = currentDraggedGroup || types.includes('application/x-group') || types.includes('text/plain');
       
       // 如果是分组拖拽，阻止默认行为并设置 dropEffect
+      // 注意：必须在 dragover 事件中调用 preventDefault() 才能触发 drop 事件
       if (isGroupDrag && currentDraggedGroup) {
-        e.preventDefault();
-        e.stopPropagation();
+        e.preventDefault(); // 必须调用，否则 drop 事件不会触发
+        // 不调用 stopPropagation，让事件继续传播
         if (e.dataTransfer) {
           e.dataTransfer.dropEffect = 'move';
         }
