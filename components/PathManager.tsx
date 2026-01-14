@@ -164,34 +164,33 @@ const PathManager: React.FC = () => {
     dragOverGroupRef.current = dragOverGroup;
   }, [dragOverGroup]);
 
-  // 全局拖拽事件监听器 - 使用原生 DOM 事件处理分组拖拽
+  // 使用鼠标事件模拟拖拽（因为 HTML5 拖拽 API 在这个场景下不工作）
   useEffect(() => {
-    // 记录所有 dragover 事件，不管是什么类型
-    const handleGlobalDragOver = (e: DragEvent) => {
-      // 先记录所有 dragover 事件（用于调试）
-      console.log('[PathManager] 全局 onDragOver 触发:', {
-        draggedGroup: draggedGroupRef.current,
-        target: (e.target as HTMLElement)?.tagName,
-        targetClass: (e.target as HTMLElement)?.className?.substring(0, 50),
-        types: Array.from(e.dataTransfer?.types || []),
-        clientX: e.clientX,
-        clientY: e.clientY,
-        defaultPrevented: e.defaultPrevented,
-        cancelable: e.cancelable
-      });
-      
-      const types = Array.from(e.dataTransfer?.types || []);
-      const currentDraggedGroup = draggedGroupRef.current;
-      const isGroupDrag = currentDraggedGroup || types.includes('application/x-group') || types.includes('text/plain');
-      
-      // 如果是分组拖拽，阻止默认行为并设置 dropEffect
-      // 注意：必须在 dragover 事件中调用 preventDefault() 才能触发 drop 事件
-      if (isGroupDrag && currentDraggedGroup) {
-        e.preventDefault(); // 必须调用，否则 drop 事件不会触发
-        // 不调用 stopPropagation，让事件继续传播
-        if (e.dataTransfer) {
-          e.dataTransfer.dropEffect = 'move';
+    const handleMouseDown = (e: MouseEvent) => {
+      const target = e.target as HTMLElement;
+      const groupHeader = target.closest('[data-drag-group]');
+      if (groupHeader && e.button === 0) {
+        const groupName = groupHeader.getAttribute('data-drag-group');
+        if (groupName) {
+          console.log('[PathManager] 鼠标按下，开始拖拽分组:', groupName);
+          mouseDragStateRef.current = {
+            isDragging: true,
+            draggedGroup: groupName,
+            startY: e.clientY,
+            startGroup: groupName
+          };
+          setDraggedGroup(groupName);
+          draggedGroupRef.current = groupName;
+          setIsDragging(true);
+          e.preventDefault();
         }
+      }
+    };
+
+    const handleMouseMove = (e: MouseEvent) => {
+      const state = mouseDragStateRef.current;
+      if (state.isDragging && state.draggedGroup) {
+        console.log('[PathManager] 鼠标移动，拖拽中:', state.draggedGroup, 'Y:', e.clientY);
         
         // 查找当前悬停的分组容器
         const groupContainers = document.querySelectorAll('[data-group-name]');
@@ -199,91 +198,79 @@ const PathManager: React.FC = () => {
         
         groupContainers.forEach((container) => {
           const rect = container.getBoundingClientRect();
-          if (e.clientX >= rect.left && e.clientX <= rect.right &&
-              e.clientY >= rect.top && e.clientY <= rect.bottom) {
+          if (e.clientY >= rect.top && e.clientY <= rect.bottom) {
             hoveredGroup = container.getAttribute('data-group-name');
           }
         });
         
-        if (hoveredGroup && hoveredGroup !== currentDraggedGroup) {
+        if (hoveredGroup && hoveredGroup !== state.draggedGroup) {
           console.log('[PathManager] 检测到悬停在分组上:', hoveredGroup);
           if (dragOverGroupRef.current !== hoveredGroup) {
             setDragOverGroup(hoveredGroup);
+            dragOverGroupRef.current = hoveredGroup;
           }
-        } else if (hoveredGroup === currentDraggedGroup) {
+        } else if (hoveredGroup === state.draggedGroup) {
           // 悬停在自身上，清除 dragOverGroup
           if (dragOverGroupRef.current !== null) {
             setDragOverGroup(null);
-          }
-        }
-      }
-    };
-
-    const handleGlobalDrop = (e: DragEvent) => {
-      console.log('[PathManager] 全局 onDrop 触发:', {
-        draggedGroup: draggedGroupRef.current,
-        target: (e.target as HTMLElement)?.tagName,
-        types: Array.from(e.dataTransfer?.types || [])
-      });
-      
-      const types = Array.from(e.dataTransfer?.types || []);
-      const currentDraggedGroup = draggedGroupRef.current;
-      const isGroupDrag = currentDraggedGroup || types.includes('application/x-group');
-      
-      if (isGroupDrag && currentDraggedGroup) {
-        e.preventDefault();
-        e.stopPropagation();
-        const target = e.target as HTMLElement;
-        const groupContainer = target.closest('[data-group-name]');
-        if (groupContainer) {
-          const targetGroupName = groupContainer.getAttribute('data-group-name');
-          if (targetGroupName && targetGroupName !== currentDraggedGroup) {
-            const rect = groupContainer.getBoundingClientRect();
-            const midpoint = rect.top + rect.height / 2;
-            const insertBefore = e.clientY < midpoint;
-            console.log('[PathManager] 全局 onDrop: 执行重新排序', {
-              draggedGroup: currentDraggedGroup,
-              targetGroupName,
-              insertBefore
-            });
-            reorderGroups(currentDraggedGroup, targetGroupName, insertBefore);
-            setDraggedGroup(null);
-            setDragOverGroup(null);
-            draggedGroupRef.current = null;
             dragOverGroupRef.current = null;
           }
         }
       }
     };
 
-    // 监听 dragstart 事件，确保能捕获到拖拽开始
-    const handleGlobalDragStart = (e: DragEvent) => {
-      const target = e.target as HTMLElement;
-      const groupName = target.getAttribute('data-drag-group');
-      if (groupName) {
-        console.log('[PathManager] 全局 dragstart 捕获:', groupName);
-        draggedGroupRef.current = groupName;
-        setDraggedGroup(groupName);
+    const handleMouseUp = (e: MouseEvent) => {
+      const state = mouseDragStateRef.current;
+      if (state.isDragging && state.draggedGroup) {
+        console.log('[PathManager] 鼠标释放，结束拖拽:', state.draggedGroup);
+        
+        // 查找当前悬停的分组容器
+        const groupContainers = document.querySelectorAll('[data-group-name]');
+        let targetGroup: string | null = null;
+        let targetRect: DOMRect | null = null;
+        
+        groupContainers.forEach((container) => {
+          const rect = container.getBoundingClientRect();
+          if (e.clientY >= rect.top && e.clientY <= rect.bottom) {
+            targetGroup = container.getAttribute('data-group-name');
+            targetRect = rect;
+          }
+        });
+        
+        if (targetGroup && targetGroup !== state.draggedGroup && targetRect) {
+          const midpoint = targetRect.top + targetRect.height / 2;
+          const insertBefore = e.clientY < midpoint;
+          console.log('[PathManager] 执行重新排序:', {
+            draggedGroup: state.draggedGroup,
+            targetGroup,
+            insertBefore
+          });
+          reorderGroups(state.draggedGroup, targetGroup, insertBefore);
+        }
+        
+        // 重置状态
+        mouseDragStateRef.current = {
+          isDragging: false,
+          draggedGroup: null,
+          startY: 0,
+          startGroup: null
+        };
+        setDraggedGroup(null);
+        setDragOverGroup(null);
+        draggedGroupRef.current = null;
+        dragOverGroupRef.current = null;
+        setIsDragging(false);
       }
     };
 
-    // 使用捕获阶段监听，确保能捕获到所有事件
-    // 注意：dragover 事件必须在捕获阶段监听，并且必须 preventDefault 才能触发 drop
-    // 在 document 上监听，而不是 window，更可靠
-    document.addEventListener('dragstart', handleGlobalDragStart, true);
-    document.addEventListener('dragover', handleGlobalDragOver, true);
-    document.addEventListener('drop', handleGlobalDrop, true);
-    
-    // 同时在 window 上监听，确保能捕获到所有事件
-    window.addEventListener('dragover', handleGlobalDragOver, true);
-    window.addEventListener('drop', handleGlobalDrop, true);
+    document.addEventListener('mousedown', handleMouseDown);
+    document.addEventListener('mousemove', handleMouseMove);
+    document.addEventListener('mouseup', handleMouseUp);
 
     return () => {
-      document.removeEventListener('dragstart', handleGlobalDragStart, true);
-      document.removeEventListener('dragover', handleGlobalDragOver, true);
-      document.removeEventListener('drop', handleGlobalDrop, true);
-      window.removeEventListener('dragover', handleGlobalDragOver, true);
-      window.removeEventListener('drop', handleGlobalDrop, true);
+      document.removeEventListener('mousedown', handleMouseDown);
+      document.removeEventListener('mousemove', handleMouseMove);
+      document.removeEventListener('mouseup', handleMouseUp);
     };
   }, [reorderGroups]);
 
@@ -801,19 +788,17 @@ const PathManager: React.FC = () => {
       if (item.type === 'local' || item.type === 'network') {
         console.log('[PathManager] 打开资源管理器/网络路径:', item.path);
         try {
+          // 优先使用 Tauri shell.open API
           if (isTauriEnvironment()) {
             const { open } = await import('@tauri-apps/api/shell');
             // shell.open 会自动识别是文件夹还是文件，并打开相应的资源管理器或应用
             await open(item.path);
-          } else {
-            // 非 Tauri 环境，使用 file:// 协议打开本地路径
-            const pathToOpen = item.type === 'network' 
-              ? 'file:' + item.path.replace(/\\/g, '/')
-              : 'file:///' + item.path.replace(/\\/g, '/');
-            window.open(pathToOpen, '_blank');
+            return;
           }
+          // 非 Tauri 环境，复制路径到剪贴板（浏览器无法直接打开本地路径）
+          copyToClipboard(item.path, item.id);
         } catch (shellError) {
-          console.warn('打开路径失败:', shellError);
+          console.error('打开路径失败:', shellError);
           // 如果失败，复制到剪贴板
           copyToClipboard(item.path, item.id);
         }
@@ -833,11 +818,11 @@ const PathManager: React.FC = () => {
             const { open } = await import('@tauri-apps/api/shell');
             await open(item.path);
           } else {
-            const pathToOpen = 'file:///' + item.path.replace(/\\/g, '/');
-            window.open(pathToOpen, '_blank');
+            // 非 Tauri 环境，复制路径到剪贴板
+            copyToClipboard(item.path, item.id);
           }
         } catch (shellError) {
-          console.warn('打开路径失败:', shellError);
+          console.error('打开路径失败:', shellError);
           copyToClipboard(item.path, item.id);
         }
       }
