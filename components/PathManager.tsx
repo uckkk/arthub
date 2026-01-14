@@ -944,6 +944,9 @@ const PathManager: React.FC = () => {
       dataTransfer: e.dataTransfer
     });
     
+    // 不要阻止事件传播，让全局监听器也能捕获
+    // e.stopPropagation(); // 移除这个，可能阻止了拖拽操作
+    
     // 设置拖拽数据 - 必须在 dragstart 事件中同步设置
     e.dataTransfer.effectAllowed = 'move';
     e.dataTransfer.dropEffect = 'move';
@@ -960,6 +963,23 @@ const PathManager: React.FC = () => {
     } catch (err) {
       // 某些浏览器可能不支持 setData，使用状态管理
       console.warn('[PathManager] 设置拖拽数据失败:', err);
+    }
+    
+    // 创建自定义拖拽图像（可选，但有助于浏览器识别拖拽操作）
+    try {
+      const dragElement = e.currentTarget as HTMLElement;
+      const dragImage = dragElement.cloneNode(true) as HTMLElement;
+      dragImage.style.position = 'absolute';
+      dragImage.style.top = '-1000px';
+      dragImage.style.opacity = '0.5';
+      document.body.appendChild(dragImage);
+      e.dataTransfer.setDragImage(dragImage, 0, 0);
+      // 延迟移除，确保拖拽图像已设置
+      setTimeout(() => {
+        document.body.removeChild(dragImage);
+      }, 0);
+    } catch (err) {
+      console.warn('[PathManager] 设置拖拽图像失败:', err);
     }
     
     // 立即设置状态和 ref
