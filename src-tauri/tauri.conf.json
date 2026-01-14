@@ -17,8 +17,7 @@
         "all": false,
         "open": true,
         "execute": true,
-        "sidecar": false,
-        "which": false
+        "sidecar": false
       },
       "window": {
         "all": true,
