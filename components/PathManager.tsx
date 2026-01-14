@@ -168,21 +168,21 @@ const PathManager: React.FC = () => {
   useEffect(() => {
     // 记录所有 dragover 事件，不管是什么类型
     const handleGlobalDragOver = (e: DragEvent) => {
+      // 先记录所有 dragover 事件（用于调试）
+      console.log('[PathManager] 全局 onDragOver 触发:', {
+        draggedGroup: draggedGroupRef.current,
+        target: (e.target as HTMLElement)?.tagName,
+        targetClass: (e.target as HTMLElement)?.className?.substring(0, 50),
+        types: Array.from(e.dataTransfer?.types || []),
+        clientX: e.clientX,
+        clientY: e.clientY,
+        defaultPrevented: e.defaultPrevented,
+        cancelable: e.cancelable
+      });
+      
       const types = Array.from(e.dataTransfer?.types || []);
       const currentDraggedGroup = draggedGroupRef.current;
       const isGroupDrag = currentDraggedGroup || types.includes('application/x-group') || types.includes('text/plain');
-      
-      // 记录所有 dragover 事件
-      console.log('[PathManager] 全局 onDragOver 触发:', {
-        draggedGroup: currentDraggedGroup,
-        isGroupDrag,
-        target: (e.target as HTMLElement)?.tagName,
-        targetClass: (e.target as HTMLElement)?.className?.substring(0, 50),
-        types,
-        clientX: e.clientX,
-        clientY: e.clientY,
-        defaultPrevented: e.defaultPrevented
-      });
       
       // 如果是分组拖拽，阻止默认行为并设置 dropEffect
       if (isGroupDrag && currentDraggedGroup) {
@@ -219,16 +219,15 @@ const PathManager: React.FC = () => {
     };
 
     const handleGlobalDrop = (e: DragEvent) => {
+      console.log('[PathManager] 全局 onDrop 触发:', {
+        draggedGroup: draggedGroupRef.current,
+        target: (e.target as HTMLElement)?.tagName,
+        types: Array.from(e.dataTransfer?.types || [])
+      });
+      
       const types = Array.from(e.dataTransfer?.types || []);
       const currentDraggedGroup = draggedGroupRef.current;
       const isGroupDrag = currentDraggedGroup || types.includes('application/x-group');
-      
-      console.log('[PathManager] 全局 onDrop 触发:', {
-        draggedGroup: currentDraggedGroup,
-        isGroupDrag,
-        target: (e.target as HTMLElement)?.tagName,
-        types
-      });
       
       if (isGroupDrag && currentDraggedGroup) {
         e.preventDefault();
@@ -256,13 +255,27 @@ const PathManager: React.FC = () => {
       }
     };
 
+    // 监听 dragstart 事件，确保能捕获到拖拽开始
+    const handleGlobalDragStart = (e: DragEvent) => {
+      const target = e.target as HTMLElement;
+      const groupName = target.getAttribute('data-drag-group');
+      if (groupName) {
+        console.log('[PathManager] 全局 dragstart 捕获:', groupName);
+        draggedGroupRef.current = groupName;
+        setDraggedGroup(groupName);
+      }
+    };
+
     // 使用捕获阶段监听，确保能捕获到所有事件
-    document.addEventListener('dragover', handleGlobalDragOver, true);
-    document.addEventListener('drop', handleGlobalDrop, true);
+    // 注意：dragover 事件必须在捕获阶段监听，并且必须 preventDefault 才能触发 drop
+    window.addEventListener('dragstart', handleGlobalDragStart, true);
+    window.addEventListener('dragover', handleGlobalDragOver, true);
+    window.addEventListener('drop', handleGlobalDrop, true);
 
     return () => {
-      document.removeEventListener('dragover', handleGlobalDragOver, true);
-      document.removeEventListener('drop', handleGlobalDrop, true);
+      window.removeEventListener('dragstart', handleGlobalDragStart, true);
+      window.removeEventListener('dragover', handleGlobalDragOver, true);
+      window.removeEventListener('drop', handleGlobalDrop, true);
     };
   }, [reorderGroups]);
 
