@@ -9,7 +9,7 @@ use std::sync::Mutex;
 use winapi::um::winuser::{
     MonitorFromPoint, GetMonitorInfoW, MONITOR_DEFAULTTONEAREST,
     EnumWindows, GetWindowTextW, SetForegroundWindow, ShowWindow, 
-    SW_RESTORE, IsWindowVisible
+    SW_RESTORE, IsWindowVisible, GetClassNameW
 };
 #[cfg(target_os = "windows")]
 use winapi::shared::windef::{POINT, HWND};
@@ -1047,6 +1047,23 @@ unsafe extern "system" fn enum_windows_proc(hwnd: HWND, lparam: isize) -> BOOL {
     
     let find_data = &mut *(lparam as *mut FindWindowData);
     
+    // 首先检查窗口类名，只处理资源管理器窗口
+    let mut class_name: [u16; 256] = [0; 256];
+    let class_length = GetClassNameW(hwnd, class_name.as_mut_ptr(), class_name.len() as i32);
+    
+    if class_length > 0 {
+        let class_str = OsString::from_wide(&class_name[..class_length as usize])
+            .to_string_lossy()
+            .to_string();
+        
+        // Windows 资源管理器窗口的类名是 "CabinetWClass" 或 "ExploreWClass"
+        if class_str != "CabinetWClass" && class_str != "ExploreWClass" {
+            return 1; // 不是资源管理器窗口，继续枚举
+        }
+    } else {
+        return 1; // 无法获取类名，继续枚举
+    }
+    
     // 获取窗口标题
     let mut title: [u16; 512] = [0; 512];
     let length = GetWindowTextW(hwnd, title.as_mut_ptr(), title.len() as i32);
@@ -1056,17 +1073,53 @@ unsafe extern "system" fn enum_windows_proc(hwnd: HWND, lparam: isize) -> BOOL {
             .to_string_lossy()
             .to_string();
         
-        // 检查窗口标题是否包含目标路径
-        // Windows 资源管理器窗口标题格式通常是 "文件夹名 - 文件资源管理器" 或路径本身
+        println!("[ArtHub] Checking explorer window: title='{}', class='{}'", window_title, class_str);
+        
+        // 提取路径的最后一部分（文件夹名）
+        let target_folder_name = find_data.target_path
+            .split(['\\', '/'])
+            .filter(|s| !s.is_empty())
+            .last()
+            .unwrap_or(&find_data.target_path)
+            .to_lowercase();
+        
+        // 规范化路径和标题用于比较
         let normalized_path = find_data.target_path.replace('\\', "/").to_lowercase();
         let normalized_title = window_title.replace('\\', "/").to_lowercase();
         
-        // 检查标题是否包含路径，或者路径是否包含标题中的文件夹名
-        if normalized_title.contains(&normalized_path) || 
-           normalized_path.contains(&normalized_title) ||
-           window_title.contains(&find_data.target_path) {
-            println!("[ArtHub] Found existing explorer window for path: {} (title: {})", 
-                     find_data.target_path, window_title);
+        // 检查多种匹配方式：
+        // 1. 标题完全包含路径
+        // 2. 路径完全包含标题
+        // 3. 标题包含文件夹名（对于网络路径，标题可能是 "\\server\share" 或 "share"）
+        // 4. 路径的最后一部分（文件夹名）在标题中
+        let path_parts: Vec<&str> = normalized_path.split('/').filter(|s| !s.is_empty()).collect();
+        let title_parts: Vec<&str> = normalized_title.split([' ', '-', '–', '—']).collect();
+        
+        let mut matched = false;
+        
+        // 检查完整路径匹配
+        if normalized_title.contains(&normalized_path) || normalized_path.contains(&normalized_title) {
+            matched = true;
+        }
+        // 检查文件夹名匹配
+        else if !target_folder_name.is_empty() && normalized_title.contains(&target_folder_name) {
+            matched = true;
+        }
+        // 检查路径部分匹配（对于网络路径 "\\server\share"，标题可能是 "share"）
+        else if path_parts.len() > 0 {
+            let last_part = path_parts[path_parts.len() - 1];
+            if normalized_title.contains(last_part) {
+                matched = true;
+            }
+        }
+        // 检查原始路径是否在标题中
+        else if window_title.contains(&find_data.target_path) {
+            matched = true;
+        }
+        
+        if matched {
+            println!("[ArtHub] Found existing explorer window for path: {} (title: {}, class: {})", 
+                     find_data.target_path, window_title, class_str);
             find_data.found_hwnd = Some(hwnd);
             return 0; // 停止枚举
         }
