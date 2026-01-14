@@ -1051,17 +1051,17 @@ unsafe extern "system" fn enum_windows_proc(hwnd: HWND, lparam: isize) -> BOOL {
     let mut class_name: [u16; 256] = [0; 256];
     let class_length = GetClassNameW(hwnd, class_name.as_mut_ptr(), class_name.len() as i32);
     
-    if class_length > 0 {
-        let class_str = OsString::from_wide(&class_name[..class_length as usize])
+    let class_str = if class_length > 0 {
+        OsString::from_wide(&class_name[..class_length as usize])
             .to_string_lossy()
-            .to_string();
-        
-        // Windows 资源管理器窗口的类名是 "CabinetWClass" 或 "ExploreWClass"
-        if class_str != "CabinetWClass" && class_str != "ExploreWClass" {
-            return 1; // 不是资源管理器窗口，继续枚举
-        }
+            .to_string()
     } else {
         return 1; // 无法获取类名，继续枚举
+    };
+    
+    // Windows 资源管理器窗口的类名是 "CabinetWClass" 或 "ExploreWClass"
+    if class_str != "CabinetWClass" && class_str != "ExploreWClass" {
+        return 1; // 不是资源管理器窗口，继续枚举
     }
     
     // 获取窗口标题
@@ -1093,7 +1093,6 @@ unsafe extern "system" fn enum_windows_proc(hwnd: HWND, lparam: isize) -> BOOL {
         // 3. 标题包含文件夹名（对于网络路径，标题可能是 "\\server\share" 或 "share"）
         // 4. 路径的最后一部分（文件夹名）在标题中
         let path_parts: Vec<&str> = normalized_path.split('/').filter(|s| !s.is_empty()).collect();
-        let title_parts: Vec<&str> = normalized_title.split([' ', '-', '–', '—']).collect();
         
         let mut matched = false;
         
