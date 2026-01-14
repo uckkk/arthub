@@ -269,12 +269,19 @@ const PathManager: React.FC = () => {
 
     // 使用捕获阶段监听，确保能捕获到所有事件
     // 注意：dragover 事件必须在捕获阶段监听，并且必须 preventDefault 才能触发 drop
-    window.addEventListener('dragstart', handleGlobalDragStart, true);
+    // 在 document 上监听，而不是 window，更可靠
+    document.addEventListener('dragstart', handleGlobalDragStart, true);
+    document.addEventListener('dragover', handleGlobalDragOver, true);
+    document.addEventListener('drop', handleGlobalDrop, true);
+    
+    // 同时在 window 上监听，确保能捕获到所有事件
     window.addEventListener('dragover', handleGlobalDragOver, true);
     window.addEventListener('drop', handleGlobalDrop, true);
 
     return () => {
-      window.removeEventListener('dragstart', handleGlobalDragStart, true);
+      document.removeEventListener('dragstart', handleGlobalDragStart, true);
+      document.removeEventListener('dragover', handleGlobalDragOver, true);
+      document.removeEventListener('drop', handleGlobalDrop, true);
       window.removeEventListener('dragover', handleGlobalDragOver, true);
       window.removeEventListener('drop', handleGlobalDrop, true);
     };
@@ -966,22 +973,8 @@ const PathManager: React.FC = () => {
       console.warn('[PathManager] 设置拖拽数据失败:', err);
     }
     
-    // 创建自定义拖拽图像（可选，但有助于浏览器识别拖拽操作）
-    try {
-      const dragElement = e.currentTarget as HTMLElement;
-      const dragImage = dragElement.cloneNode(true) as HTMLElement;
-      dragImage.style.position = 'absolute';
-      dragImage.style.top = '-1000px';
-      dragImage.style.opacity = '0.5';
-      document.body.appendChild(dragImage);
-      e.dataTransfer.setDragImage(dragImage, 0, 0);
-      // 延迟移除，确保拖拽图像已设置
-      setTimeout(() => {
-        document.body.removeChild(dragImage);
-      }, 0);
-    } catch (err) {
-      console.warn('[PathManager] 设置拖拽图像失败:', err);
-    }
+    // 不创建自定义拖拽图像，使用浏览器默认行为
+    // 创建拖拽图像可能导致拖拽操作失败
     
     // 立即设置状态和 ref
     setDraggedGroup(groupName);
