@@ -14,9 +14,13 @@ import {
 import { handleDroppedAppFile, launchApp, isAppFile } from '../services/appService';
 import { useMiddleMouseScroll } from '../utils/useMiddleMouseScroll';
 
-// 检查是否在 Tauri 环境中
+// 检查是否在 Tauri 环境中（更可靠的检测方法）
 const isTauriEnvironment = (): boolean => {
-  return typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
+  if (typeof window === 'undefined') return false;
+  // 检查多种可能的 Tauri 标识
+  return !!(window as any).__TAURI__ || 
+         !!(window as any).__TAURI_INTERNALS__ ||
+         !!(window as any).__TAURI_METADATA__;
 };
 
 // 从文件路径提取应用名称
@@ -801,22 +805,24 @@ const PathManager: React.FC = () => {
       if (item.type === 'local' || item.type === 'network') {
         console.log('[PathManager] 打开资源管理器/网络路径:', item.path);
         try {
-          if (isTauriEnvironment()) {
-            // 使用 Rust 后端命令打开文件夹（最可靠的方法）
-            console.log('[PathManager] 调用 Rust 后端命令 open_folder');
-            const { invoke } = await import('@tauri-apps/api/tauri');
-            const result = await invoke('open_folder', { path: item.path });
-            console.log('[PathManager] open_folder 调用成功:', result);
-            return;
+          // 直接尝试调用 Tauri API，如果失败说明不在 Tauri 环境
+          console.log('[PathManager] 调用 Rust 后端命令 open_folder');
+          const { invoke } = await import('@tauri-apps/api/tauri');
+          await invoke('open_folder', { path: item.path });
+          console.log('[PathManager] open_folder 调用成功');
+          return;
+        } catch (error: any) {
+          // 检查是否是 Tauri API 不可用的错误
+          const errorMsg = error?.message || String(error);
+          if (errorMsg.includes('Tauri API') || errorMsg.includes('__TAURI__') || errorMsg.includes('not available')) {
+            console.warn('[PathManager] 非 Tauri 环境，复制路径到剪贴板');
+            copyToClipboard(item.path, item.id);
+          } else {
+            console.error('[PathManager] 打开路径失败:', error);
+            console.error('[PathManager] 错误详情:', JSON.stringify(error, null, 2));
+            // 如果失败，复制到剪贴板
+            copyToClipboard(item.path, item.id);
           }
-          // 非 Tauri 环境，复制路径到剪贴板（浏览器无法直接打开本地路径）
-          console.warn('[PathManager] 非 Tauri 环境，复制路径到剪贴板');
-          copyToClipboard(item.path, item.id);
-        } catch (error) {
-          console.error('[PathManager] 打开路径失败:', error);
-          console.error('[PathManager] 错误详情:', JSON.stringify(error, null, 2));
-          // 如果失败，复制到剪贴板
-          copyToClipboard(item.path, item.id);
         }
         return;
       }
@@ -830,17 +836,19 @@ const PathManager: React.FC = () => {
         // 其他情况都按本地路径处理
         console.log('[PathManager] 未知类型，按本地路径处理:', item.path);
         try {
-          if (isTauriEnvironment()) {
-            // 使用 Rust 后端命令打开文件夹（最可靠的方法）
-            const { invoke } = await import('@tauri-apps/api/tauri');
-            await invoke('open_folder', { path: item.path });
+          // 直接尝试调用 Tauri API
+          const { invoke } = await import('@tauri-apps/api/tauri');
+          await invoke('open_folder', { path: item.path });
+        } catch (error: any) {
+          // 检查是否是 Tauri API 不可用的错误
+          const errorMsg = error?.message || String(error);
+          if (errorMsg.includes('Tauri API') || errorMsg.includes('__TAURI__') || errorMsg.includes('not available')) {
+            console.warn('[PathManager] 非 Tauri 环境，复制路径到剪贴板');
+            copyToClipboard(item.path, item.id);
           } else {
-            // 非 Tauri 环境，复制路径到剪贴板
+            console.error('[PathManager] 打开路径失败:', error);
             copyToClipboard(item.path, item.id);
           }
-        } catch (error) {
-          console.error('打开路径失败:', error);
-          copyToClipboard(item.path, item.id);
         }
       }
     } catch (error) {
