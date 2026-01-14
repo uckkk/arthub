@@ -803,15 +803,31 @@ const PathManager: React.FC = () => {
         try {
           // 优先使用 Tauri shell.open API
           if (isTauriEnvironment()) {
-            const { open } = await import('@tauri-apps/api/shell');
-            // shell.open 会自动识别是文件夹还是文件，并打开相应的资源管理器或应用
-            await open(item.path);
-            return;
+            try {
+              const { open } = await import('@tauri-apps/api/shell');
+              // shell.open 会自动识别是文件夹还是文件，并打开相应的资源管理器或应用
+              await open(item.path);
+              return;
+            } catch (shellError) {
+              console.warn('shell.open 失败，尝试使用 explorer 命令:', shellError);
+              // 降级方案：使用 Windows explorer 命令
+              try {
+                const { Command } = await import('@tauri-apps/api/shell');
+                // 使用 explorer 命令打开文件夹（Windows）
+                const command = Command.create('explorer', [item.path]);
+                await command.execute();
+                return;
+              } catch (explorerError) {
+                console.error('explorer 命令也失败:', explorerError);
+                // 如果还是失败，抛出错误，让外层 catch 处理
+                throw new Error('无法打开资源管理器');
+              }
+            }
           }
           // 非 Tauri 环境，复制路径到剪贴板（浏览器无法直接打开本地路径）
           copyToClipboard(item.path, item.id);
-        } catch (shellError) {
-          console.error('打开路径失败:', shellError);
+        } catch (error) {
+          console.error('打开路径失败:', error);
           // 如果失败，复制到剪贴板
           copyToClipboard(item.path, item.id);
         }
@@ -828,14 +844,27 @@ const PathManager: React.FC = () => {
         console.log('[PathManager] 未知类型，按本地路径处理:', item.path);
         try {
           if (isTauriEnvironment()) {
-            const { open } = await import('@tauri-apps/api/shell');
-            await open(item.path);
+            try {
+              const { open } = await import('@tauri-apps/api/shell');
+              await open(item.path);
+            } catch (shellError) {
+              console.warn('shell.open 失败，尝试使用 explorer 命令:', shellError);
+              // 降级方案：使用 Windows explorer 命令
+              try {
+                const { Command } = await import('@tauri-apps/api/shell');
+                const command = Command.create('explorer', [item.path]);
+                await command.execute();
+              } catch (explorerError) {
+                console.error('explorer 命令也失败:', explorerError);
+                throw new Error('无法打开资源管理器');
+              }
+            }
           } else {
             // 非 Tauri 环境，复制路径到剪贴板
             copyToClipboard(item.path, item.id);
           }
-        } catch (shellError) {
-          console.error('打开路径失败:', shellError);
+        } catch (error) {
+          console.error('打开路径失败:', error);
           copyToClipboard(item.path, item.id);
         }
       }
