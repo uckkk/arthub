@@ -1328,7 +1328,7 @@ const PathManager: React.FC = () => {
                       text-[#808080] hover:text-white hover:bg-[#1a1a1a]
                       transition-all duration-150
                       ${draggedGroup === groupName ? 'opacity-50 scale-95' : ''}
-                      ${dragOverGroup === groupName && draggedGroup && draggedGroup !== groupName ? 'border-2 border-blue-500 bg-blue-500/10' : ''}
+                      ${dragOverGroup === groupName && draggedGroup && draggedGroup !== groupName ? 'border-2 border-white/30 bg-white/5' : ''}
                     `}
                   >
                     {collapsedGroups.has(groupName) 
