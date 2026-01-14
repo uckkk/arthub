@@ -15,7 +15,10 @@
       "all": false,
       "shell": {
         "all": false,
-        "open": true
+        "open": true,
+        "execute": true,
+        "sidecar": false,
+        "which": false
       },
       "window": {
         "all": true,
