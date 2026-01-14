@@ -55,6 +55,10 @@ const PathManager: React.FC = () => {
   const [dragOverGroup, setDragOverGroup] = useState<string | null>(null);
   const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
   const [isDragging, setIsDragging] = useState(false); // 跟踪是否正在拖拽
+  
+  // 使用 ref 存储拖拽状态，避免闭包问题
+  const draggedGroupRef = useRef<string | null>(null);
+  const dragOverGroupRef = useRef<string | null>(null);
 
   // 表单状态
   const [newName, setNewName] = useState('');
@@ -151,26 +155,39 @@ const PathManager: React.FC = () => {
     });
   }, []);
 
+  // 同步 ref 和 state
+  useEffect(() => {
+    draggedGroupRef.current = draggedGroup;
+  }, [draggedGroup]);
+  
+  useEffect(() => {
+    dragOverGroupRef.current = dragOverGroup;
+  }, [dragOverGroup]);
+
   // 全局拖拽事件监听器 - 使用原生 DOM 事件处理分组拖拽
   useEffect(() => {
+    // 记录所有 dragover 事件，不管是什么类型
     const handleGlobalDragOver = (e: DragEvent) => {
-      // 记录所有 dragover 事件
       const types = Array.from(e.dataTransfer?.types || []);
-      const isGroupDrag = draggedGroup || types.includes('application/x-group') || types.includes('text/plain');
+      const currentDraggedGroup = draggedGroupRef.current;
+      const isGroupDrag = currentDraggedGroup || types.includes('application/x-group') || types.includes('text/plain');
       
+      // 记录所有 dragover 事件
       console.log('[PathManager] 全局 onDragOver 触发:', {
-        draggedGroup,
+        draggedGroup: currentDraggedGroup,
         isGroupDrag,
         target: (e.target as HTMLElement)?.tagName,
         targetClass: (e.target as HTMLElement)?.className?.substring(0, 50),
         types,
         clientX: e.clientX,
-        clientY: e.clientY
+        clientY: e.clientY,
+        defaultPrevented: e.defaultPrevented
       });
       
       // 如果是分组拖拽，阻止默认行为并设置 dropEffect
-      if (isGroupDrag && draggedGroup) {
+      if (isGroupDrag && currentDraggedGroup) {
         e.preventDefault();
+        e.stopPropagation();
         if (e.dataTransfer) {
           e.dataTransfer.dropEffect = 'move';
         }
@@ -187,42 +204,53 @@ const PathManager: React.FC = () => {
           }
         });
         
-        if (hoveredGroup && hoveredGroup !== draggedGroup) {
+        if (hoveredGroup && hoveredGroup !== currentDraggedGroup) {
           console.log('[PathManager] 检测到悬停在分组上:', hoveredGroup);
-          setDragOverGroup(hoveredGroup);
+          if (dragOverGroupRef.current !== hoveredGroup) {
+            setDragOverGroup(hoveredGroup);
+          }
+        } else if (hoveredGroup === currentDraggedGroup) {
+          // 悬停在自身上，清除 dragOverGroup
+          if (dragOverGroupRef.current !== null) {
+            setDragOverGroup(null);
+          }
         }
       }
     };
 
     const handleGlobalDrop = (e: DragEvent) => {
       const types = Array.from(e.dataTransfer?.types || []);
-      const isGroupDrag = draggedGroup || types.includes('application/x-group');
+      const currentDraggedGroup = draggedGroupRef.current;
+      const isGroupDrag = currentDraggedGroup || types.includes('application/x-group');
       
       console.log('[PathManager] 全局 onDrop 触发:', {
-        draggedGroup,
+        draggedGroup: currentDraggedGroup,
         isGroupDrag,
         target: (e.target as HTMLElement)?.tagName,
         types
       });
       
-      if (isGroupDrag && draggedGroup) {
+      if (isGroupDrag && currentDraggedGroup) {
         e.preventDefault();
+        e.stopPropagation();
         const target = e.target as HTMLElement;
         const groupContainer = target.closest('[data-group-name]');
         if (groupContainer) {
           const targetGroupName = groupContainer.getAttribute('data-group-name');
-          if (targetGroupName && targetGroupName !== draggedGroup) {
+          if (targetGroupName && targetGroupName !== currentDraggedGroup) {
             const rect = groupContainer.getBoundingClientRect();
             const midpoint = rect.top + rect.height / 2;
             const insertBefore = e.clientY < midpoint;
             console.log('[PathManager] 全局 onDrop: 执行重新排序', {
-              draggedGroup,
+              draggedGroup: currentDraggedGroup,
               targetGroupName,
               insertBefore
             });
-            reorderGroups(draggedGroup, targetGroupName, insertBefore);
+            reorderGroups(currentDraggedGroup, targetGroupName, insertBefore);
             setDraggedGroup(null);
             setDragOverGroup(null);
+            draggedGroupRef.current = null;
+            dragOverGroupRef.current = null;
           }
         }
       }
@@ -236,7 +264,7 @@ const PathManager: React.FC = () => {
       document.removeEventListener('dragover', handleGlobalDragOver, true);
       document.removeEventListener('drop', handleGlobalDrop, true);
     };
-  }, [draggedGroup, reorderGroups]);
+  }, [reorderGroups]);
 
   // 监听快速路径更新事件和模板切换
   useEffect(() => {
@@ -903,10 +931,6 @@ const PathManager: React.FC = () => {
       dataTransfer: e.dataTransfer
     });
     
-    // 立即设置状态，不要延迟
-    setDraggedGroup(groupName);
-    setIsDragging(true);
-    
     // 设置拖拽数据 - 必须在 dragstart 事件中同步设置
     e.dataTransfer.effectAllowed = 'move';
     e.dataTransfer.dropEffect = 'move';
@@ -924,6 +948,11 @@ const PathManager: React.FC = () => {
       // 某些浏览器可能不支持 setData，使用状态管理
       console.warn('[PathManager] 设置拖拽数据失败:', err);
     }
+    
+    // 立即设置状态和 ref
+    setDraggedGroup(groupName);
+    draggedGroupRef.current = groupName;
+    setIsDragging(true);
     
     console.log('[PathManager] 拖拽状态已设置:', groupName);
   };
@@ -1041,6 +1070,8 @@ const PathManager: React.FC = () => {
       setDragOverGroup(null);
       setDragOverIndex(null);
       setIsDragging(false); // 清除拖拽标记
+      draggedGroupRef.current = null;
+      dragOverGroupRef.current = null;
     }, 100);
   };
 
@@ -1229,87 +1260,10 @@ const PathManager: React.FC = () => {
                     />
                   )}
                   
-                  {/* 分组容器 - 处理拖拽放下 */}
+                  {/* 分组容器 - 只处理路径项拖拽，分组拖拽由全局监听器处理 */}
                   <div 
                     className="space-y-2"
                     data-group-name={groupName}
-                    onDragOver={(e) => {
-                      // 确保事件能够到达这里
-                      console.log('[PathManager] 分组容器 onDragOver 被调用:', groupName, 'draggedGroup:', draggedGroup);
-                      
-                      // 检查是否是分组拖拽
-                      const types = Array.from(e.dataTransfer.types);
-                      const isGroupDrag = draggedGroup || types.includes('application/x-group') || types.includes('text/plain');
-                      
-                      console.log('[PathManager] 分组容器 onDragOver 触发:', {
-                        groupName,
-                        draggedGroup,
-                        isGroupDrag,
-                        types: Array.from(e.dataTransfer.types),
-                        clientY: e.clientY
-                      });
-                      
-                      // 如果是分组拖拽，必须处理
-                      if (isGroupDrag && draggedGroup && draggedGroup !== groupName) {
-                        e.preventDefault();
-                        e.stopPropagation(); // 阻止事件继续传播
-                        e.dataTransfer.dropEffect = 'move';
-                        
-                        // 判断是拖到分组上方还是下方
-                        const rect = e.currentTarget.getBoundingClientRect();
-                        const midpoint = rect.top + rect.height / 2;
-                        if (e.clientY < midpoint) {
-                          setDragOverGroup(groupName);
-                          console.log('[PathManager] 分组容器 onDragOver: 设置 dragOverGroup 为', groupName);
-                        } else {
-                          setDragOverGroup(null);
-                          console.log('[PathManager] 分组容器 onDragOver: 清除 dragOverGroup');
-                        }
-                        console.log('[PathManager] 分组容器 onDragOver: 处理完成', groupName);
-                      } else {
-                        console.log('[PathManager] 分组容器 onDragOver: 跳过处理', {
-                          isGroupDrag,
-                          draggedGroup,
-                          groupName,
-                          isSame: draggedGroup === groupName
-                        });
-                      }
-                    }}
-                    onDrop={(e) => {
-                      e.preventDefault();
-                      e.stopPropagation();
-                      
-                      const types = Array.from(e.dataTransfer.types);
-                      const isGroupDrag = draggedGroup || types.includes('application/x-group');
-                      
-                      if (!isGroupDrag) {
-                        console.log('[PathManager] onDrop: 不是分组拖拽，忽略');
-                        return;
-                      }
-                      
-                      const draggedGroupName = e.dataTransfer.getData('text/plain') || draggedGroup;
-                      console.log('[PathManager] onDrop: 分组拖拽放下', {
-                        draggedGroupName,
-                        targetGroup: groupName,
-                        draggedGroup,
-                        types
-                      });
-                      
-                      if (draggedGroupName && draggedGroupName !== groupName) {
-                        // 判断是插入到分组之前还是之后
-                        const rect = e.currentTarget.getBoundingClientRect();
-                        const midpoint = rect.top + rect.height / 2;
-                        const insertBefore = e.clientY < midpoint;
-                        console.log('[PathManager] 执行重新排序:', {
-                          draggedGroupName,
-                          targetGroup: groupName,
-                          insertBefore
-                        });
-                        reorderGroups(draggedGroupName, groupName, insertBefore);
-                        setDraggedGroup(null);
-                        setDragOverGroup(null);
-                      }
-                    }}
                   >
                     {/* 分组标题 - 只负责启动拖拽 */}
                     <div 
@@ -1318,27 +1272,10 @@ const PathManager: React.FC = () => {
                       onDragStart={(e) => {
                         handleDragStartGroup(groupName, e);
                       }}
-                      onDragOver={(e) => {
-                        // 分组标题上的 onDragOver：处理拖拽悬停
-                        console.log('[PathManager] 分组标题 onDragOver 触发:', {
-                          groupName,
-                          draggedGroup,
-                          types: Array.from(e.dataTransfer.types)
-                        });
-                        
-                        if (draggedGroup && draggedGroup !== groupName) {
-                          e.preventDefault();
-                          // 不阻止传播，让父容器也能处理
-                          e.dataTransfer.dropEffect = 'move';
-                          console.log('[PathManager] 分组标题 onDragOver: 允许拖拽', groupName);
-                          // 设置 dragOverGroup，让父容器知道悬停位置
-                          setDragOverGroup(groupName);
-                        }
-                      }}
                       onDragEnd={(e) => {
                         console.log('[PathManager] 拖拽结束', {
                           groupName,
-                          draggedGroup,
+                          draggedGroup: draggedGroupRef.current,
                           dataTransfer: {
                             types: Array.from(e.dataTransfer.types),
                             effectAllowed: e.dataTransfer.effectAllowed,
