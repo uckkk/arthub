@@ -34,6 +34,7 @@ jobs:
   # 桌面版本构建 (Windows + macOS)
   # ========================================
   build:
+    timeout-minutes: 120  # 设置超时时间为 120 分钟（2小时）
     strategy:
       fail-fast: false
       matrix:
@@ -67,8 +68,7 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: '20'
-          # 禁用 npm 缓存，确保每次都是全新安装（可选，如果构建慢可以启用缓存）
-          # cache: 'npm'
+          cache: 'npm'  # 启用 npm 缓存以加快构建速度
 
       # 3. 安装 Rust
       - name: Setup Rust
