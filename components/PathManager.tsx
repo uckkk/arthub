@@ -1192,23 +1192,27 @@ const PathManager: React.FC = () => {
         onDragEnter={handleDragEnter}
         onDragLeave={handleDragLeave}
         onDragOver={(e) => {
-          // 检查是否是分组拖拽，如果是则不处理，让分组容器处理
+          // 检查是否是分组拖拽
           const types = Array.from(e.dataTransfer.types);
-          const isGroupDrag = draggedGroup || types.includes('application/x-group');
+          const isGroupDrag = draggedGroupRef.current || types.includes('application/x-group') || types.includes('text/plain');
           if (isGroupDrag) {
-            // 分组拖拽，不阻止默认行为，让事件传播到分组容器
+            // 分组拖拽，不阻止默认行为，让全局监听器处理
+            // 但也不调用 handleDragOverCreatePath
             return;
           }
+          // 非分组拖拽，处理文件拖拽创建路径
           handleDragOverCreatePath(e);
         }}
         onDrop={(e) => {
-          // 检查是否是分组拖拽，如果是则不处理，让分组容器处理
+          // 检查是否是分组拖拽
           const types = Array.from(e.dataTransfer.types);
-          const isGroupDrag = draggedGroup || types.includes('application/x-group');
+          const isGroupDrag = draggedGroupRef.current || types.includes('application/x-group');
           if (isGroupDrag) {
-            // 分组拖拽，不阻止默认行为，让事件传播到分组容器
+            // 分组拖拽，不阻止默认行为，让全局监听器处理
+            // 但也不调用 handleDropCreatePath
             return;
           }
+          // 非分组拖拽，处理文件拖拽创建路径
           handleDropCreatePath(e);
         }}
         className={`
