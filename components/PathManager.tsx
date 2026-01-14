@@ -59,6 +59,19 @@ const PathManager: React.FC = () => {
   // 使用 ref 存储拖拽状态，避免闭包问题
   const draggedGroupRef = useRef<string | null>(null);
   const dragOverGroupRef = useRef<string | null>(null);
+  
+  // 鼠标拖拽状态（用于模拟拖拽）
+  const mouseDragStateRef = useRef<{
+    isDragging: boolean;
+    draggedGroup: string | null;
+    startY: number;
+    startGroup: string | null;
+  }>({
+    isDragging: false,
+    draggedGroup: null,
+    startY: 0,
+    startGroup: null
+  });
 
   // 表单状态
   const [newName, setNewName] = useState('');
