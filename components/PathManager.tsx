@@ -1218,9 +1218,8 @@ const PathManager: React.FC = () => {
           <button
             onClick={() => setSortMode(sortMode === 'group' ? 'tag' : 'group')}
             className={`
-              flex items-center gap-2 px-4 py-2.5
-              border rounded-lg
-              transition-colors duration-150
+              p-2.5 rounded-lg
+              border transition-colors duration-150
               ${sortMode === 'group' 
                 ? 'bg-[#1a1a1a] hover:bg-[#222222] text-[#a0a0a0] hover:text-white border-[#2a2a2a] hover:border-[#3a3a3a]'
                 : 'bg-blue-500/20 text-blue-400 border-blue-500/50 hover:bg-blue-500/30'
@@ -1229,15 +1228,9 @@ const PathManager: React.FC = () => {
             title={sortMode === 'group' ? '切换到按标签排序' : '切换到按分类分组'}
           >
             {sortMode === 'group' ? (
-              <>
-                <TagIcon size={18} />
-                <span className="text-sm">按标签</span>
-              </>
+              <TagIcon size={18} />
             ) : (
-              <>
-                <Layers size={18} />
-                <span className="text-sm">按分类</span>
-              </>
+              <Layers size={18} />
             )}
           </button>
           
@@ -1626,6 +1619,24 @@ const PathManager: React.FC = () => {
                             " title={item.path}>
                               {item.path}
                             </p>
+                            {/* 标签显示 */}
+                            {item.tags && item.tags.length > 0 && (
+                              <div className="flex items-center gap-1.5 flex-wrap mt-2">
+                                {item.tags.map((tag, tagIndex) => (
+                                  <span
+                                    key={tagIndex}
+                                    className="
+                                      inline-flex items-center gap-1 px-2 py-0.5 rounded
+                                      bg-blue-500/20 text-blue-400 border border-blue-500/30
+                                      text-[10px] font-medium
+                                    "
+                                  >
+                                    <TagIcon size={10} />
+                                    {tag}
+                                  </span>
+                                ))}
+                              </div>
+                            )}
                           </div>
 
                           {/* 操作按钮 - 移到最右侧，hover时显示 */}
