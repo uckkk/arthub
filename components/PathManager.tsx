@@ -663,16 +663,28 @@ const PathManager: React.FC = () => {
       // 按标签排序模式
       const groups: Record<string, PathItem[]> = {};
       
-      // 先处理选中标签的路径
-      selectedTags.forEach(tag => {
-        groups[`标签: ${tag}`] = paths.filter(p => p.tags && p.tags.includes(tag));
-      });
+      // 先处理选中标签的路径（多个标签合并为一组，显示包含任一标签的所有路径）
+      if (selectedTags.length > 0) {
+        const selectedTagPaths = paths.filter(p => 
+          p.tags && p.tags.some(tag => selectedTags.includes(tag))
+        );
+        if (selectedTagPaths.length > 0) {
+          // 如果有多个选中标签，显示为"标签: 标签1, 标签2, ..."
+          // 如果只有一个，显示为"标签: 标签1"
+          const groupName = selectedTags.length === 1 
+            ? `标签: ${selectedTags[0]}`
+            : `标签: ${selectedTags.join(', ')}`;
+          groups[groupName] = selectedTagPaths;
+        }
+      }
       
       // 然后处理其他标签的路径（不在选中标签中的）
       allTags.forEach(tag => {
         if (!selectedTags.includes(tag)) {
-          const tagPaths = paths.filter(p => p.tags && p.tags.includes(tag) && 
-            !selectedTags.some(selectedTag => p.tags?.includes(selectedTag)));
+          const tagPaths = paths.filter(p => 
+            p.tags && p.tags.includes(tag) && 
+            !selectedTags.some(selectedTag => p.tags?.includes(selectedTag))
+          );
           if (tagPaths.length > 0) {
             groups[`标签: ${tag}`] = tagPaths;
           }
@@ -1403,11 +1415,15 @@ const PathManager: React.FC = () => {
               if (!groupedPaths[groupName]) return null;
               
               // 按标签排序时，判断是否需要显示分割线
-              const isSelectedTag = sortMode === 'tag' && selectedTags.some(tag => groupName === `标签: ${tag}`);
+              // 检查是否是选中标签的分组（支持单个标签和多个标签的组合）
+              const selectedGroupName = selectedTags.length > 0 
+                ? (selectedTags.length === 1 
+                    ? `标签: ${selectedTags[0]}`
+                    : `标签: ${selectedTags.join(', ')}`)
+                : '';
+              const isSelectedTag = sortMode === 'tag' && selectedTags.length > 0 && groupName === selectedGroupName;
               const groupKeys = Object.keys(groupedPaths);
-              const firstNonSelectedIndex = groupKeys.findIndex(key => 
-                !selectedTags.some(tag => key === `标签: ${tag}`)
-              );
+              const firstNonSelectedIndex = groupKeys.findIndex(key => key !== selectedGroupName);
               const isDividerNeeded = sortMode === 'tag' && 
                 groupIndex === firstNonSelectedIndex && 
                 firstNonSelectedIndex > 0 &&
