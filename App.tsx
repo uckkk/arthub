@@ -103,7 +103,7 @@ const createMenuGroups = (): MenuGroup[] => [
     items: [
       { id: 'api', label: 'AI盒子', icon: Code },
       { id: 'naming', label: '资产命名', icon: Type },
-      { id: 'paths', label: '路径管理', icon: Menu },
+      { id: 'paths', label: '常用入口', icon: Menu },
     ],
   },
 ];

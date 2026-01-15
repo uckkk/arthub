@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { 
   Folder, Globe, Server, ExternalLink, Copy, Trash2, Plus, 
-  AlertCircle, Check, ChevronDown, ChevronRight, Pencil, Star, X, Save, Upload, Play, Grid3X3, Settings
+  AlertCircle, Check, ChevronDown, ChevronRight, Pencil, Star, X, Save, Upload, Play, Grid3X3, Settings, 
+  LayoutGrid, Tag as TagIcon, Layers
 } from 'lucide-react';
 import { PathItem, PathType } from '../types';
 import { MOCK_PATHS } from '../constants';
@@ -14,6 +15,7 @@ import {
 import { handleDroppedAppFile, launchApp, isAppFile } from '../services/appService';
 import { useMiddleMouseScroll } from '../utils/useMiddleMouseScroll';
 import { openUrl } from '../services/windowService';
+import { TagEditor } from './common';
 
 // 检查是否在 Tauri 环境中（更可靠的检测方法）
 const isTauriEnvironment = (): boolean => {
@@ -95,6 +97,21 @@ const PathManager: React.FC = () => {
   
   // 显示列数设置菜单
   const [showColumnsMenu, setShowColumnsMenu] = useState(false);
+  
+  // 排序模式：'group' = 按分类分组, 'tag' = 按标签排序
+  const [sortMode, setSortMode] = useState<'group' | 'tag'>(() => {
+    const saved = localStorage.getItem('arthub_path_sort_mode');
+    return (saved === 'tag' || saved === 'group') ? saved : 'group';
+  });
+  
+  // 选中的标签（用于按标签排序时显示在上部）
+  const [selectedTags, setSelectedTags] = useState<string[]>(() => {
+    const saved = localStorage.getItem('arthub_path_selected_tags');
+    return saved ? JSON.parse(saved) : [];
+  });
+  
+  // 编辑时的标签状态
+  const [editTags, setEditTags] = useState<string[]>([]);
   
   // 鼠标中键滚动
   const scrollContainerRef = useMiddleMouseScroll<HTMLDivElement>({
@@ -630,24 +647,65 @@ const PathManager: React.FC = () => {
     return Array.from(new Set(paths.map(p => p.group || '默认分组')));
   }, [paths]);
 
-  const groupedPaths = useMemo(() => {
-    const groups: Record<string, PathItem[]> = {};
+  // 获取所有标签
+  const allTags = useMemo(() => {
+    const tagSet = new Set<string>();
     paths.forEach(p => {
-      const g = p.group || '默认分组';
-      if (!groups[g]) groups[g] = [];
-      groups[g].push(p);
+      if (p.tags && p.tags.length > 0) {
+        p.tags.forEach(tag => tagSet.add(tag));
+      }
     });
-    
-    if (groupOrder.length === 0) return groups;
-    
-    const orderedGroups: Record<string, PathItem[]> = {};
-    const allGroups = new Set([...groupOrder, ...Object.keys(groups)]);
-    allGroups.forEach(g => {
-      if (groups[g]) orderedGroups[g] = groups[g];
-    });
-    
-    return orderedGroups;
-  }, [paths, groupOrder]);
+    return Array.from(tagSet).sort();
+  }, [paths]);
+
+  const groupedPaths = useMemo(() => {
+    if (sortMode === 'tag') {
+      // 按标签排序模式
+      const groups: Record<string, PathItem[]> = {};
+      
+      // 先处理选中标签的路径
+      selectedTags.forEach(tag => {
+        groups[`标签: ${tag}`] = paths.filter(p => p.tags && p.tags.includes(tag));
+      });
+      
+      // 然后处理其他标签的路径（不在选中标签中的）
+      allTags.forEach(tag => {
+        if (!selectedTags.includes(tag)) {
+          const tagPaths = paths.filter(p => p.tags && p.tags.includes(tag) && 
+            !selectedTags.some(selectedTag => p.tags?.includes(selectedTag)));
+          if (tagPaths.length > 0) {
+            groups[`标签: ${tag}`] = tagPaths;
+          }
+        }
+      });
+      
+      // 最后处理无标签的路径
+      const noTagPaths = paths.filter(p => !p.tags || p.tags.length === 0);
+      if (noTagPaths.length > 0) {
+        groups['无标签'] = noTagPaths;
+      }
+      
+      return groups;
+    } else {
+      // 按分类分组模式（原有逻辑）
+      const groups: Record<string, PathItem[]> = {};
+      paths.forEach(p => {
+        const g = p.group || '默认分组';
+        if (!groups[g]) groups[g] = [];
+        groups[g].push(p);
+      });
+      
+      if (groupOrder.length === 0) return groups;
+      
+      const orderedGroups: Record<string, PathItem[]> = {};
+      const allGroups = new Set([...groupOrder, ...Object.keys(groups)]);
+      allGroups.forEach(g => {
+        if (groups[g]) orderedGroups[g] = groups[g];
+      });
+      
+      return orderedGroups;
+    }
+  }, [paths, groupOrder, sortMode, selectedTags, allTags]);
   
   // 初始化分组顺序
   useEffect(() => {
@@ -675,6 +733,16 @@ const PathManager: React.FC = () => {
     localStorage.setItem('arthub_path_columns', columnsPerRow.toString());
   }, [columnsPerRow]);
 
+  // 保存排序模式
+  useEffect(() => {
+    localStorage.setItem('arthub_path_sort_mode', sortMode);
+  }, [sortMode]);
+
+  // 保存选中标签
+  useEffect(() => {
+    localStorage.setItem('arthub_path_selected_tags', JSON.stringify(selectedTags));
+  }, [selectedTags]);
+
   const handleAddPath = () => {
     if (!newName || !newPath) return;
     const groupName = newGroup.trim() || '默认分组';
@@ -689,7 +757,8 @@ const PathManager: React.FC = () => {
       name: newName.trim(),
       path: finalPath,
       type: newType,
-      group: groupName
+      group: groupName,
+      tags: [] // 新添加的路径默认无标签
     };
     
     setPaths([item, ...paths]);
@@ -729,6 +798,7 @@ const PathManager: React.FC = () => {
     setEditPath(item.path);
     setEditType(item.type);
     setEditGroup(item.group || '');
+    setEditTags(item.tags || []);
   };
 
   const handleEditSave = () => {
@@ -745,7 +815,8 @@ const PathManager: React.FC = () => {
       name: editName.trim(),
       path: finalPath,
       type: editType,
-      group: groupName
+      group: groupName,
+      tags: editTags
     };
     
     setPaths(paths.map(p => p.id === editingItem.id ? updatedItem : p));
@@ -765,6 +836,7 @@ const PathManager: React.FC = () => {
     setEditName('');
     setEditPath('');
     setEditGroup('');
+    setEditTags([]);
   };
 
   const handleJump = async (item: PathItem) => {
@@ -1140,7 +1212,67 @@ const PathManager: React.FC = () => {
   return (
     <div className="h-full flex flex-col overflow-hidden bg-[#0a0a0a]">
       {/* 顶部工具栏 */}
-      <div className="flex items-center justify-end p-6 border-b border-[#1a1a1a] shrink-0">
+      <div className="flex items-center justify-between p-6 border-b border-[#1a1a1a] shrink-0">
+        {/* 排序切换按钮和标签选择 */}
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => setSortMode(sortMode === 'group' ? 'tag' : 'group')}
+            className={`
+              flex items-center gap-2 px-4 py-2.5
+              border rounded-lg
+              transition-colors duration-150
+              ${sortMode === 'group' 
+                ? 'bg-[#1a1a1a] hover:bg-[#222222] text-[#a0a0a0] hover:text-white border-[#2a2a2a] hover:border-[#3a3a3a]'
+                : 'bg-blue-500/20 text-blue-400 border-blue-500/50 hover:bg-blue-500/30'
+              }
+            `}
+            title={sortMode === 'group' ? '切换到按标签排序' : '切换到按分类分组'}
+          >
+            {sortMode === 'group' ? (
+              <>
+                <TagIcon size={18} />
+                <span className="text-sm">按标签</span>
+              </>
+            ) : (
+              <>
+                <Layers size={18} />
+                <span className="text-sm">按分类</span>
+              </>
+            )}
+          </button>
+          
+          {/* 标签选择器（仅在按标签排序模式下显示） */}
+          {sortMode === 'tag' && allTags.length > 0 && (
+            <div className="flex items-center gap-2 flex-wrap">
+              {allTags.map(tag => {
+                const isSelected = selectedTags.includes(tag);
+                return (
+                  <button
+                    key={tag}
+                    onClick={() => {
+                      if (isSelected) {
+                        setSelectedTags(selectedTags.filter(t => t !== tag));
+                      } else {
+                        setSelectedTags([...selectedTags, tag]);
+                      }
+                    }}
+                    className={`
+                      px-2.5 py-1 rounded-md text-xs font-medium
+                      transition-colors duration-150
+                      ${isSelected
+                        ? 'bg-blue-500/30 text-blue-400 border border-blue-500/50'
+                        : 'bg-[#1a1a1a] text-[#808080] border border-[#2a2a2a] hover:border-[#3a3a3a] hover:text-white'
+                      }
+                    `}
+                  >
+                    {tag}
+                  </button>
+                );
+              })}
+            </div>
+          )}
+        </div>
+        
         <div className="flex items-center gap-2">
           {/* 列数设置按钮 */}
           <div className="relative">
@@ -1274,14 +1406,30 @@ const PathManager: React.FC = () => {
               // 如果不是分组拖拽，不处理，让其他处理器处理
             }}
           >
-            {groupOrder.map((groupName, groupIndex) => {
+            {(sortMode === 'group' ? groupOrder : Object.keys(groupedPaths)).map((groupName, groupIndex) => {
               if (!groupedPaths[groupName]) return null;
+              
+              // 按标签排序时，判断是否需要显示分割线
+              const isSelectedTag = sortMode === 'tag' && selectedTags.some(tag => groupName === `标签: ${tag}`);
+              const groupKeys = Object.keys(groupedPaths);
+              const firstNonSelectedIndex = groupKeys.findIndex(key => 
+                !selectedTags.some(tag => key === `标签: ${tag}`)
+              );
+              const isDividerNeeded = sortMode === 'tag' && 
+                groupIndex === firstNonSelectedIndex && 
+                firstNonSelectedIndex > 0 &&
+                selectedTags.length > 0;
               
               // 计算插入点位置
               const showInsertBefore = draggedGroup && draggedGroup !== groupName && dragOverGroup === groupName;
               
               return (
                 <React.Fragment key={groupName}>
+                  {/* 分割线 - 在按标签排序时，选中标签和其他标签之间 */}
+                  {isDividerNeeded && (
+                    <div className="my-4 border-t border-[#2a2a2a]" />
+                  )}
+                  
                   {/* 插入点 - 在分组之前 */}
                   {showInsertBefore && (
                     <div
@@ -1726,6 +1874,17 @@ const PathManager: React.FC = () => {
                 <datalist id="edit-groups-list">
                   {existingGroups.map(g => <option key={g} value={g} />)}
                 </datalist>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-[#a0a0a0] mb-2">标签</label>
+                <TagEditor
+                  tags={editTags}
+                  onChange={setEditTags}
+                  suggestions={allTags}
+                  placeholder="输入标签后按回车添加"
+                  maxTags={10}
+                />
               </div>
               
               <div>

@@ -7,6 +7,7 @@ export interface PathItem {
   path: string;
   type: PathType;
   group?: string; // 分组名称
+  tags?: string[]; // 标签列表
   description?: string;
   icon?: string; // 应用图标（base64 或路径）
 }
