@@ -1629,33 +1629,14 @@ const PathManager: React.FC = () => {
 
                           {/* 内容 */}
                           <div className={`flex-1 min-w-0 ${columnsPerRow > 1 ? 'overflow-hidden' : ''}`}>
-                            <div className="flex items-center gap-2 min-w-0">
-                              <h3 className="
-                                text-[14px] font-medium text-white
-                                group-hover:text-blue-400
-                                truncate transition-colors flex-1 min-w-0
-                              " title={item.name}>
-                                {item.name}
-                              </h3>
-                              {/* 收藏按钮 - 移到标题右侧，始终显示（如果已收藏）或hover时显示 */}
-                              <button 
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  handleAddToFavorites(item, e);
-                                }}
-                                className={`
-                                  shrink-0 p-1 rounded transition-all duration-150
-                                  ${isFavorited(item.id)
-                                    ? 'text-yellow-400 opacity-100'
-                                    : 'text-[#666666] opacity-0 group-hover:opacity-100 hover:text-yellow-400'
-                                  }
-                                  ${justFavoritedId === item.id ? 'scale-125' : ''}
-                                `}
-                                title={isFavorited(item.id) ? "取消收藏" : "添加到收藏"}
-                              >
-                                <Star size={14} fill={isFavorited(item.id) ? "currentColor" : "none"} />
-                              </button>
-                            </div>
+                            {/* 标题 - 优先显示完整内容，可以换行 */}
+                            <h3 className="
+                              text-[14px] font-medium text-white
+                              group-hover:text-blue-400
+                              transition-colors break-words
+                            " title={item.name}>
+                              {item.name}
+                            </h3>
                             <p className="
                               text-[12px] text-[#666666] font-mono
                               truncate mt-0.5
@@ -1685,28 +1666,49 @@ const PathManager: React.FC = () => {
                             )}
                           </div>
 
-                          {/* 操作按钮 - 移到最右侧，hover时显示 */}
-                          <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
+                          {/* 操作按钮和收藏按钮 - 移到最右侧 */}
+                          <div className="flex items-center gap-0.5 shrink-0">
+                            {/* 收藏按钮 - 始终显示（如果已收藏）或hover时显示 */}
                             <button 
                               onClick={(e) => {
                                 e.stopPropagation();
-                                handleEdit(item, e);
+                                handleAddToFavorites(item, e);
                               }}
-                              className="p-1.5 rounded text-[#666666] hover:text-white hover:bg-[#2a2a2a] transition-colors"
-                              title="编辑"
+                              className={`
+                                p-1.5 rounded transition-all duration-150
+                                ${isFavorited(item.id)
+                                  ? 'text-yellow-400 opacity-100'
+                                  : 'text-[#666666] opacity-0 group-hover:opacity-100 hover:text-yellow-400'
+                                }
+                                ${justFavoritedId === item.id ? 'scale-125' : ''}
+                              `}
+                              title={isFavorited(item.id) ? "取消收藏" : "添加到收藏"}
                             >
-                              <Pencil size={13} />
+                              <Star size={14} fill={isFavorited(item.id) ? "currentColor" : "none"} />
                             </button>
-                            <button 
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                handleCopy(item, e);
-                              }}
-                              className="p-1.5 rounded text-[#666666] hover:text-white hover:bg-[#2a2a2a] transition-colors"
-                              title="复制路径"
-                            >
-                              <Copy size={13} />
-                            </button>
+                            
+                            {/* 其他操作按钮 - hover时显示 */}
+                            <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+                              <button 
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleEdit(item, e);
+                                }}
+                                className="p-1.5 rounded text-[#666666] hover:text-white hover:bg-[#2a2a2a] transition-colors"
+                                title="编辑"
+                              >
+                                <Pencil size={13} />
+                              </button>
+                              <button 
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleCopy(item, e);
+                                }}
+                                className="p-1.5 rounded text-[#666666] hover:text-white hover:bg-[#2a2a2a] transition-colors"
+                                title="复制路径"
+                              >
+                                <Copy size={13} />
+                              </button>
                             {item.type === 'web' && (
                               <ExternalLink size={13} className="text-[#444444] mx-0.5" />
                             )}
