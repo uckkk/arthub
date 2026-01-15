@@ -59,11 +59,13 @@ const getTagColor = (tagName: string) => {
   }
   const index = Math.abs(hash) % TAG_COLORS.length;
   const color = TAG_COLORS[index];
-  // 将数组形式的bg和border转换为字符串
+  // 将数组形式的bg和border转换为字符串，使用字符串拼接避免esbuild误解析
+  const bgStr = Array.isArray(color.bg) ? color.bg[0] + color.bg[1] : color.bg;
+  const borderStr = Array.isArray(color.border) ? color.border[0] + color.border[1] : color.border;
   return {
-    bg: Array.isArray(color.bg) ? color.bg.join('') : color.bg,
+    bg: bgStr,
     text: color.text,
-    border: Array.isArray(color.border) ? color.border.join('') : color.border
+    border: borderStr
   };
 };
 
@@ -1243,7 +1245,7 @@ const PathManager: React.FC = () => {
             'flex-1 py-2 text-sm font-medium rounded-lg',
             'transition-colors duration-150',
             value === t 
-              ? [['bg-blue-500', '/20'].join(''), 'text-blue-400', 'border', ['border-blue-500', '/50'].join('')].join(' ')
+              ? [(('bg-blue-500' + '/') + '20'), 'text-blue-400', 'border', (('border-blue-500' + '/') + '50')].join(' ')
               : 'bg-[#1a1a1a] text-[#808080] border border-[#2a2a2a] hover:border-[#3a3a3a]'
           ].filter(Boolean).join(' ')}
         >
@@ -1266,7 +1268,7 @@ const PathManager: React.FC = () => {
               'border transition-colors duration-150',
               sortMode === 'group' 
                 ? 'bg-[#1a1a1a] hover:bg-[#222222] text-[#a0a0a0] hover:text-white border-[#2a2a2a] hover:border-[#3a3a3a]'
-                : [['bg-blue-500', '/20'].join(''), 'text-blue-400', ['border-blue-500', '/50'].join(''), ['hover:bg-blue-500', '/30'].join('')].join(' ')
+                : [(('bg-blue-500' + '/') + '20'), 'text-blue-400', (('border-blue-500' + '/') + '50'), (('hover:bg-blue-500' + '/') + '30')].join(' ')
             ].filter(Boolean).join(' ')}
             title={sortMode === 'group' ? '切换到按标签排序' : '切换到按分类分组'}
           >
@@ -1339,7 +1341,7 @@ const PathManager: React.FC = () => {
                   'absolute top-full right-0 mt-2 z-50',
                   'bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg',
                   'shadow-lg',
-                  ['shadow-black', '/50'].join(''),
+                  (('shadow-black' + '/') + '50'),
                   'min-w-[120px]',
                   'overflow-hidden'
                 ].join(' ')}>
@@ -1354,7 +1356,7 @@ const PathManager: React.FC = () => {
                         'w-full px-4 py-2.5 text-left text-sm',
                         'transition-colors duration-150',
                         columnsPerRow === cols
-                          ? [['bg-blue-500', '/20'].join(''), 'text-blue-400'].join(' ')
+                          ? [(('bg-blue-500' + '/') + '20'), 'text-blue-400'].join(' ')
                           : 'text-[#a0a0a0] hover:bg-[#222222] hover:text-white'
                       ].filter(Boolean).join(' ')}
                     >
@@ -1413,7 +1415,7 @@ const PathManager: React.FC = () => {
         className={[
           'flex-1 min-h-0 overflow-y-auto px-6 py-6',
           'transition-colors duration-200',
-          isDraggingOver ? [['bg-blue-500', '/10'].join(''), 'border-2 border-dashed border-blue-500'].join(' ') : ''
+          isDraggingOver ? [(('bg-blue-500' + '/') + '10'), 'border-2 border-dashed border-blue-500'].join(' ') : ''
         ].filter(Boolean).join(' ')}
         style={{ scrollbarWidth: 'thin', scrollbarColor: '#2a2a2a #0a0a0a' }}
       >
@@ -1532,7 +1534,7 @@ const PathManager: React.FC = () => {
                       'text-[#808080] hover:text-white hover:bg-[#1a1a1a]',
                       'transition-all duration-150',
                       draggedGroup === groupName ? 'opacity-50 scale-95' : '',
-                      dragOverGroup === groupName && draggedGroup && draggedGroup !== groupName ? ['border-2', ['border-white', '/30'].join(''), ['bg-white', '/5'].join('')].join(' ') : ''
+                      dragOverGroup === groupName && draggedGroup && draggedGroup !== groupName ? ['border-2', (('border-white' + '/') + '30'), (('bg-white' + '/') + '5')].join(' ') : ''
                     ].filter(Boolean).join(' ')}
                   >
                     {collapsedGroups.has(groupName) 
@@ -1606,7 +1608,7 @@ const PathManager: React.FC = () => {
                           {copiedId === item.id && (
                             <div className={[
                               'absolute inset-0 rounded-lg',
-                              ['bg-green-500', '/90'].join(''),
+                              (('bg-green-500' + '/') + '90'),
                               'flex items-center justify-center',
                               'text-white text-sm font-medium',
                               'animate-fade-in z-20'
@@ -1712,7 +1714,7 @@ const PathManager: React.FC = () => {
                                   e.stopPropagation();
                                   handleDelete(item.id, e);
                                 }}
-                                className={['p-1.5 rounded text-[#666666] hover:text-red-400', ['hover:bg-red-500', '/10'].join(''), 'transition-colors'].join(' ')}
+                                className={['p-1.5 rounded text-[#666666] hover:text-red-400', (('hover:bg-red-500' + '/') + '10'), 'transition-colors'].join(' ')}
                                 title="删除"
                               >
                                 <Trash2 size={13} />
@@ -1765,7 +1767,7 @@ const PathManager: React.FC = () => {
       {/* 添加模态框 */}
       {isModalOpen && (
         <div 
-          className={['fixed inset-0 z-50 flex items-center justify-center', ['bg-black', '/70'].join(''), 'backdrop-blur-sm'].join(' ')}
+          className={['fixed inset-0 z-50 flex items-center justify-center', (('bg-black' + '/') + '70'), 'backdrop-blur-sm'].join(' ')}
           onClick={() => setIsModalOpen(false)}
         >
           <div 
@@ -1884,7 +1886,7 @@ const PathManager: React.FC = () => {
       {/* 编辑模态框 */}
       {editingItem && (
         <div 
-          className={['fixed inset-0 z-50 flex items-center justify-center', ['bg-black', '/70'].join(''), 'backdrop-blur-sm'].join(' ')}
+          className={['fixed inset-0 z-50 flex items-center justify-center', (('bg-black' + '/') + '70'), 'backdrop-blur-sm'].join(' ')}
           onClick={handleEditCancel}
         >
           <div 
@@ -2014,7 +2016,7 @@ const PathManager: React.FC = () => {
       {/* 拖拽创建路径模态框 */}
       {showDragModal && draggedPath && (
         <div 
-          className={['fixed inset-0 z-50 flex items-center justify-center', ['bg-black', '/70'].join(''), 'backdrop-blur-sm'].join(' ')}
+          className={['fixed inset-0 z-50 flex items-center justify-center', (('bg-black' + '/') + '70'), 'backdrop-blur-sm'].join(' ')}
           onClick={() => {
             setShowDragModal(false);
             setDraggedPath(null);
