@@ -1342,7 +1342,7 @@ const PathManager: React.FC = () => {
                   'absolute top-full right-0 mt-2 z-50',
                   'bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg',
                   'shadow-lg',
-                  (('shadow-black' + '/') + '50'),
+                  'shadow-black/50',
                   'min-w-[120px]',
                   'overflow-hidden'
                 ].join(' ')}>
@@ -1754,7 +1754,7 @@ const PathManager: React.FC = () => {
       {/* 添加模态框 */}
       {isModalOpen && (
         <div 
-          className={`fixed inset-0 z-50 flex items-center justify-center ${(('bg-black' + '/') + '70')} backdrop-blur-sm`}
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm"
           onClick={handleCloseAddModal}
         >
           <div 
@@ -1762,7 +1762,7 @@ const PathManager: React.FC = () => {
               'w-full max-w-md mx-4',
               'bg-[#151515] border border-[#2a2a2a] rounded-xl',
               'shadow-2xl',
-              (('shadow-black' + '/') + '50'),
+              'shadow-black/50',
               'animate-scale-in'
             ].join(' ')}
             onClick={(e) => e.stopPropagation()}
@@ -1884,7 +1884,7 @@ const PathManager: React.FC = () => {
       {/* 编辑模态框 */}
       {editingItem && (
         <div 
-          className={`fixed inset-0 z-50 flex items-center justify-center ${(('bg-black' + '/') + '70')} backdrop-blur-sm`}
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm"
           onClick={handleEditCancel}
         >
           <div 
@@ -1892,7 +1892,7 @@ const PathManager: React.FC = () => {
               'w-full max-w-md mx-4',
               'bg-[#151515] border border-[#2a2a2a] rounded-xl',
               'shadow-2xl',
-              (('shadow-black' + '/') + '50'),
+              'shadow-black/50',
               'animate-scale-in'
             ].join(' ')}
             onClick={(e) => e.stopPropagation()}
@@ -2014,7 +2014,7 @@ const PathManager: React.FC = () => {
       {/* 拖拽创建路径模态框 */}
       {showDragModal && draggedPath && (
         <div 
-          className={`fixed inset-0 z-50 flex items-center justify-center ${(('bg-black' + '/') + '70')} backdrop-blur-sm`}
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm"
           onClick={() => {
             setShowDragModal(false);
             setDraggedPath(null);
@@ -2025,7 +2025,7 @@ const PathManager: React.FC = () => {
               'w-full max-w-md mx-4',
               'bg-[#151515] border border-[#2a2a2a] rounded-xl',
               'shadow-2xl',
-              (('shadow-black' + '/') + '50'),
+              'shadow-black/50',
               'animate-scale-in'
             ].join(' ')}
             onClick={(e) => e.stopPropagation()}
