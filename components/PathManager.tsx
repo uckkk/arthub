@@ -1295,13 +1295,7 @@ const PathManager: React.FC = () => {
                         setSelectedTags([...selectedTags, tag]);
                       }
                     }}
-                      className={[
-                        'px-2.5 py-1 rounded-md text-xs font-medium',
-                        'transition-colors duration-150 border',
-                        isSelected
-                          ? [color.bg, color.text, color.border].join(' ')
-                          : 'bg-[#1a1a1a] text-[#808080] border-[#2a2a2a] hover:border-[#3a3a3a] hover:text-white'
-                      ].filter(Boolean).join(' ')}
+                      className={`px-2.5 py-1 rounded-md text-xs font-medium transition-colors duration-150 border ${isSelected ? `${color.bg} ${color.text} ${color.border}` : 'bg-[#1a1a1a] text-[#808080] border-[#2a2a2a] hover:border-[#3a3a3a] hover:text-white'}`}
                   >
                     {tag}
                   </button>
@@ -1664,15 +1658,7 @@ const PathManager: React.FC = () => {
                                   return (
                                     <span
                                       key={tagIndex}
-                                      className={[
-                                        'inline-flex items-center gap-1 px-2 py-0.5 rounded',
-                                        color.bg,
-                                        color.text,
-                                        'border',
-                                        color.border,
-                                        'text-[10px] font-medium',
-                                        'whitespace-nowrap'
-                                      ].join(' ')}
+                                      className={`inline-flex items-center gap-1 px-2 py-0.5 rounded ${color.bg} ${color.text} border ${color.border} text-[10px] font-medium whitespace-nowrap`}
                                       title={tag}
                                     >
                                       <TagIcon size={10} />
