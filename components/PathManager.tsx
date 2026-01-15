@@ -13,6 +13,7 @@ import {
 } from '../services/favoritesService';
 import { handleDroppedAppFile, launchApp, isAppFile } from '../services/appService';
 import { useMiddleMouseScroll } from '../utils/useMiddleMouseScroll';
+import { openUrl } from '../services/windowService';
 
 // 检查是否在 Tauri 环境中（更可靠的检测方法）
 const isTauriEnvironment = (): boolean => {
@@ -793,7 +794,9 @@ const PathManager: React.FC = () => {
         // 再次确认路径确实是URL（防止误判）
         if (item.path.startsWith('http://') || item.path.startsWith('https://')) {
           console.log('[PathManager] 打开网页:', item.path);
-          window.open(item.path, '_blank');
+          console.log('[PathManager] 调用 openUrl 函数...');
+          const result = openUrl(item.path, '_blank');
+          console.log('[PathManager] openUrl 返回结果:', result);
           return;
         } else {
           // 如果类型是web但路径不是URL，按本地路径处理
@@ -831,7 +834,7 @@ const PathManager: React.FC = () => {
       // 但绝不打开网页，除非路径明确是http://或https://
       if (item.path.startsWith('http://') || item.path.startsWith('https://')) {
         console.log('[PathManager] 未知类型但路径是URL，打开网页:', item.path);
-        window.open(item.path, '_blank');
+        openUrl(item.path, '_blank');
       } else {
         // 其他情况都按本地路径处理
         console.log('[PathManager] 未知类型，按本地路径处理:', item.path);

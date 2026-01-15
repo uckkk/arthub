@@ -4,6 +4,7 @@ import { NamingHistoryItem } from '../types';
 import { loadNotesFromLocalStorage, saveNotesToLocalStorage, saveNotesToFile, loadNotesFromFile } from '../services/notesService';
 import { getStorageConfig } from '../services/fileStorageService';
 import { useMiddleMouseScroll } from '../utils/useMiddleMouseScroll';
+import { openUrl } from '../services/windowService';
 
 // URL正则表达式
 const URL_REGEX = /(https?:\/\/[^\s]+)/g;
@@ -397,7 +398,7 @@ const NamingHistory: React.FC = () => {
                 e.preventDefault();
                 const url = (target as HTMLAnchorElement).href;
                 if (url) {
-                  window.open(url, '_blank', 'noopener,noreferrer');
+                  openUrl(url, '_blank');
                 }
               }
             }}

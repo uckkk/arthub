@@ -7,6 +7,7 @@ import { FavoriteItem, getAllFavorites, removeFavorite } from '../services/favor
 import { PathItem } from '../types';
 import { Tag } from './ui';
 import { useMiddleMouseScroll } from '../utils/useMiddleMouseScroll';
+import { openUrl, openUrlWithShell } from '../services/windowService';
 
 const HomePage: React.FC = () => {
   const [favorites, setFavorites] = useState<FavoriteItem[]>([]);
@@ -59,7 +60,7 @@ const HomePage: React.FC = () => {
   const handlePathJump = async (item: PathItem) => {
     try {
       if (item.type === 'web') {
-        window.open(item.path, '_blank');
+        openUrl(item.path, '_blank');
       } else if (item.type === 'local' || item.type === 'network') {
         try {
           const { open } = await import('@tauri-apps/api/shell');
@@ -99,16 +100,15 @@ const HomePage: React.FC = () => {
       if (isTauri && workflow.url) {
         try {
           const { invoke } = await import('@tauri-apps/api/tauri');
-          const { open } = await import('@tauri-apps/api/shell');
           
           // 这里可以添加JSON工作流注入逻辑（如果需要）
-          await open(workflow.url);
+          await openUrlWithShell(workflow.url);
         } catch (error) {
           console.error('Tauri error:', error);
-          window.open(workflow.url, '_blank');
+          openUrl(workflow.url, '_blank');
         }
       } else {
-        window.open(workflow.url, '_blank');
+        openUrl(workflow.url, '_blank');
       }
     } catch (error) {
       console.error('Failed to open workflow:', error);

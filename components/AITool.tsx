@@ -12,6 +12,7 @@ import {
   FavoriteItem 
 } from '../services/favoritesService';
 import { useMiddleMouseScroll } from '../utils/useMiddleMouseScroll';
+import { openUrl, openUrlWithShell } from '../services/windowService';
 
 interface AIConfig {
   id: string;
@@ -347,10 +348,9 @@ const AITool: React.FC = () => {
 
           // 打开浏览器
           try {
-            const { open } = await import('@tauri-apps/api/shell');
-            await open(config.url);
+            await openUrlWithShell(config.url);
           } catch {
-            window.open(config.url, '_blank');
+            openUrl(config.url, '_blank');
           }
 
           // 键盘模拟
@@ -365,10 +365,10 @@ const AITool: React.FC = () => {
           }
         } catch (error) {
           console.error('Tauri error:', error);
-          window.open(config.url, '_blank');
+          openUrl(config.url, '_blank');
         }
       } else {
-        window.open(config.url, '_blank');
+        openUrl(config.url, '_blank');
         
         if (config.jsonFile && config.jsonFile.startsWith('data:application/json;base64,')) {
           setTimeout(async () => {

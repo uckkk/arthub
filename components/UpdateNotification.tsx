@@ -13,6 +13,7 @@ import {
   ignoreVersion,
   CURRENT_VERSION,
 } from '../services/updateService';
+import { openUrlWithShell } from '../services/windowService';
 
 interface UpdateNotificationProps {
   onHasUpdate?: (hasUpdate: boolean) => void;
@@ -85,10 +86,9 @@ const UpdateNotification: React.FC<UpdateNotificationProps> = ({ onHasUpdate }) 
   const handleDownload = async () => {
     if (updateInfo?.downloadUrl) {
       try {
-        const { open } = await import('@tauri-apps/api/shell');
-        await open(updateInfo.downloadUrl);
-      } catch {
-        window.open(updateInfo.downloadUrl, '_blank');
+        await openUrlWithShell(updateInfo.downloadUrl, true); // 使用精确匹配，因为下载URL通常每次都是唯一的
+      } catch (error) {
+        console.error('打开下载链接失败:', error);
       }
     }
     setShowModal(false);
