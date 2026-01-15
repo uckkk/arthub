@@ -1618,13 +1618,33 @@ const PathManager: React.FC = () => {
                             </div>
                           )}
 
-                          {/* 图标 */}
-                          <div className="
-                            p-2 rounded-lg
-                            bg-[#0f0f0f] group-hover:bg-[#151515]
-                            transition-colors flex items-center justify-center
-                          ">
-                            {getIcon(item)}
+                          {/* 图标和收藏按钮 */}
+                          <div className="flex flex-col items-center gap-1 shrink-0">
+                            <div className="
+                              p-2 rounded-lg
+                              bg-[#0f0f0f] group-hover:bg-[#151515]
+                              transition-colors flex items-center justify-center
+                            ">
+                              {getIcon(item)}
+                            </div>
+                            {/* 收藏按钮 - 放在图标下面 */}
+                            <button 
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleAddToFavorites(item, e);
+                              }}
+                              className={`
+                                p-1 rounded transition-all duration-150
+                                ${isFavorited(item.id)
+                                  ? 'text-yellow-400 opacity-100'
+                                  : 'text-[#666666] opacity-0 group-hover:opacity-100 hover:text-yellow-400'
+                                }
+                                ${justFavoritedId === item.id ? 'scale-125' : ''}
+                              `}
+                              title={isFavorited(item.id) ? "取消收藏" : "添加到收藏"}
+                            >
+                              <Star size={12} fill={isFavorited(item.id) ? "currentColor" : "none"} />
+                            </button>
                           </div>
 
                           {/* 内容 */}
@@ -1637,13 +1657,7 @@ const PathManager: React.FC = () => {
                             " title={item.name}>
                               {item.name}
                             </h3>
-                            <p className="
-                              text-[12px] text-[#666666] font-mono
-                              truncate mt-0.5
-                            " title={item.path}>
-                              {item.path}
-                            </p>
-                            {/* 标签显示 */}
+                            {/* 标签显示 - 允许换行，显示完整标签 */}
                             {item.tags && item.tags.length > 0 && (
                               <div className="flex items-center gap-1.5 flex-wrap mt-2">
                                 {item.tags.map((tag, tagIndex) => {
@@ -1655,7 +1669,9 @@ const PathManager: React.FC = () => {
                                         inline-flex items-center gap-1 px-2 py-0.5 rounded
                                         ${color.bg} ${color.text} border ${color.border}
                                         text-[10px] font-medium
+                                        whitespace-nowrap
                                       `}
+                                      title={tag}
                                     >
                                       <TagIcon size={10} />
                                       {tag}
@@ -1666,29 +1682,8 @@ const PathManager: React.FC = () => {
                             )}
                           </div>
 
-                          {/* 操作按钮和收藏按钮 - 移到最右侧 */}
-                          <div className="flex items-center gap-0.5 shrink-0">
-                            {/* 收藏按钮 - 始终显示（如果已收藏）或hover时显示 */}
-                            <button 
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                handleAddToFavorites(item, e);
-                              }}
-                              className={`
-                                p-1.5 rounded transition-all duration-150
-                                ${isFavorited(item.id)
-                                  ? 'text-yellow-400 opacity-100'
-                                  : 'text-[#666666] opacity-0 group-hover:opacity-100 hover:text-yellow-400'
-                                }
-                                ${justFavoritedId === item.id ? 'scale-125' : ''}
-                              `}
-                              title={isFavorited(item.id) ? "取消收藏" : "添加到收藏"}
-                            >
-                              <Star size={14} fill={isFavorited(item.id) ? "currentColor" : "none"} />
-                            </button>
-                            
-                            {/* 其他操作按钮 - hover时显示 */}
-                            <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+                          {/* 操作按钮 - 移到最右侧 */}
+                          <div className="flex items-center gap-0.5 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
                               <button 
                                 onClick={(e) => {
                                   e.stopPropagation();
