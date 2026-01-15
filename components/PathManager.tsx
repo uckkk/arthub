@@ -1596,13 +1596,13 @@ const PathManager: React.FC = () => {
                         >
                           {/* 复制成功反馈 */}
                           {copiedId === item.id && (
-                            <div className="
-                              absolute inset-0 rounded-lg
-                              bg-green-500/90 
-                              flex items-center justify-center 
-                              text-white text-sm font-medium
-                              animate-fade-in z-20
-                            ">
+                            <div className={[
+                              'absolute inset-0 rounded-lg',
+                              'bg-green-500/90',
+                              'flex items-center justify-center',
+                              'text-white text-sm font-medium',
+                              'animate-fade-in z-20'
+                            ].join(' ')}>
                               <Check size={16} className="mr-2" />
                               已复制到剪贴板
                             </div>
@@ -1702,7 +1702,7 @@ const PathManager: React.FC = () => {
                                   e.stopPropagation();
                                   handleDelete(item.id, e);
                                 }}
-                                className="p-1.5 rounded text-[#666666] hover:text-red-400 hover:bg-red-500/10 transition-colors"
+                                className={['p-1.5 rounded text-[#666666] hover:text-red-400 hover:bg-red-500/10 transition-colors'].join(' ')}
                                 title="删除"
                               >
                                 <Trash2 size={13} />
@@ -1755,7 +1755,7 @@ const PathManager: React.FC = () => {
       {/* 添加模态框 */}
       {isModalOpen && (
         <div 
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm"
+          className={['fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm'].join(' ')}
           onClick={() => setIsModalOpen(false)}
         >
           <div 
@@ -1873,7 +1873,7 @@ const PathManager: React.FC = () => {
       {/* 编辑模态框 */}
       {editingItem && (
         <div 
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm"
+          className={['fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm'].join(' ')}
           onClick={handleEditCancel}
         >
           <div 
@@ -2002,7 +2002,7 @@ const PathManager: React.FC = () => {
       {/* 拖拽创建路径模态框 */}
       {showDragModal && draggedPath && (
         <div 
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm"
+          className={['fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm'].join(' ')}
           onClick={() => {
             setShowDragModal(false);
             setDraggedPath(null);
