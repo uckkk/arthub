@@ -35,17 +35,18 @@ const extractAppName = (filePath: string): string => {
 };
 
 // 标签颜色配置（不同颜色的组合）
+// 注意：将包含 /数字 的类名拆分成两部分，避免esbuild误解析为正则表达式
 const TAG_COLORS = [
-  { bg: 'bg-blue-500/20', text: 'text-blue-400', border: 'border-blue-500/30' },
-  { bg: 'bg-green-500/20', text: 'text-green-400', border: 'border-green-500/30' },
-  { bg: 'bg-purple-500/20', text: 'text-purple-400', border: 'border-purple-500/30' },
-  { bg: 'bg-orange-500/20', text: 'text-orange-400', border: 'border-orange-500/30' },
-  { bg: 'bg-pink-500/20', text: 'text-pink-400', border: 'border-pink-500/30' },
-  { bg: 'bg-cyan-500/20', text: 'text-cyan-400', border: 'border-cyan-500/30' },
-  { bg: 'bg-yellow-500/20', text: 'text-yellow-400', border: 'border-yellow-500/30' },
-  { bg: 'bg-red-500/20', text: 'text-red-400', border: 'border-red-500/30' },
-  { bg: 'bg-indigo-500/20', text: 'text-indigo-400', border: 'border-indigo-500/30' },
-  { bg: 'bg-teal-500/20', text: 'text-teal-400', border: 'border-teal-500/30' },
+  { bg: ['bg-blue-500', '/20'], text: 'text-blue-400', border: ['border-blue-500', '/30'] },
+  { bg: ['bg-green-500', '/20'], text: 'text-green-400', border: ['border-green-500', '/30'] },
+  { bg: ['bg-purple-500', '/20'], text: 'text-purple-400', border: ['border-purple-500', '/30'] },
+  { bg: ['bg-orange-500', '/20'], text: 'text-orange-400', border: ['border-orange-500', '/30'] },
+  { bg: ['bg-pink-500', '/20'], text: 'text-pink-400', border: ['border-pink-500', '/30'] },
+  { bg: ['bg-cyan-500', '/20'], text: 'text-cyan-400', border: ['border-cyan-500', '/30'] },
+  { bg: ['bg-yellow-500', '/20'], text: 'text-yellow-400', border: ['border-yellow-500', '/30'] },
+  { bg: ['bg-red-500', '/20'], text: 'text-red-400', border: ['border-red-500', '/30'] },
+  { bg: ['bg-indigo-500', '/20'], text: 'text-indigo-400', border: ['border-indigo-500', '/30'] },
+  { bg: ['bg-teal-500', '/20'], text: 'text-teal-400', border: ['border-teal-500', '/30'] },
 ];
 
 // 根据标签名称获取颜色（确保相同标签总是相同颜色）
@@ -57,7 +58,13 @@ const getTagColor = (tagName: string) => {
     hash = hash & hash; // 转换为32位整数
   }
   const index = Math.abs(hash) % TAG_COLORS.length;
-  return TAG_COLORS[index];
+  const color = TAG_COLORS[index];
+  // 将数组形式的bg和border转换为字符串
+  return {
+    bg: Array.isArray(color.bg) ? color.bg.join('') : color.bg,
+    text: color.text,
+    border: Array.isArray(color.border) ? color.border.join('') : color.border
+  };
 };
 
 const PathManager: React.FC = () => {
