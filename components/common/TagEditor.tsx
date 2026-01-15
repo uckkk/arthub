@@ -24,31 +24,36 @@ export const TagEditor: React.FC<TagEditorProps> = ({
 }) => {
   const [inputValue, setInputValue] = useState('');
   const [showSuggestions, setShowSuggestions] = useState(false);
+  const [showAllTags, setShowAllTags] = useState(false);
   const [filteredSuggestions, setFilteredSuggestions] = useState<string[]>([]);
   const inputRef = useRef<HTMLInputElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
 
+  // 获取所有可选标签（排除已添加的）
+  const availableTags = suggestions.filter(tag => !tags.includes(tag));
+
   // 过滤建议标签（排除已添加的标签）
   useEffect(() => {
     if (inputValue.trim()) {
-      const filtered = suggestions.filter(
+      const filtered = availableTags.filter(
         (suggestion) =>
-          suggestion.toLowerCase().includes(inputValue.toLowerCase()) &&
-          !tags.includes(suggestion)
+          suggestion.toLowerCase().includes(inputValue.toLowerCase())
       );
-      setFilteredSuggestions(filtered.slice(0, 5)); // 最多显示5个建议
+      setFilteredSuggestions(filtered);
       setShowSuggestions(filtered.length > 0);
     } else {
-      setFilteredSuggestions([]);
-      setShowSuggestions(false);
+      // 输入框为空时，显示所有可选标签
+      setFilteredSuggestions(availableTags);
+      setShowSuggestions(showAllTags && availableTags.length > 0);
     }
-  }, [inputValue, suggestions, tags]);
+  }, [inputValue, suggestions, tags, showAllTags, availableTags]);
 
   // 点击外部关闭建议列表
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
       if (containerRef.current && !containerRef.current.contains(event.target as Node)) {
         setShowSuggestions(false);
+        setShowAllTags(false);
       }
     };
 
@@ -75,7 +80,8 @@ export const TagEditor: React.FC<TagEditorProps> = ({
     
     onChange([...tags, tag]);
     setInputValue('');
-    setShowSuggestions(false);
+    // 添加标签后不关闭下拉列表，方便继续选择
+    // setShowSuggestions(false);
   };
 
   const removeTag = (index: number) => {
@@ -131,7 +137,9 @@ export const TagEditor: React.FC<TagEditorProps> = ({
             onChange={(e) => setInputValue(e.target.value)}
             onKeyDown={handleInputKeyDown}
             onFocus={() => {
-              if (filteredSuggestions.length > 0) {
+              // 点击输入框时，显示所有可选标签
+              setShowAllTags(true);
+              if (availableTags.length > 0) {
                 setShowSuggestions(true);
               }
             }}
@@ -158,8 +166,16 @@ export const TagEditor: React.FC<TagEditorProps> = ({
           absolute top-full left-0 right-0 mt-1 z-50
           bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg
           shadow-lg shadow-black/50
-          max-h-[200px] overflow-y-auto
+          max-h-[300px] overflow-y-auto
         ">
+          {/* 显示可用标签数量 */}
+          {filteredSuggestions.length > 0 && (
+            <div className="px-4 py-2 border-b border-[#2a2a2a]">
+              <span className="text-xs text-[#666666]">
+                可选标签 ({filteredSuggestions.length})
+              </span>
+            </div>
+          )}
           {filteredSuggestions.map((suggestion, index) => (
             <button
               key={index}
@@ -169,6 +185,7 @@ export const TagEditor: React.FC<TagEditorProps> = ({
                 text-[#a0a0a0] hover:bg-[#222222] hover:text-white
                 transition-colors
                 flex items-center gap-2
+                border-b border-[#1a1a1a] last:border-b-0
               "
             >
               <TagIcon size={14} className="text-blue-400" />
