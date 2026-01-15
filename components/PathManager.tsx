@@ -120,6 +120,7 @@ const PathManager: React.FC = () => {
   const [newPath, setNewPath] = useState('');
   const [newType, setNewType] = useState<PathType>('local');
   const [newGroup, setNewGroup] = useState('');
+  const [newTags, setNewTags] = useState<string[]>([]);
   
   // 分组顺序状态
   const [groupOrder, setGroupOrder] = useState<string[]>([]);
@@ -790,6 +791,15 @@ const PathManager: React.FC = () => {
     localStorage.setItem('arthub_path_selected_tags', JSON.stringify(selectedTags));
   }, [selectedTags]);
 
+  // 关闭添加模态框并重置表单
+  const handleCloseAddModal = () => {
+    setIsModalOpen(false);
+    setNewName('');
+    setNewPath('');
+    setNewGroup('');
+    setNewTags([]);
+  };
+
   const handleAddPath = () => {
     if (!newName || !newPath) return;
     const groupName = newGroup.trim() || '默认分组';
@@ -805,7 +815,7 @@ const PathManager: React.FC = () => {
       path: finalPath,
       type: newType,
       group: groupName,
-      tags: [] // 新添加的路径默认无标签
+      tags: newTags || [] // 使用新添加的标签
     };
     
     setPaths([item, ...paths]);
@@ -814,10 +824,7 @@ const PathManager: React.FC = () => {
       setGroupOrder([...groupOrder, groupName]);
     }
     
-    setNewName('');
-    setNewPath('');
-    setNewGroup('');
-    setIsModalOpen(false);
+    handleCloseAddModal();
   };
 
   const handleDelete = (id: string, e: React.MouseEvent) => {
@@ -1748,7 +1755,7 @@ const PathManager: React.FC = () => {
       {isModalOpen && (
         <div 
           className={`fixed inset-0 z-50 flex items-center justify-center ${(('bg-black' + '/') + '70')} backdrop-blur-sm`}
-          onClick={() => setIsModalOpen(false)}
+          onClick={handleCloseAddModal}
         >
           <div 
             className={[
@@ -1763,7 +1770,7 @@ const PathManager: React.FC = () => {
             <div className="flex items-center justify-between px-6 py-4 border-b border-[#2a2a2a]">
               <h3 className="text-lg font-semibold text-white">添加新路径</h3>
               <button
-                onClick={() => setIsModalOpen(false)}
+                onClick={handleCloseAddModal}
                 className="p-1.5 rounded-lg text-[#666666] hover:text-white hover:bg-[#252525] transition-colors"
               >
                 <X size={18} />
@@ -1794,6 +1801,17 @@ const PathManager: React.FC = () => {
                 <datalist id="groups-list">
                   {existingGroups.map(g => <option key={g} value={g} />)}
                 </datalist>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-[#a0a0a0] mb-2">标签</label>
+                <TagEditor
+                  tags={newTags}
+                  onChange={setNewTags}
+                  suggestions={allTags}
+                  placeholder="输入标签后按回车添加"
+                  maxTags={10}
+                />
               </div>
               
               <div>
@@ -1836,7 +1854,7 @@ const PathManager: React.FC = () => {
 
             <div className="flex justify-end gap-3 px-6 py-4 border-t border-[#2a2a2a]">
               <button 
-                onClick={() => setIsModalOpen(false)}
+                onClick={handleCloseAddModal}
                 className="
                   px-4 py-2.5 rounded-lg
                   bg-[#1a1a1a] border border-[#2a2a2a]
