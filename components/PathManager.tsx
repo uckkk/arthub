@@ -1590,18 +1590,7 @@ const PathManager: React.FC = () => {
                             // 直接执行跳转
                             handleJump(item);
                           }}
-                          className={`
-                            group relative
-                            bg-[#1a1a1a] hover:bg-[#222222]
-                            border border-[#2a2a2a] hover:border-[#3a3a3a]
-                            rounded-lg p-3
-                            flex items-start gap-3
-                            cursor-pointer
-                            transition-all duration-150
-                            ${draggedItem?.id === item.id ? 'opacity-50' : ''}
-                            ${dragOverGroup === groupName && dragOverIndex === index ? 'border-blue-500' : ''}
-                            ${columnsPerRow > 1 ? 'min-w-0' : ''}
-                          `}
+                          className={`group relative bg-[#1a1a1a] hover:bg-[#222222] border border-[#2a2a2a] hover:border-[#3a3a3a] rounded-lg p-3 flex items-start gap-3 cursor-pointer transition-all duration-150 ${draggedItem?.id === item.id ? 'opacity-50' : ''} ${dragOverGroup === groupName && dragOverIndex === index ? 'border-blue-500' : ''} ${columnsPerRow > 1 ? 'min-w-0' : ''}`}
                           style={columnsPerRow > 1 ? {} : undefined}
                         >
                           {/* 复制成功反馈 */}
