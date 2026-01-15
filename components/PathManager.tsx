@@ -1694,7 +1694,7 @@ const PathManager: React.FC = () => {
                                   e.stopPropagation();
                                   handleDelete(item.id, e);
                                 }}
-                                className={`p-1.5 rounded text-[#666666] hover:text-red-400 ${(('hover:bg-red-500' + '/') + '10')} transition-colors`}
+                                className="p-1.5 rounded text-[#666666] hover:text-red-400 hover:bg-red-500/10 transition-colors"
                                 title="删除"
                               >
                                 <Trash2 size={13} />
