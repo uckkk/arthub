@@ -34,6 +34,32 @@ const extractAppName = (filePath: string): string => {
   return nameWithoutExt || '未知应用';
 };
 
+// 标签颜色配置（不同颜色的组合）
+const TAG_COLORS = [
+  { bg: 'bg-blue-500/20', text: 'text-blue-400', border: 'border-blue-500/30' },
+  { bg: 'bg-green-500/20', text: 'text-green-400', border: 'border-green-500/30' },
+  { bg: 'bg-purple-500/20', text: 'text-purple-400', border: 'border-purple-500/30' },
+  { bg: 'bg-orange-500/20', text: 'text-orange-400', border: 'border-orange-500/30' },
+  { bg: 'bg-pink-500/20', text: 'text-pink-400', border: 'border-pink-500/30' },
+  { bg: 'bg-cyan-500/20', text: 'text-cyan-400', border: 'border-cyan-500/30' },
+  { bg: 'bg-yellow-500/20', text: 'text-yellow-400', border: 'border-yellow-500/30' },
+  { bg: 'bg-red-500/20', text: 'text-red-400', border: 'border-red-500/30' },
+  { bg: 'bg-indigo-500/20', text: 'text-indigo-400', border: 'border-indigo-500/30' },
+  { bg: 'bg-teal-500/20', text: 'text-teal-400', border: 'border-teal-500/30' },
+];
+
+// 根据标签名称获取颜色（确保相同标签总是相同颜色）
+const getTagColor = (tagName: string) => {
+  let hash = 0;
+  for (let i = 0; i < tagName.length; i++) {
+    const char = tagName.charCodeAt(i);
+    hash = ((hash << 5) - hash) + char;
+    hash = hash & hash; // 转换为32位整数
+  }
+  const index = Math.abs(hash) % TAG_COLORS.length;
+  return TAG_COLORS[index];
+};
+
 const PathManager: React.FC = () => {
   const [paths, setPaths] = useState<PathItem[]>([]);
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -1251,6 +1277,7 @@ const PathManager: React.FC = () => {
             <div className="flex items-center gap-2 flex-wrap">
               {allTags.map(tag => {
                 const isSelected = selectedTags.includes(tag);
+                const color = getTagColor(tag);
                 return (
                   <button
                     key={tag}
@@ -1263,10 +1290,10 @@ const PathManager: React.FC = () => {
                     }}
                     className={`
                       px-2.5 py-1 rounded-md text-xs font-medium
-                      transition-colors duration-150
+                      transition-colors duration-150 border
                       ${isSelected
-                        ? 'bg-blue-500/30 text-blue-400 border border-blue-500/50'
-                        : 'bg-[#1a1a1a] text-[#808080] border border-[#2a2a2a] hover:border-[#3a3a3a] hover:text-white'
+                        ? `${color.bg} ${color.text} ${color.border}`
+                        : 'bg-[#1a1a1a] text-[#808080] border-[#2a2a2a] hover:border-[#3a3a3a] hover:text-white'
                       }
                     `}
                   >
@@ -1638,19 +1665,22 @@ const PathManager: React.FC = () => {
                             {/* 标签显示 */}
                             {item.tags && item.tags.length > 0 && (
                               <div className="flex items-center gap-1.5 flex-wrap mt-2">
-                                {item.tags.map((tag, tagIndex) => (
-                                  <span
-                                    key={tagIndex}
-                                    className="
-                                      inline-flex items-center gap-1 px-2 py-0.5 rounded
-                                      bg-blue-500/20 text-blue-400 border border-blue-500/30
-                                      text-[10px] font-medium
-                                    "
-                                  >
-                                    <TagIcon size={10} />
-                                    {tag}
-                                  </span>
-                                ))}
+                                {item.tags.map((tag, tagIndex) => {
+                                  const color = getTagColor(tag);
+                                  return (
+                                    <span
+                                      key={tagIndex}
+                                      className={`
+                                        inline-flex items-center gap-1 px-2 py-0.5 rounded
+                                        ${color.bg} ${color.text} border ${color.border}
+                                        text-[10px] font-medium
+                                      `}
+                                    >
+                                      <TagIcon size={10} />
+                                      {tag}
+                                    </span>
+                                  );
+                                })}
                               </div>
                             )}
                           </div>
