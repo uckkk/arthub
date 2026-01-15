@@ -35,18 +35,18 @@ const extractAppName = (filePath: string): string => {
 };
 
 // 标签颜色配置（不同颜色的组合）
-// 注意：将包含 /数字 的类名拆分成两部分，避免esbuild误解析为正则表达式
+// 标签颜色配置
 const TAG_COLORS = [
-  { bg: ['bg-blue-500', '/20'], text: 'text-blue-400', border: ['border-blue-500', '/30'] },
-  { bg: ['bg-green-500', '/20'], text: 'text-green-400', border: ['border-green-500', '/30'] },
-  { bg: ['bg-purple-500', '/20'], text: 'text-purple-400', border: ['border-purple-500', '/30'] },
-  { bg: ['bg-orange-500', '/20'], text: 'text-orange-400', border: ['border-orange-500', '/30'] },
-  { bg: ['bg-pink-500', '/20'], text: 'text-pink-400', border: ['border-pink-500', '/30'] },
-  { bg: ['bg-cyan-500', '/20'], text: 'text-cyan-400', border: ['border-cyan-500', '/30'] },
-  { bg: ['bg-yellow-500', '/20'], text: 'text-yellow-400', border: ['border-yellow-500', '/30'] },
-  { bg: ['bg-red-500', '/20'], text: 'text-red-400', border: ['border-red-500', '/30'] },
-  { bg: ['bg-indigo-500', '/20'], text: 'text-indigo-400', border: ['border-indigo-500', '/30'] },
-  { bg: ['bg-teal-500', '/20'], text: 'text-teal-400', border: ['border-teal-500', '/30'] },
+  { bg: 'bg-blue-500/20', text: 'text-blue-400', border: 'border-blue-500/30' },
+  { bg: 'bg-green-500/20', text: 'text-green-400', border: 'border-green-500/30' },
+  { bg: 'bg-purple-500/20', text: 'text-purple-400', border: 'border-purple-500/30' },
+  { bg: 'bg-orange-500/20', text: 'text-orange-400', border: 'border-orange-500/30' },
+  { bg: 'bg-pink-500/20', text: 'text-pink-400', border: 'border-pink-500/30' },
+  { bg: 'bg-cyan-500/20', text: 'text-cyan-400', border: 'border-cyan-500/30' },
+  { bg: 'bg-yellow-500/20', text: 'text-yellow-400', border: 'border-yellow-500/30' },
+  { bg: 'bg-red-500/20', text: 'text-red-400', border: 'border-red-500/30' },
+  { bg: 'bg-indigo-500/20', text: 'text-indigo-400', border: 'border-indigo-500/30' },
+  { bg: 'bg-teal-500/20', text: 'text-teal-400', border: 'border-teal-500/30' },
 ];
 
 // 根据标签名称获取颜色（确保相同标签总是相同颜色）
@@ -58,15 +58,7 @@ const getTagColor = (tagName: string) => {
     hash = hash & hash; // 转换为32位整数
   }
   const index = Math.abs(hash) % TAG_COLORS.length;
-  const color = TAG_COLORS[index];
-  // 将数组形式的bg和border转换为字符串，使用字符串拼接避免esbuild误解析
-  const bgStr = Array.isArray(color.bg) ? color.bg[0] + color.bg[1] : color.bg;
-  const borderStr = Array.isArray(color.border) ? color.border[0] + color.border[1] : color.border;
-  return {
-    bg: bgStr,
-    text: color.text,
-    border: borderStr
-  };
+  return TAG_COLORS[index];
 };
 
 const PathManager: React.FC = () => {
@@ -1252,7 +1244,7 @@ const PathManager: React.FC = () => {
             'flex-1 py-2 text-sm font-medium rounded-lg',
             'transition-colors duration-150',
             value === t 
-              ? `${(('bg-blue-500' + '/') + '20')} text-blue-400 border ${(('border-blue-500' + '/') + '50')}`
+              ? 'bg-blue-500/20 text-blue-400 border border-blue-500/50'
               : 'bg-[#1a1a1a] text-[#808080] border border-[#2a2a2a] hover:border-[#3a3a3a]'
           ].filter(Boolean).join(' ')}
         >
@@ -1275,7 +1267,7 @@ const PathManager: React.FC = () => {
               'border transition-colors duration-150',
               sortMode === 'group' 
                 ? 'bg-[#1a1a1a] hover:bg-[#222222] text-[#a0a0a0] hover:text-white border-[#2a2a2a] hover:border-[#3a3a3a]'
-                : `${(('bg-blue-500' + '/') + '20')} text-blue-400 ${(('border-blue-500' + '/') + '50')} ${(('hover:bg-blue-500' + '/') + '30')}`
+                : 'bg-blue-500/20 text-blue-400 border-blue-500/50 hover:bg-blue-500/30'
             ].filter(Boolean).join(' ')}
             title={sortMode === 'group' ? '切换到按标签排序' : '切换到按分类分组'}
           >
@@ -1357,7 +1349,7 @@ const PathManager: React.FC = () => {
                         'w-full px-4 py-2.5 text-left text-sm',
                         'transition-colors duration-150',
                         columnsPerRow === cols
-                          ? `${(('bg-blue-500' + '/') + '20')} text-blue-400`
+                          ? 'bg-blue-500/20 text-blue-400'
                           : 'text-[#a0a0a0] hover:bg-[#222222] hover:text-white'
                       ].filter(Boolean).join(' ')}
                     >
@@ -1416,7 +1408,7 @@ const PathManager: React.FC = () => {
         className={[
           'flex-1 min-h-0 overflow-y-auto px-6 py-6',
           'transition-colors duration-200',
-          isDraggingOver ? `${(('bg-blue-500' + '/') + '10')} border-2 border-dashed border-blue-500` : ''
+          isDraggingOver ? 'bg-blue-500/10 border-2 border-dashed border-blue-500' : ''
         ].filter(Boolean).join(' ')}
         style={{ scrollbarWidth: 'thin', scrollbarColor: '#2a2a2a #0a0a0a' }}
       >
@@ -1535,7 +1527,7 @@ const PathManager: React.FC = () => {
                       'text-[#808080] hover:text-white hover:bg-[#1a1a1a]',
                       'transition-all duration-150',
                       draggedGroup === groupName ? 'opacity-50 scale-95' : '',
-                      dragOverGroup === groupName && draggedGroup && draggedGroup !== groupName ? `border-2 ${(('border-white' + '/') + '30')} ${(('bg-white' + '/') + '5')}` : ''
+                      dragOverGroup === groupName && draggedGroup && draggedGroup !== groupName ? 'border-2 border-white/30 bg-white/5' : ''
                     ].filter(Boolean).join(' ')}
                   >
                     {collapsedGroups.has(groupName) 
@@ -1607,7 +1599,7 @@ const PathManager: React.FC = () => {
                         >
                           {/* 复制成功反馈 */}
                           {copiedId === item.id && (
-                            <div className={`absolute inset-0 rounded-lg ${(('bg-green-500' + '/') + '90')} flex items-center justify-center text-white text-sm font-medium animate-fade-in z-20`}>
+                            <div className="absolute inset-0 rounded-lg bg-green-500/90 flex items-center justify-center text-white text-sm font-medium animate-fade-in z-20">
                               <Check size={16} className="mr-2" />
                               已复制到剪贴板
                             </div>
