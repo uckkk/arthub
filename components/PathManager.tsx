@@ -1545,11 +1545,7 @@ const PathManager: React.FC = () => {
                   {/* 分组内容 */}
                   {!collapsedGroups.has(groupName) && (
                     <div 
-                      className={`ml-2 ${
-                        columnsPerRow === 1 
-                          ? 'space-y-1.5' 
-                          : 'grid gap-3'
-                      }`}
+                      className={['ml-2', columnsPerRow === 1 ? 'space-y-1.5' : 'grid gap-3'].filter(Boolean).join(' ')}
                       style={columnsPerRow > 1 ? { gridTemplateColumns: `repeat(${columnsPerRow}, minmax(0, 1fr))` } : undefined}
                       onDragOver={(e) => {
                         e.preventDefault();
@@ -1587,7 +1583,15 @@ const PathManager: React.FC = () => {
                             // 直接执行跳转
                             handleJump(item);
                           }}
-                          className={`group relative bg-[#1a1a1a] hover:bg-[#222222] border border-[#2a2a2a] hover:border-[#3a3a3a] rounded-lg p-3 flex items-start gap-3 cursor-pointer transition-all duration-150 ${draggedItem?.id === item.id ? 'opacity-50' : ''} ${dragOverGroup === groupName && dragOverIndex === index ? 'border-blue-500' : ''} ${columnsPerRow > 1 ? 'min-w-0' : ''}`}
+                          className={[
+                            'group relative bg-[#1a1a1a] hover:bg-[#222222]',
+                            'border border-[#2a2a2a] hover:border-[#3a3a3a]',
+                            'rounded-lg p-3 flex items-start gap-3',
+                            'cursor-pointer transition-all duration-150',
+                            draggedItem?.id === item.id ? 'opacity-50' : '',
+                            dragOverGroup === groupName && dragOverIndex === index ? 'border-blue-500' : '',
+                            columnsPerRow > 1 ? 'min-w-0' : ''
+                          ].filter(Boolean).join(' ')}
                           style={columnsPerRow > 1 ? {} : undefined}
                         >
                           {/* 复制成功反馈 */}
@@ -1619,14 +1623,13 @@ const PathManager: React.FC = () => {
                                 e.stopPropagation();
                                 handleAddToFavorites(item, e);
                               }}
-                              className={`
-                                p-1 rounded transition-all duration-150
-                                ${isFavorited(item.id)
+                              className={[
+                                'p-1 rounded transition-all duration-150',
+                                isFavorited(item.id)
                                   ? 'text-yellow-400 opacity-100'
-                                  : 'text-[#666666] opacity-0 group-hover:opacity-100 hover:text-yellow-400'
-                                }
-                                ${justFavoritedId === item.id ? 'scale-125' : ''}
-                              `}
+                                  : 'text-[#666666] opacity-0 group-hover:opacity-100 hover:text-yellow-400',
+                                justFavoritedId === item.id ? 'scale-125' : ''
+                              ].filter(Boolean).join(' ')}
                               title={isFavorited(item.id) ? "取消收藏" : "添加到收藏"}
                             >
                               <Star size={12} fill={isFavorited(item.id) ? "currentColor" : "none"} />
@@ -1634,7 +1637,7 @@ const PathManager: React.FC = () => {
                           </div>
 
                           {/* 内容 */}
-                          <div className={`flex-1 min-w-0 ${columnsPerRow > 1 ? 'overflow-hidden' : ''}`}>
+                          <div className={['flex-1 min-w-0', columnsPerRow > 1 ? 'overflow-hidden' : ''].filter(Boolean).join(' ')}>
                             {/* 标题 - 优先显示完整内容，可以换行 */}
                             <h3 className="
                               text-[14px] font-medium text-white
