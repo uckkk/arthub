@@ -28,7 +28,7 @@ const isTauriEnvironment = (): boolean => {
 
 // 从文件路径提取应用名称
 const extractAppName = (filePath: string): string => {
-  const fileName = filePath.split(/[/\\]/).pop() || '';
+  const fileName = filePath.split(/[\\/]/).pop() || '';
   // 移除扩展名
   const nameWithoutExt = fileName.replace(/\.(lnk|exe|app)$/i, '');
   return nameWithoutExt || '未知应用';
@@ -36,6 +36,14 @@ const extractAppName = (filePath: string): string => {
 
 // 标签颜色配置（不同颜色的组合）
 // 标签颜色配置
+// 定义常用的 opacity 类名常量，避免在 JSX 中直接使用斜杠
+const OPACITY_CLASSES = {
+  bgBlack70: 'bg-black/70',
+  bgGreen50090: 'bg-green-500/90',
+  bgRed50010: 'hover:bg-red-500/10',
+  shadowBlack50: 'shadow-black/50',
+} as const;
+
 const TAG_COLORS = [
   { bg: 'bg-blue-500/20', text: 'text-blue-400', border: 'border-blue-500/30' },
   { bg: 'bg-green-500/20', text: 'text-green-400', border: 'border-green-500/30' },
@@ -1336,7 +1344,7 @@ const PathManager: React.FC = () => {
                   'absolute top-full right-0 mt-2 z-50',
                   'bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg',
                   'shadow-lg',
-                  'shadow-black/50',
+                  OPACITY_CLASSES.shadowBlack50,
                   'min-w-[120px]',
                   'overflow-hidden'
                 ].join(' ')}>
@@ -1601,7 +1609,7 @@ const PathManager: React.FC = () => {
                         >
                           {/* 复制成功反馈 */}
                           {copiedId === item.id && (
-                            <div className="absolute inset-0 rounded-lg bg-green-500/90 flex items-center justify-center text-white text-sm font-medium animate-fade-in z-20">
+                            <div className={'absolute inset-0 rounded-lg ' + OPACITY_CLASSES.bgGreen50090 + ' flex items-center justify-center text-white text-sm font-medium animate-fade-in z-20'}>
                               <Check size={16} className="mr-2" />
                               已复制到剪贴板
                             </div>
@@ -1696,7 +1704,7 @@ const PathManager: React.FC = () => {
                                   e.stopPropagation();
                                   handleDelete(item.id, e);
                                 }}
-                                className="p-1.5 rounded text-[#666666] hover:text-red-400 hover:bg-red-500/10 transition-colors"
+                                className={'p-1.5 rounded text-[#666666] hover:text-red-400 ' + OPACITY_CLASSES.bgRed50010 + ' transition-colors'}
                                 title="删除"
                               >
                                 <Trash2 size={13} />
@@ -1749,7 +1757,7 @@ const PathManager: React.FC = () => {
       {/* 添加模态框 */}
       {isModalOpen && (
         <div 
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm"
+          className={'fixed inset-0 z-50 flex items-center justify-center ' + OPACITY_CLASSES.bgBlack70 + ' backdrop-blur-sm'}
           onClick={handleCloseAddModal}
         >
           <div 
@@ -1879,7 +1887,7 @@ const PathManager: React.FC = () => {
       {/* 编辑模态框 */}
       {editingItem && (
         <div 
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm"
+          className={'fixed inset-0 z-50 flex items-center justify-center ' + OPACITY_CLASSES.bgBlack70 + ' backdrop-blur-sm'}
           onClick={handleEditCancel}
         >
           <div 
@@ -2009,7 +2017,7 @@ const PathManager: React.FC = () => {
       {/* 拖拽创建路径模态框 */}
       {showDragModal && draggedPath && (
         <div 
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm"
+          className={'fixed inset-0 z-50 flex items-center justify-center ' + OPACITY_CLASSES.bgBlack70 + ' backdrop-blur-sm'}
           onClick={() => {
             setShowDragModal(false);
             setDraggedPath(null);
