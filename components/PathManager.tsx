@@ -1284,6 +1284,8 @@ const PathManager: React.FC = () => {
               {allTags.map(tag => {
                 const isSelected = selectedTags.includes(tag);
                 const color = getTagColor(tag);
+                const selectedClassName = `px-2.5 py-1 rounded-md text-xs font-medium transition-colors duration-150 border ${color.bg} ${color.text} ${color.border}`;
+                const unselectedClassName = 'px-2.5 py-1 rounded-md text-xs font-medium transition-colors duration-150 border bg-[#1a1a1a] text-[#808080] border-[#2a2a2a] hover:border-[#3a3a3a] hover:text-white';
                 return (
                   <button
                     key={tag}
@@ -1294,7 +1296,7 @@ const PathManager: React.FC = () => {
                         setSelectedTags([...selectedTags, tag]);
                       }
                     }}
-                      className={`px-2.5 py-1 rounded-md text-xs font-medium transition-colors duration-150 border ${isSelected ? `${color.bg} ${color.text} ${color.border}` : 'bg-[#1a1a1a] text-[#808080] border-[#2a2a2a] hover:border-[#3a3a3a] hover:text-white'}`}
+                      className={isSelected ? selectedClassName : unselectedClassName}
                   >
                     {tag}
                   </button>
@@ -1648,10 +1650,11 @@ const PathManager: React.FC = () => {
                               <div className="flex items-center gap-1.5 flex-wrap mt-2">
                                 {item.tags.map((tag, tagIndex) => {
                                   const color = getTagColor(tag);
+                                  const tagClassName = `inline-flex items-center gap-1 px-2 py-0.5 rounded ${color.bg} ${color.text} border ${color.border} text-[10px] font-medium whitespace-nowrap`;
                                   return (
                                     <span
                                       key={tagIndex}
-                                      className={`inline-flex items-center gap-1 px-2 py-0.5 rounded ${color.bg} ${color.text} border ${color.border} text-[10px] font-medium whitespace-nowrap`}
+                                      className={tagClassName}
                                       title={tag}
                                     >
                                       <TagIcon size={10} />
