@@ -1406,10 +1406,11 @@ const PathManager: React.FC = () => {
           // 非分组拖拽，处理文件拖拽创建路径
           handleDropCreatePath(e);
         }}
-        className={`
-          flex-1 min-h-0 overflow-y-auto px-6 py-6 transition-colors duration-200
-          ${isDraggingOver ? 'bg-blue-500/10 border-2 border-dashed border-blue-500' : ''}
-        `}
+        className={[
+          'flex-1 min-h-0 overflow-y-auto px-6 py-6',
+          'transition-colors duration-200',
+          isDraggingOver ? 'bg-blue-500/10 border-2 border-dashed border-blue-500' : ''
+        ].filter(Boolean).join(' ')}
         style={{ scrollbarWidth: 'thin', scrollbarColor: '#2a2a2a #0a0a0a' }}
       >
         {paths.length === 0 ? (
@@ -1521,14 +1522,14 @@ const PathManager: React.FC = () => {
                       }
                       toggleGroup(groupName);
                     }}
-                    className={`
-                      flex items-center gap-2 px-2 py-1.5 rounded-lg
-                      cursor-move select-none
-                      text-[#808080] hover:text-white hover:bg-[#1a1a1a]
-                      transition-all duration-150
-                      ${draggedGroup === groupName ? 'opacity-50 scale-95' : ''}
-                      ${dragOverGroup === groupName && draggedGroup && draggedGroup !== groupName ? 'border-2 border-white/30 bg-white/5' : ''}
-                    `}
+                    className={[
+                      'flex items-center gap-2 px-2 py-1.5 rounded-lg',
+                      'cursor-move select-none',
+                      'text-[#808080] hover:text-white hover:bg-[#1a1a1a]',
+                      'transition-all duration-150',
+                      draggedGroup === groupName ? 'opacity-50 scale-95' : '',
+                      dragOverGroup === groupName && draggedGroup && draggedGroup !== groupName ? 'border-2 border-white/30 bg-white/5' : ''
+                    ].filter(Boolean).join(' ')}
                   >
                     {collapsedGroups.has(groupName) 
                       ? <ChevronRight size={16} /> 
