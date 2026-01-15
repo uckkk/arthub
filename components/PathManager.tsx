@@ -1709,19 +1709,20 @@ const PathManager: React.FC = () => {
                               >
                                 <Copy size={13} />
                               </button>
-                            {item.type === 'web' && (
-                              <ExternalLink size={13} className="text-[#444444] mx-0.5" />
-                            )}
-                            <button 
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                handleDelete(item.id, e);
-                              }}
-                              className="p-1.5 rounded text-[#666666] hover:text-red-400 hover:bg-red-500/10 transition-colors"
-                              title="删除"
-                            >
-                              <Trash2 size={13} />
-                            </button>
+                              {item.type === 'web' && (
+                                <ExternalLink size={13} className="text-[#444444] mx-0.5" />
+                              )}
+                              <button 
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleDelete(item.id, e);
+                                }}
+                                className="p-1.5 rounded text-[#666666] hover:text-red-400 hover:bg-red-500/10 transition-colors"
+                                title="删除"
+                              >
+                                <Trash2 size={13} />
+                              </button>
+                            </div>
                           </div>
                         </div>
                       ))}
