@@ -1559,7 +1559,9 @@ const PathManager: React.FC = () => {
                   placeholder="例如：工作目录（留空则为默认分组）"
                 />
                 <datalist id="groups-list">
-                  {existingGroups.map((g, index) => <option key={'group-' + index} value={g} />)}
+                  {existingGroups.map((g, index) => (
+                    <option key={'group-' + index} value={String(g)} />
+                  ))}
                 </datalist>
               </div>
 
@@ -1689,7 +1691,9 @@ const PathManager: React.FC = () => {
                   placeholder="例如：工作目录（留空则为默认分组）"
                 />
                 <datalist id="edit-groups-list">
-                  {existingGroups.map((g, index) => <option key={'edit-group-' + index} value={g} />)}
+                  {existingGroups.map((g, index) => (
+                    <option key={'edit-group-' + index} value={String(g)} />
+                  ))}
                 </datalist>
               </div>
 
@@ -1831,7 +1835,9 @@ const PathManager: React.FC = () => {
                   placeholder="例如：工作目录（留空则为默认分组）"
                 />
                 <datalist id="drag-groups-list">
-                  {existingGroups.map((g, index) => <option key={'drag-group-' + index} value={g} />)}
+                  {existingGroups.map((g, index) => (
+                    <option key={'drag-group-' + index} value={String(g)} />
+                  ))}
                 </datalist>
               </div>
             </div>
