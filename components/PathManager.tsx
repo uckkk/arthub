@@ -17,6 +17,7 @@ import { useMiddleMouseScroll } from '../utils/useMiddleMouseScroll';
 import { openUrl } from '../services/windowService';
 import { TagEditor } from './common';
 import { ConfirmDragModal } from './ConfirmDragModal';
+import { PathGroupItem } from './PathGroupItem';
 
 const S_L = '/';
 const B_L = '\\';
@@ -1222,202 +1223,49 @@ const PathManager: React.FC = () => {
             }}
           >
             {(sortMode === 'group' ? groupOrder : Object.keys(groupedPaths)).map((groupName, groupIndex) => {
-              if (!groupedPaths[groupName]) return null;
-              
-              const selectedGroupName = selectedTags.length > 0 
-                ? (selectedTags.length === 1 
-                    ? `标签: ${selectedTags[0]}`
-                    : `标签: ${selectedTags.join(', ')}`)
-                : '';
+              if (!groupedPaths[groupName]) {
+                return null;
+              }
+              const selectedGroupName = selectedTags.length > 0 ? (selectedTags.length === 1 ? `标签: ${selectedTags[0]}` : `标签: ${selectedTags.join(', ')}`) : '';
               const groupKeys = Object.keys(groupedPaths);
               const firstNonSelectedIndex = groupKeys.findIndex(key => key !== selectedGroupName);
-              const isDividerNeeded = sortMode === 'tag' && 
-                groupIndex === firstNonSelectedIndex && 
-                firstNonSelectedIndex > 0 &&
-                selectedTags.length > 0;
-              
+              const isDividerNeeded = sortMode === 'tag' && groupIndex === firstNonSelectedIndex && firstNonSelectedIndex > 0 && selectedTags.length > 0;
               const showInsertBefore = draggedGroup && draggedGroup !== groupName && dragOverGroup === groupName;
-              
               return (
-                <React.Fragment key={groupName}>
-                  {isDividerNeeded && (
-                    <div className="my-4 border-t border-[#2a2a2a]" />
-                  )}
-                  
-                  {showInsertBefore && (
-                    <div
-                      className="h-1 bg-blue-500 rounded-full mx-2 my-1"
-                      onDragOver={(e) => {
-                        e.preventDefault();
-                        e.stopPropagation();
-                        e.dataTransfer.dropEffect = 'move';
-                      }}
-                      onDrop={(e) => {
-                        e.preventDefault();
-                        e.stopPropagation();
-                        const draggedGroupName = e.dataTransfer.getData('text/plain') || draggedGroup;
-                        if (draggedGroupName && draggedGroupName !== groupName) {
-                          reorderGroups(draggedGroupName, groupName, true);
-                          setDraggedGroup(null);
-                          setDragOverGroup(null);
-                        }
-                      }}
-                    />
-                  )}
-                  
-                  <div 
-                    className="space-y-2"
-                    data-group-name={groupName}
-                  >
-                    <div 
-                      draggable={true}
-                      data-drag-group={groupName}
-                      onDragStart={(e) => {
-                        handleDragStartGroup(groupName, e);
-                      }}
-                      onDragEnd={(e) => {
-                        handleDragEnd();
-                      }}
-                    onClick={(e) => {
-                      if (isDragging || draggedGroup) {
-                        e.preventDefault();
-                        e.stopPropagation();
-                        return;
-                      }
-                      toggleGroup(groupName);
-                    }}
-                    className={[
-                      'flex items-center gap-2 px-2 py-1.5 rounded-lg',
-                      'cursor-move select-none',
-                      'text-[#808080] hover:text-white hover:bg-[#1a1a1a]',
-                      'transition-all duration-150',
-                      draggedGroup === groupName ? 'opacity-50 scale-95' : '',
-                      dragOverGroup === groupName && draggedGroup && draggedGroup !== groupName ? 'border-2 ' + OPACITY_CLASSES.borderWhite30 + ' ' + OPACITY_CLASSES.bgWhite5 : ''
-                    ].filter(Boolean).join(' ')}
-                  >
-                    {collapsedGroups.has(groupName) 
-                      ? <ChevronRight size={16} /> 
-                      : <ChevronDown size={16} />
-                    }
-                    <span className="text-xs font-medium uppercase tracking-wider">
-                      {groupName}
-                    </span>
-                    <span className={[
-                      'px-1.5 py-0.5 rounded text-[10px] font-medium',
-                      'bg-[#1a1a1a] text-[#666666]'
-                    ].join(' ')}>
-                      {groupedPaths[groupName].length}
-                    </span>
-                  </div>
-
-                  {!collapsedGroups.has(groupName) && (
-                    <div 
-                      className={['ml-2', columnsPerRow === 1 ? 'space-y-1.5' : 'grid gap-3'].filter(Boolean).join(' ')}
-                      style={columnsPerRow > 1 ? { gridTemplateColumns: `repeat(${columnsPerRow}, minmax(0, 1fr))` } : undefined}
-                      onDragOver={(e) => {
-                        e.preventDefault();
-                        e.dataTransfer.dropEffect = 'move';
-                        if (draggedItem) {
-                          setDragOverGroup(groupName);
-                          setDragOverIndex(groupedPaths[groupName].length);
-                        }
-                      }}
-                      onDrop={(e) => {
-                        e.preventDefault();
-                        e.stopPropagation();
-                        handleDrop(groupName, groupedPaths[groupName].length, e);
-                      }}
-                    >
-                      {groupedPaths[groupName].map((item, index) => (
-                        <div 
-                          key={item.id} 
-                          draggable={true}
-                          onDragStart={(e) => handleDragStart(item, e)}
-                          onDragOver={(e) => handleDragOver(groupName, index, e)}
-                          onDrop={(e) => {
-                            e.preventDefault();
-                            e.stopPropagation();
-                            handleDrop(groupName, index, e);
-                          }}
-                          onDragEnd={(e) => handleDragEnd()}
-                          onClick={(e) => {
-                            if (isDragging || draggedItem) {
-                              e.preventDefault();
-                              e.stopPropagation();
-                              return;
-                            }
-                            handleJump(item);
-                          }}
-                          className={[
-                            'group relative bg-[#1a1a1a] hover:bg-[#222222]',
-                            'border border-[#2a2a2a] hover:border-[#3a3a3a]',
-                            'rounded-lg p-3 flex items-start gap-3',
-                            'cursor-pointer transition-all duration-150',
-                            draggedItem?.id === item.id ? 'opacity-50' : '',
-                            dragOverGroup === groupName && dragOverIndex === index ? 'border-blue-500' : '',
-                            columnsPerRow > 1 ? 'min-w-0' : ''
-                          ].filter(Boolean).join(' ')}
-                        >
-                          {copiedId === item.id && (
-                            <div className={'absolute inset-0 rounded-lg ' + OPACITY_CLASSES.bgGreen50090 + ' flex items-center justify-center text-white text-sm font-medium animate-fade-in z-20'}>
-                              <Check size={16} className="mr-2" />
-                              已复制到剪贴板
-                            </div>
-                          )}
-
-                          <div className="flex flex-col items-center gap-1 shrink-0">
-                            <div className={'p-2 rounded-lg bg-[#0f0f0f] group-hover:bg-[#151515] transition-colors flex items-center justify-center'}>
-                              {getIcon(item)}
-                            </div>
-                            <button onClick={(e) => { e.stopPropagation(); handleAddToFavorites(item, e); }} className={['p-1 rounded transition-all duration-150', isFavorited(item.id) ? 'text-yellow-400 opacity-100' : 'text-[#666666] opacity-0 group-hover:opacity-100 hover:text-yellow-400', justFavoritedId === item.id ? 'scale-125' : ''].filter(Boolean).join(' ')} title={isFavorited(item.id) ? "取消收藏" : "添加到收藏"}>
-                              <Star size={12} fill={isFavorited(item.id) ? "currentColor" : "none"} />
-                            </button>
-                          </div>
-
-                          <div className={columnsPerRow > 1 ? 'flex-1 min-w-0 overflow-hidden' : 'flex-1 min-w-0'}>
-                            <h3 className={'text-[14px] font-medium text-white group-hover:text-blue-400 transition-colors break-words'} title={item.name}>
-                              {item.name}
-                            </h3>
-                            {item.tags && item.tags.length > 0 && (
-                              <div className="flex items-center gap-1.5 flex-wrap mt-2">
-                                {item.tags.map((tag, tagIndex) => {
-                                  const color = getTagColor(tag);
-                                  const tagClassName = 'inline-flex items-center gap-1 px-2 py-0.5 rounded ' + color.bg + ' ' + color.text + ' border ' + color.border + ' text-[10px] font-medium whitespace-nowrap';
-                                  return (
-                                    <span key={tagIndex} className={tagClassName} title={tag}>
-                                      <TagIcon size={10} />
-                                      {tag}
-                                    </span>
-                                  );
-                                })}
-                              </div>
-                            )}
-                          </div>
-
-                          <div className="flex items-center gap-0.5 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
-                            <button onClick={(e) => { e.stopPropagation(); handleEdit(item, e); }} className="p-1.5 rounded text-[#666666] hover:text-white hover:bg-[#2a2a2a] transition-colors" title="编辑">
-                              <Pencil size={13} />
-                            </button>
-                            <button onClick={(e) => { e.stopPropagation(); handleCopy(item, e); }} className="p-1.5 rounded text-[#666666] hover:text-white hover:bg-[#2a2a2a] transition-colors" title="复制路径">
-                              <Copy size={13} />
-                            </button>
-                            {item.type === 'web' && <ExternalLink size={13} className="text-[#444444] mx-0.5" />}
-                            <button onClick={(e) => { e.stopPropagation(); handleDelete(item.id, e); }} className={'p-1.5 rounded text-[#666666] hover:text-red-400 ' + OPACITY_CLASSES.bgRed50010 + ' transition-colors'} title="删除">
-                              <Trash2 size={13} />
-                            </button>
-                          </div>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-                {groupIndex === groupOrder.length - 1 && draggedGroup && draggedGroup !== groupName && !dragOverGroup && (
-                  <div className="h-1 bg-blue-500 rounded-full mx-2 my-1" onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); e.dataTransfer.dropEffect = 'move'; }} onDrop={(e) => { e.preventDefault(); e.stopPropagation(); const draggedGroupName = e.dataTransfer.getData('text/plain') || draggedGroup; if (draggedGroupName && draggedGroupName !== groupName) { const allGroups = Array.from(new Set([...groupOrder, ...Object.keys(groupedPaths)])); const newOrder = [...allGroups]; const draggedIndex = newOrder.indexOf(draggedGroupName); if (draggedIndex >= 0) { newOrder.splice(draggedIndex, 1); newOrder.push(draggedGroupName); setGroupOrder(newOrder); localStorage.setItem('arthub_group_order', JSON.stringify(newOrder)); } setDraggedGroup(null); setDragOverGroup(null); }} />
-                )}
-              </React.Fragment>
-            );
-          })}
+                <PathGroupItem
+                  key={groupName}
+                  groupName={groupName}
+                  groupIndex={groupIndex}
+                  items={groupedPaths[groupName]}
+                  isCollapsed={collapsedGroups.has(groupName)}
+                  columnsPerRow={columnsPerRow}
+                  draggedGroup={draggedGroup}
+                  dragOverGroup={dragOverGroup}
+                  draggedItem={draggedItem}
+                  dragOverIndex={dragOverIndex}
+                  copiedId={copiedId}
+                  justFavoritedId={justFavoritedId}
+                  isDragging={isDragging}
+                  isFavorited={isFavorited}
+                  isLastGroup={groupIndex === groupOrder.length - 1}
+                  showDivider={isDividerNeeded}
+                  showInsertBefore={showInsertBefore}
+                  onToggleGroup={() => toggleGroup(groupName)}
+                  onDragStartGroup={(e) => handleDragStartGroup(groupName, e)}
+                  onDragEnd={handleDragEnd}
+                  onDragStart={(item, e) => handleDragStart(item, e)}
+                  onDragOver={(index, e) => handleDragOver(groupName, index, e)}
+                  onDrop={(index, e) => handleDrop(groupName, index, e)}
+                  onJump={handleJump}
+                  onAddToFavorites={handleAddToFavorites}
+                  onEdit={handleEdit}
+                  onCopy={handleCopy}
+                  onDelete={handleDelete}
+                  onInsertBeforeDrop={(e) => { e.preventDefault(); e.stopPropagation(); const draggedGroupName = e.dataTransfer.getData('text/plain') || draggedGroup; if (draggedGroupName && draggedGroupName !== groupName) { reorderGroups(draggedGroupName, groupName, true); setDraggedGroup(null); setDragOverGroup(null); } }}
+                  onLastGroupDrop={(e) => { e.preventDefault(); e.stopPropagation(); const draggedGroupName = e.dataTransfer.getData('text/plain') || draggedGroup; if (draggedGroupName && draggedGroupName !== groupName) { const allGroups = Array.from(new Set([...groupOrder, ...Object.keys(groupedPaths)])); const newOrder = [...allGroups]; const draggedIndex = newOrder.indexOf(draggedGroupName); if (draggedIndex >= 0) { newOrder.splice(draggedIndex, 1); newOrder.push(draggedGroupName); setGroupOrder(newOrder); localStorage.setItem('arthub_group_order', JSON.stringify(newOrder)); } setDraggedGroup(null); setDragOverGroup(null); }}}
+                />
+              );
+            })}
           </div>
         )}
       </div>
