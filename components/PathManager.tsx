@@ -1581,13 +1581,13 @@ const PathManager: React.FC = () => {
                 <input 
                   value={newName}
                   onChange={(e) => setNewName(e.target.value)}
-                  className="
-                    w-full px-4 py-2.5 rounded-lg
-                    bg-[#0f0f0f] border border-[#2a2a2a]
-                    text-white placeholder-[#666666]
-                    focus:outline-none focus:border-blue-500
-                    transition-colors
-                  "
+                  className={[
+                    'w-full px-4 py-2.5 rounded-lg',
+                    'bg-[#0f0f0f] border border-[#2a2a2a]',
+                    'text-white placeholder-[#666666]',
+                    'focus:outline-none focus:border-blue-500',
+                    'transition-colors'
+                  ].join(' ')}
                   placeholder="例如：角色工作目录"
                 />
               </div>
