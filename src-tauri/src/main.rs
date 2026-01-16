@@ -1127,6 +1127,55 @@ unsafe extern "system" fn enum_windows_proc(hwnd: HWND, lparam: isize) -> BOOL {
     1 // 继续枚举
 }
 
+// Tauri 命令：获取应用图标
+#[tauri::command]
+#[cfg(target_os = "windows")]
+fn get_app_icon(path: String) -> Result<String, String> {
+    use std::path::Path;
+    
+    let app_path = Path::new(&path);
+    if !app_path.exists() {
+        return Err("文件不存在".to_string());
+    }
+    
+    let lower_path = path.to_lowercase();
+    let is_exe = lower_path.endsWith(".exe");
+    let is_lnk = lower_path.endsWith(".lnk");
+    let is_bat = lower_path.endsWith(".bat");
+    
+    if !is_exe && !is_lnk && !is_bat {
+        return Err("不支持的文件类型".to_string());
+    }
+    
+    // 对于 .lnk 文件，需要先解析快捷方式获取目标路径
+    let target_path = if is_lnk {
+        // 尝试从快捷方式读取目标路径
+        // 注意：Windows 的 .lnk 文件解析比较复杂，这里简化处理
+        // 实际应用中可能需要使用专门的库如 shortcut-rs
+        path.clone()
+    } else {
+        path.clone()
+    };
+    
+    // 使用 windows-icons 提取图标
+    match windows_icons::get_icon_base64_by_path(&target_path) {
+        Ok(base64_icon) => {
+            // 返回 data URI 格式
+            Ok(format!("data:image/png;base64,{}", base64_icon))
+        }
+        Err(e) => {
+            eprintln!("提取图标失败: {:?}", e);
+            Err(format!("提取图标失败: {}", e))
+        }
+    }
+}
+
+#[tauri::command]
+#[cfg(not(target_os = "windows"))]
+fn get_app_icon(_path: String) -> Result<String, String> {
+    Err("图标提取功能仅在 Windows 上支持".to_string())
+}
+
 // Tauri 命令：打开文件夹（使用系统命令，最可靠的方法）
 #[tauri::command]
 fn open_folder(path: String) -> Result<(), String> {
@@ -1637,7 +1686,8 @@ fn main() {
             simulate_paste,
             send_workflow_to_comfyui,
             open_devtools,
-            open_folder
+            open_folder,
+            get_app_icon
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

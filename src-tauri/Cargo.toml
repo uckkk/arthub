@@ -37,6 +37,7 @@ reqwest = { version = "0.11", features = ["json"] }
 
 [target.'cfg(windows)'.dependencies]
 winapi = { version = "0.3", features = ["winuser", "windef", "synchapi", "handleapi", "errhandlingapi", "winnt"] }
+windows-icons = "0.2"
 
 [features]
 # 默认启用所有功能
