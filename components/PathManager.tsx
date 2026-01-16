@@ -50,17 +50,18 @@ const OPACITY_CLASSES = {
   hoverBgBlue50030: 'hover:bg-blue-500/30',
 } as const;
 
+// 标签颜色配置 - 使用字符串拼接避免斜杠解析问题
 const TAG_COLORS = [
-  { bg: 'bg-blue-500/20', text: 'text-blue-400', border: 'border-blue-500/30' },
-  { bg: 'bg-green-500/20', text: 'text-green-400', border: 'border-green-500/30' },
-  { bg: 'bg-purple-500/20', text: 'text-purple-400', border: 'border-purple-500/30' },
-  { bg: 'bg-orange-500/20', text: 'text-orange-400', border: 'border-orange-500/30' },
-  { bg: 'bg-pink-500/20', text: 'text-pink-400', border: 'border-pink-500/30' },
-  { bg: 'bg-cyan-500/20', text: 'text-cyan-400', border: 'border-cyan-500/30' },
-  { bg: 'bg-yellow-500/20', text: 'text-yellow-400', border: 'border-yellow-500/30' },
-  { bg: 'bg-red-500/20', text: 'text-red-400', border: 'border-red-500/30' },
-  { bg: 'bg-indigo-500/20', text: 'text-indigo-400', border: 'border-indigo-500/30' },
-  { bg: 'bg-teal-500/20', text: 'text-teal-400', border: 'border-teal-500/30' },
+  { bg: 'bg-blue-500' + '/20', text: 'text-blue-400', border: 'border-blue-500' + '/30' },
+  { bg: 'bg-green-500' + '/20', text: 'text-green-400', border: 'border-green-500' + '/30' },
+  { bg: 'bg-purple-500' + '/20', text: 'text-purple-400', border: 'border-purple-500' + '/30' },
+  { bg: 'bg-orange-500' + '/20', text: 'text-orange-400', border: 'border-orange-500' + '/30' },
+  { bg: 'bg-pink-500' + '/20', text: 'text-pink-400', border: 'border-pink-500' + '/30' },
+  { bg: 'bg-cyan-500' + '/20', text: 'text-cyan-400', border: 'border-cyan-500' + '/30' },
+  { bg: 'bg-yellow-500' + '/20', text: 'text-yellow-400', border: 'border-yellow-500' + '/30' },
+  { bg: 'bg-red-500' + '/20', text: 'text-red-400', border: 'border-red-500' + '/30' },
+  { bg: 'bg-indigo-500' + '/20', text: 'text-indigo-400', border: 'border-indigo-500' + '/30' },
+  { bg: 'bg-teal-500' + '/20', text: 'text-teal-400', border: 'border-teal-500' + '/30' },
 ];
 
 // 根据标签名称获取颜色（确保相同标签总是相同颜色）
