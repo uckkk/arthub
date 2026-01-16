@@ -420,7 +420,7 @@ const PathManager: React.FC = () => {
         }
         
         const driveRegex = new RegExp('^[A-Za-z]:');
-        if (filePath && (driveRegex.test(filePath) || filePath.startsWith('/'))) {
+        if (filePath && (driveRegex.test(filePath) || filePath.startsWith(S_L))) {
           await handleDroppedPath(filePath, 'local');
           return;
         }
@@ -464,7 +464,7 @@ const PathManager: React.FC = () => {
           return;
         }
         
-        if (textUriList.includes('\\') || textUriList.includes('/')) {
+        if (textUriList.includes(B_L) || textUriList.includes(S_L)) {
           const lowerUri = textUriList.toLowerCase();
           if (lowerUri.endsWith('.lnk') || lowerUri.endsWith('.exe')) {
             if (await checkAndHandleAppFile(textUriList)) {
@@ -489,11 +489,11 @@ const PathManager: React.FC = () => {
 
         if (text.startsWith('http://') || text.startsWith('https://')) {
           await handleDroppedPath(text, 'web');
-        } else if (text.startsWith('\\\\') || text.startsWith('//')) {
+        } else if (text.startsWith(B_L + B_L) || text.startsWith(S_L + S_L)) {
           await handleDroppedPath(text, 'network');
-        } else if (winPathRegex.test(text) || text.startsWith('/') || winDriveRegex.test(text)) {
+        } else if (winPathRegex.test(text) || text.startsWith(S_L) || winDriveRegex.test(text)) {
           await handleDroppedPath(text, 'local');
-        } else if (text.includes('\\') || text.includes('/')) {
+        } else if (text.includes(B_L) || text.includes(S_L)) {
           await handleDroppedPath(text, 'local');
         } else {
           try {
@@ -1366,37 +1366,16 @@ const PathManager: React.FC = () => {
                           )}
 
                           <div className="flex flex-col items-center gap-1 shrink-0">
-                            <div className={[
-                              'p-2 rounded-lg',
-                              'bg-[#0f0f0f] group-hover:bg-[#151515]',
-                              'transition-colors flex items-center justify-center'
-                            ].join(' ')}>
+                            <div className={'p-2 rounded-lg bg-[#0f0f0f] group-hover:bg-[#151515] transition-colors flex items-center justify-center'}>
                               {getIcon(item)}
                             </div>
-                            <button 
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                handleAddToFavorites(item, e);
-                              }}
-                              className={[
-                                'p-1 rounded transition-all duration-150',
-                                isFavorited(item.id)
-                                  ? 'text-yellow-400 opacity-100'
-                                  : 'text-[#666666] opacity-0 group-hover:opacity-100 hover:text-yellow-400',
-                                justFavoritedId === item.id ? 'scale-125' : ''
-                              ].filter(Boolean).join(' ')}
-                              title={isFavorited(item.id) ? "取消收藏" : "添加到收藏"}
-                            >
+                            <button onClick={(e) => { e.stopPropagation(); handleAddToFavorites(item, e); }} className={['p-1 rounded transition-all duration-150', isFavorited(item.id) ? 'text-yellow-400 opacity-100' : 'text-[#666666] opacity-0 group-hover:opacity-100 hover:text-yellow-400', justFavoritedId === item.id ? 'scale-125' : ''].filter(Boolean).join(' ')} title={isFavorited(item.id) ? "取消收藏" : "添加到收藏"}>
                               <Star size={12} fill={isFavorited(item.id) ? "currentColor" : "none"} />
                             </button>
                           </div>
 
-                          <div className={['flex-1 min-w-0', columnsPerRow > 1 ? 'overflow-hidden' : ''].filter(Boolean).join(' ')}>
-                            <h3 className={[
-                              'text-[14px] font-medium text-white',
-                              'group-hover:text-blue-400',
-                              'transition-colors break-words'
-                            ].join(' ')} title={item.name}>
+                          <div className={columnsPerRow > 1 ? 'flex-1 min-w-0 overflow-hidden' : 'flex-1 min-w-0'}>
+                            <h3 className={'text-[14px] font-medium text-white group-hover:text-blue-400 transition-colors break-words'} title={item.name}>
                               {item.name}
                             </h3>
                             {item.tags && item.tags.length > 0 && (
@@ -1405,11 +1384,7 @@ const PathManager: React.FC = () => {
                                   const color = getTagColor(tag);
                                   const tagClassName = 'inline-flex items-center gap-1 px-2 py-0.5 rounded ' + color.bg + ' ' + color.text + ' border ' + color.border + ' text-[10px] font-medium whitespace-nowrap';
                                   return (
-                                    <span
-                                      key={tagIndex}
-                                      className={tagClassName}
-                                      title={tag}
-                                    >
+                                    <span key={tagIndex} className={tagClassName} title={tag}>
                                       <TagIcon size={10} />
                                       {tag}
                                     </span>
@@ -1420,74 +1395,25 @@ const PathManager: React.FC = () => {
                           </div>
 
                           <div className="flex items-center gap-0.5 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
-                              <button 
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  handleEdit(item, e);
-                                }}
-                                className="p-1.5 rounded text-[#666666] hover:text-white hover:bg-[#2a2a2a] transition-colors"
-                                title="编辑"
-                              >
-                                <Pencil size={13} />
-                              </button>
-                              <button 
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  handleCopy(item, e);
-                                }}
-                                className="p-1.5 rounded text-[#666666] hover:text-white hover:bg-[#2a2a2a] transition-colors"
-                                title="复制路径"
-                              >
-                                <Copy size={13} />
-                              </button>
-                              {item.type === 'web' && (
-                                <ExternalLink size={13} className="text-[#444444] mx-0.5" />
-                              )}
-                              <button 
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  handleDelete(item.id, e);
-                                }}
-                                className={'p-1.5 rounded text-[#666666] hover:text-red-400 ' + OPACITY_CLASSES.bgRed50010 + ' transition-colors'}
-                                title="删除"
-                              >
-                                <Trash2 size={13} />
-                              </button>
-                            </div>
+                            <button onClick={(e) => { e.stopPropagation(); handleEdit(item, e); }} className="p-1.5 rounded text-[#666666] hover:text-white hover:bg-[#2a2a2a] transition-colors" title="编辑">
+                              <Pencil size={13} />
+                            </button>
+                            <button onClick={(e) => { e.stopPropagation(); handleCopy(item, e); }} className="p-1.5 rounded text-[#666666] hover:text-white hover:bg-[#2a2a2a] transition-colors" title="复制路径">
+                              <Copy size={13} />
+                            </button>
+                            {item.type === 'web' && <ExternalLink size={13} className="text-[#444444] mx-0.5" />}
+                            <button onClick={(e) => { e.stopPropagation(); handleDelete(item.id, e); }} className={'p-1.5 rounded text-[#666666] hover:text-red-400 ' + OPACITY_CLASSES.bgRed50010 + ' transition-colors'} title="删除">
+                              <Trash2 size={13} />
+                            </button>
+                          </div>
                           </div>
                         </div>
                       ))}
                     </div>
                   )}
                 </div>
-                  
-                  {groupIndex === groupOrder.length - 1 && draggedGroup && draggedGroup !== groupName && !dragOverGroup && (
-                    <div
-                      className="h-1 bg-blue-500 rounded-full mx-2 my-1"
-                      onDragOver={(e) => {
-                      e.preventDefault();
-                      e.stopPropagation();
-                      e.dataTransfer.dropEffect = 'move';
-                    }}
-                    onDrop={(e) => {
-                      e.preventDefault();
-                      e.stopPropagation();
-                      const draggedGroupName = e.dataTransfer.getData('text/plain') || draggedGroup;
-                      if (draggedGroupName && draggedGroupName !== groupName) {
-                        const allGroups = Array.from(new Set([...groupOrder, ...Object.keys(groupedPaths)]));
-                        const newOrder = [...allGroups];
-                        const draggedIndex = newOrder.indexOf(draggedGroupName);
-                        if (draggedIndex >= 0) {
-                          newOrder.splice(draggedIndex, 1);
-                          newOrder.push(draggedGroupName);
-                          setGroupOrder(newOrder);
-                          localStorage.setItem('arthub_group_order', JSON.stringify(newOrder));
-                        }
-                        setDraggedGroup(null);
-                        setDragOverGroup(null);
-                      }
-                    }}
-                  />
+                {groupIndex === groupOrder.length - 1 && draggedGroup && draggedGroup !== groupName && !dragOverGroup && (
+                  <div className="h-1 bg-blue-500 rounded-full mx-2 my-1" onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); e.dataTransfer.dropEffect = 'move'; }} onDrop={(e) => { e.preventDefault(); e.stopPropagation(); const draggedGroupName = e.dataTransfer.getData('text/plain') || draggedGroup; if (draggedGroupName && draggedGroupName !== groupName) { const allGroups = Array.from(new Set([...groupOrder, ...Object.keys(groupedPaths)])); const newOrder = [...allGroups]; const draggedIndex = newOrder.indexOf(draggedGroupName); if (draggedIndex >= 0) { newOrder.splice(draggedIndex, 1); newOrder.push(draggedGroupName); setGroupOrder(newOrder); localStorage.setItem('arthub_group_order', JSON.stringify(newOrder)); } setDraggedGroup(null); setDragOverGroup(null); }} />
                 )}
               </React.Fragment>
             );
