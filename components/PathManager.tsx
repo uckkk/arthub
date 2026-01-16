@@ -1082,8 +1082,8 @@ const PathManager: React.FC = () => {
               {allTags.map(tag => {
                 const isSelected = selectedTags.includes(tag);
                 const color = getTagColor(tag);
-                const selectedClassName = 'px-2.5 py-1 rounded-md text-xs font-medium transition-colors duration-150 border ' + color.bg + ' ' + color.text + ' ' + color.border;
-                const unselectedClassName = 'px-2.5 py-1 rounded-md text-xs font-medium transition-colors duration-150 border bg-[#1a1a1a] text-[#808080] border-[#2a2a2a] hover:border-[#3a3a3a] hover:text-white';
+                const selectedClassName = 'inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-medium transition-colors duration-150 border ' + color.bg + ' ' + color.text + ' ' + color.border;
+                const unselectedClassName = 'inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-medium transition-colors duration-150 border bg-[#1a1a1a] text-[#808080] border-[#2a2a2a] hover:border-[#3a3a3a] hover:text-white';
                 return (
                   <button
                     key={'tag-' + tag}
@@ -1094,8 +1094,9 @@ const PathManager: React.FC = () => {
                         setSelectedTags([...selectedTags, tag]);
                       }
                     }}
-                      className={isSelected ? selectedClassName : unselectedClassName}
+                    className={isSelected ? selectedClassName : unselectedClassName}
                   >
+                    <TagIcon size={12} />
                     {tag}
                   </button>
                 );
@@ -1195,11 +1196,11 @@ const PathManager: React.FC = () => {
           handleDropCreatePath(e);
         }}
         className={[
-          'flex-1 min-h-0 overflow-y-auto px-6 py-6',
+          'flex-1 min-h-0 max-h-full overflow-y-auto px-6 py-6',
           'transition-colors duration-200',
           isDraggingOver ? OPACITY_CLASSES.bgBlue50010 + ' border-2 border-dashed border-blue-500' : ''
         ].filter(Boolean).join(' ')}
-        style={{ scrollbarWidth: 'thin', scrollbarColor: '#2a2a2a #0a0a0a' }}
+        style={{ scrollbarWidth: 'thin', scrollbarColor: '#2a2a2a #0a0a0a', maxHeight: '100%' }}
       >
         {paths.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-full text-center">
