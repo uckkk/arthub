@@ -30,50 +30,66 @@ export async function handleDroppedAppFile(filePath: string): Promise<AppInfo | 
   }
 
   try {
-    const { readTextFile, exists } = await import('@tauri-apps/api/fs');
     const { basename, extname } = await import('@tauri-apps/api/path');
     
-    const fileName = await basename(filePath);
-    const ext = await extname(filePath);
-    const lowerExt = ext.toLowerCase();
+    // 规范化路径：确保使用正确的路径分隔符
+    let normalizedPath = filePath.replaceAll('/', '\\');
     
-    let targetPath = filePath;
-    let appName = extractAppName(filePath);
+    // 尝试获取文件信息
+    let fileName: string;
+    let ext: string;
+    try {
+      fileName = await basename(normalizedPath);
+      ext = await extname(normalizedPath);
+    } catch (error) {
+      // 如果路径解析失败，使用简单提取
+      console.warn('[appService] Failed to parse path, using fallback:', error);
+      const pathParts = normalizedPath.split('\\');
+      fileName = pathParts[pathParts.length - 1] || normalizedPath;
+      const lastDot = fileName.lastIndexOf('.');
+      ext = lastDot >= 0 ? fileName.substring(lastDot) : '';
+    }
+    
+    const lowerExt = ext.toLowerCase();
+    console.log('[appService] Processing file:', {
+      originalPath: filePath,
+      normalizedPath,
+      fileName,
+      ext: lowerExt,
+    });
+    
+    let targetPath = normalizedPath;
+    let appName = extractAppName(fileName);
     
     // 如果是快捷方式 (.lnk)，需要读取目标路径
     if (lowerExt === '.lnk') {
-      try {
-        // 在 Windows 上，.lnk 文件是二进制文件，需要使用 Tauri 命令来解析
-        // 这里我们先尝试使用 shell.open 来获取目标路径
-        // 或者我们可以直接使用快捷方式的文件名作为应用名
-        appName = extractAppName(fileName);
-        
-        // 尝试从快捷方式读取目标路径（需要 Rust 后端支持）
-        // 暂时使用快捷方式路径本身
-        targetPath = filePath;
-      } catch (error) {
-        console.warn('读取快捷方式失败:', error);
-      }
-    } else if (lowerExt === '.exe') {
-      // 可执行文件，直接使用
-      targetPath = filePath;
+      // 在 Windows 上，.lnk 文件是二进制文件
+      // 暂时使用快捷方式路径本身，启动时会正确处理
       appName = extractAppName(fileName);
+      targetPath = normalizedPath;
+      console.log('[appService] LNK file detected:', { appName, targetPath });
+    } else if (lowerExt === '.exe' || lowerExt === '.bat') {
+      // 可执行文件或批处理文件，直接使用
+      targetPath = normalizedPath;
+      appName = extractAppName(fileName);
+      console.log('[appService] EXE/BAT file detected:', { appName, targetPath });
     } else {
       // 不支持的文件类型
+      console.warn('[appService] Unsupported file type:', lowerExt, normalizedPath);
       return null;
     }
     
-    // 尝试提取图标（需要 Rust 后端支持）
-    // 暂时返回基本信息
     return {
       name: appName,
       path: targetPath,
     };
   } catch (error) {
-    console.error('处理应用文件失败:', error);
+    console.error('[appService] Error processing app file:', error, filePath);
+    // 降级处理：直接使用路径
+    const fallbackName = extractAppName(filePath);
     return {
-      name: extractAppName(filePath),
-      path: filePath,
+      name: fallbackName,
+      path: filePath.replaceAll('/', '\\'),
     };
   }
 }

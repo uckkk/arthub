@@ -84,42 +84,35 @@ const AppLauncher: React.FC = () => {
     e.stopPropagation();
     setIsDraggingOver(false);
 
-    const files = e.dataTransfer.files;
-    if (files && files.length > 0) {
-      const file = files[0];
-      const filePath = (file as any).path || file.name;
-      const fileName = file.name.toLowerCase();
+    console.log('[AppLauncher] Drop event:', {
+      types: Array.from(e.dataTransfer.types),
+      filesCount: e.dataTransfer.files.length,
+    });
 
-      if (fileName.endsWith('.exe') || fileName.endsWith('.lnk') || fileName.endsWith('.bat')) {
-        const appInfo = await handleDroppedAppFile(filePath);
-        if (appInfo) {
-          const icon = await getAppIcon(appInfo.path);
-          const newApp: AppItem = {
-            id: Date.now().toString(),
-            name: appInfo.name,
-            path: appInfo.path,
-            icon: icon,
-          };
-          setApps([...apps, newApp]);
-        }
-      }
-    }
-
+    // 优先处理 text/uri-list（Windows 开始菜单拖拽常用）
     const textUriList = e.dataTransfer.getData('text/uri-list');
-    const textPlain = e.dataTransfer.getData('text/plain');
-    const text = textPlain || e.dataTransfer.getData('text');
-
     if (textUriList) {
-      let filePath = textUriList.replace(/^file:\/\/\//, '');
+      console.log('[AppLauncher] text/uri-list:', textUriList);
+      let filePath = textUriList.replace(/^file:\/\//, '').replace(/^file:\/\/\//, '');
+      // Windows 路径格式: file:///C:/path/to/file.exe
+      // 需要移除开头的斜杠
+      if (filePath.startsWith('/') && /^\/[A-Za-z]:/.test(filePath)) {
+        filePath = filePath.substring(1);
+      }
       try {
         filePath = decodeURIComponent(filePath);
       } catch {
+        // 解码失败，使用原始路径
       }
       filePath = filePath.replaceAll(S_L, B_L);
       const lowerPath = filePath.toLowerCase();
+      console.log('[AppLauncher] Processed path from uri-list:', filePath);
+      
       if (lowerPath.endsWith('.exe') || lowerPath.endsWith('.lnk') || lowerPath.endsWith('.bat')) {
+        console.log('[AppLauncher] Detected app file:', filePath);
         const appInfo = await handleDroppedAppFile(filePath);
         if (appInfo) {
+          console.log('[AppLauncher] App info:', appInfo);
           const icon = await getAppIcon(appInfo.path);
           const newApp: AppItem = {
             id: Date.now().toString(),
@@ -128,15 +121,40 @@ const AppLauncher: React.FC = () => {
             icon: icon,
           };
           setApps([...apps, newApp]);
+          return;
+        } else {
+          console.warn('[AppLauncher] handleDroppedAppFile returned null for:', filePath);
         }
       }
     }
 
-    if (text) {
-      const lowerText = text.toLowerCase();
-      if (lowerText.endsWith('.exe') || lowerText.endsWith('.lnk') || lowerText.endsWith('.bat')) {
-        const appInfo = await handleDroppedAppFile(text);
+    // 处理 files 数组
+    const files = e.dataTransfer.files;
+    if (files && files.length > 0) {
+      const file = files[0];
+      const filePath = (file as any).path || (file as any).webkitRelativePath || file.name;
+      const fileName = file.name.toLowerCase();
+      
+      console.log('[AppLauncher] File dropped:', {
+        name: file.name,
+        path: filePath,
+        hasPath: !!(file as any).path,
+      });
+
+      if (fileName.endsWith('.exe') || fileName.endsWith('.lnk') || fileName.endsWith('.bat')) {
+        // 如果只有文件名没有路径，尝试从 text/plain 获取完整路径
+        let finalPath = filePath;
+        if (!filePath.includes(B_L) && !filePath.includes(S_L) && !filePath.match(/^[A-Za-z]:/)) {
+          const textPlain = e.dataTransfer.getData('text/plain');
+          if (textPlain && (textPlain.includes(B_L) || textPlain.includes(S_L) || textPlain.match(/^[A-Za-z]:/))) {
+            finalPath = textPlain.trim();
+            console.log('[AppLauncher] Using path from text/plain:', finalPath);
+          }
+        }
+        
+        const appInfo = await handleDroppedAppFile(finalPath);
         if (appInfo) {
+          console.log('[AppLauncher] App info from files:', appInfo);
           const icon = await getAppIcon(appInfo.path);
           const newApp: AppItem = {
             id: Date.now().toString(),
@@ -145,9 +163,42 @@ const AppLauncher: React.FC = () => {
             icon: icon,
           };
           setApps([...apps, newApp]);
+          return;
+        } else {
+          console.warn('[AppLauncher] handleDroppedAppFile returned null for:', finalPath);
         }
       }
     }
+
+    // 最后尝试 text/plain
+    const textPlain = e.dataTransfer.getData('text/plain');
+    if (textPlain) {
+      console.log('[AppLauncher] text/plain:', textPlain);
+      const text = textPlain.trim();
+      const lowerText = text.toLowerCase();
+      
+      // 检查是否是文件路径
+      if ((text.includes(B_L) || text.includes(S_L) || text.match(/^[A-Za-z]:/)) && 
+          (lowerText.endsWith('.exe') || lowerText.endsWith('.lnk') || lowerText.endsWith('.bat'))) {
+        const cleanPath = text.replaceAll(S_L, B_L);
+        console.log('[AppLauncher] Detected app file from text/plain:', cleanPath);
+        const appInfo = await handleDroppedAppFile(cleanPath);
+        if (appInfo) {
+          console.log('[AppLauncher] App info from text/plain:', appInfo);
+          const icon = await getAppIcon(appInfo.path);
+          const newApp: AppItem = {
+            id: Date.now().toString(),
+            name: appInfo.name,
+            path: appInfo.path,
+            icon: icon,
+          };
+          setApps([...apps, newApp]);
+          return;
+        }
+      }
+    }
+
+    console.warn('[AppLauncher] No valid app file found in drop event');
   };
 
   const handleLaunch = async (app: AppItem) => {
