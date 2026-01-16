@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { 
   Folder, Globe, Server, ExternalLink, Copy, Trash2, Plus, 
-  AlertCircle, Check, ChevronDown, ChevronRight, Pencil, Star, X, Save, Upload, Play, Grid3X3, Settings, 
+  AlertCircle, Check, ChevronDown, ChevronRight, Pencil, Star, X, Save, Play, Grid3X3, Settings, 
   LayoutGrid, Tag as TagIcon, Layers
 } from 'lucide-react';
 import { PathItem, PathType } from '../types';
@@ -16,6 +16,7 @@ import { handleDroppedAppFile, launchApp, isAppFile } from '../services/appServi
 import { useMiddleMouseScroll } from '../utils/useMiddleMouseScroll';
 import { openUrl } from '../services/windowService';
 import { TagEditor } from './common';
+import { ConfirmDragModal } from './ConfirmDragModal';
 
 const S_L = '/';
 const B_L = '\\';
@@ -1689,79 +1690,18 @@ const PathManager: React.FC = () => {
         </div>
       )}
 
-      {showDragModal && draggedPath && (
-        <div 
-          className={'fixed inset-0 z-50 flex items-center justify-center ' + OPACITY_CLASSES.bgBlack70 + ' backdrop-blur-sm'}
-          onClick={() => {
-            setShowDragModal(false);
-            setDraggedPath(null);
-          }}
-        >
-          <div 
-            className={'w-full max-w-md mx-4 bg-[#151515] border border-[#2a2a2a] rounded-xl shadow-2xl ' + OPACITY_CLASSES.shadowBlack50 + ' animate-scale-in'}
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="flex items-center justify-between px-6 py-4 border-b border-[#2a2a2a]">
-              <h3 className="text-lg font-semibold text-white">添加路径</h3>
-              <button
-                onClick={() => {
-                  setShowDragModal(false);
-                  setDraggedPath(null);
-                }}
-                className="p-1.5 rounded-lg text-[#666666] hover:text-white hover:bg-[#252525] transition-colors"
-              >
-                <X size={18} />
-              </button>
-            </div>
-            
-            <div className="p-6 space-y-4">
-              <div className="p-4 bg-[#0f0f0f] rounded-lg border border-[#2a2a2a]">
-                <div className="flex items-center gap-2 mb-2">
-                  <Upload size={16} className="text-blue-400" />
-                  <span className="text-sm font-medium text-[#a0a0a0]">检测到的路径</span>
-                </div>
-                <p className="text-sm text-white font-mono break-all">{draggedPath.path}</p>
-                {draggedPath.name && (
-                  <p className="text-xs text-[#666666] mt-1">建议名称: {draggedPath.name}</p>
-                )}
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-[#a0a0a0] mb-2">分组名称</label>
-                <input 
-                  list="drag-groups-list"
-                  value={newGroup}
-                  onChange={(e) => setNewGroup(e.target.value)}
-                  className="w-full px-4 py-2.5 rounded-lg bg-[#0f0f0f] border border-[#2a2a2a] text-white placeholder-[#666666] focus:outline-none focus:border-blue-500 transition-colors"
-                  placeholder="例如：工作目录（留空则为默认分组）"
-                />
-                <datalist id="drag-groups-list">
-                  {dragGroupOptions}
-                </datalist>
-              </div>
-            </div>
-
-            <div className="flex justify-end gap-3 px-6 py-4 border-t border-[#2a2a2a]">
-              <button 
-                onClick={() => {
-                  setShowDragModal(false);
-                  setDraggedPath(null);
-                }}
-                className="px-4 py-2.5 rounded-lg bg-[#1a1a1a] border border-[#2a2a2a] text-[#a0a0a0] hover:text-white hover:border-[#3a3a3a] transition-colors font-medium"
-              >
-                取消
-              </button>
-              <button 
-                onClick={handleConfirmDragPath}
-                className="flex items-center gap-2 px-4 py-2.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-medium transition-colors"
-              >
-                <Save size={16} />
-                添加
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      <ConfirmDragModal
+        showDragModal={showDragModal}
+        draggedPath={draggedPath}
+        newGroup={newGroup}
+        setNewGroup={setNewGroup}
+        dragGroupOptions={dragGroupOptions}
+        onClose={() => {
+          setShowDragModal(false);
+          setDraggedPath(null);
+        }}
+        onConfirm={handleConfirmDragPath}
+      />
     </div>
   );
 };
