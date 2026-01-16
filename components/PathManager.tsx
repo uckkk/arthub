@@ -28,13 +28,13 @@ const isTauriEnvironment = (): boolean => {
 
 // 从文件路径提取应用名称
 const extractAppName = (filePath: string): string => {
-  const fileName = filePath.split(/[\\/]/).pop() || '';
+  // 修复：显式转义斜杠，避免构建工具误判正则
+  const fileName = filePath.split(/[\\\/]/).pop() || '';
   // 移除扩展名
   const nameWithoutExt = fileName.replace(/\.(lnk|exe|app)$/i, '');
   return nameWithoutExt || '未知应用';
 };
 
-// 标签颜色配置（不同颜色的组合）
 // 标签颜色配置
 // 定义常用的 opacity 类名常量，使用字符串拼接避免斜杠解析问题
 const OPACITY_CLASSES = {
@@ -242,7 +242,7 @@ const PathManager: React.FC = () => {
     dragOverGroupRef.current = dragOverGroup;
   }, [dragOverGroup]);
 
-  // 使用鼠标事件模拟拖拽（因为 HTML5 拖拽 API 在这个场景下不工作）
+  // 使用鼠标事件模拟拖拽
   useEffect(() => {
     const handleMouseDown = (e: MouseEvent) => {
       const target = e.target as HTMLElement;
@@ -268,8 +268,6 @@ const PathManager: React.FC = () => {
     const handleMouseMove = (e: MouseEvent) => {
       const state = mouseDragStateRef.current;
       if (state.isDragging && state.draggedGroup) {
-        console.log('[PathManager] 鼠标移动，拖拽中:', state.draggedGroup, 'Y:', e.clientY);
-        
         // 查找当前悬停的分组容器
         const groupContainers = document.querySelectorAll('[data-group-name]');
         let hoveredGroup: string | null = null;
@@ -282,13 +280,11 @@ const PathManager: React.FC = () => {
         });
         
         if (hoveredGroup && hoveredGroup !== state.draggedGroup) {
-          console.log('[PathManager] 检测到悬停在分组上:', hoveredGroup);
           if (dragOverGroupRef.current !== hoveredGroup) {
             setDragOverGroup(hoveredGroup);
             dragOverGroupRef.current = hoveredGroup;
           }
         } else if (hoveredGroup === state.draggedGroup) {
-          // 悬停在自身上，清除 dragOverGroup
           if (dragOverGroupRef.current !== null) {
             setDragOverGroup(null);
             dragOverGroupRef.current = null;
@@ -318,11 +314,6 @@ const PathManager: React.FC = () => {
         if (targetGroup && targetGroup !== state.draggedGroup && targetRect) {
           const midpoint = targetRect.top + targetRect.height / 2;
           const insertBefore = e.clientY < midpoint;
-          console.log('[PathManager] 执行重新排序:', {
-            draggedGroup: state.draggedGroup,
-            targetGroup,
-            insertBefore
-          });
           reorderGroups(state.draggedGroup, targetGroup, insertBefore);
         }
         
@@ -387,7 +378,7 @@ const PathManager: React.FC = () => {
     };
   }, []);
 
-  // 检查路径是否已收藏（使用新的收藏服务）
+  // 检查路径是否已收藏
   const isFavorited = (itemId: string): boolean => {
     return checkIsFavorited('path', itemId);
   };
@@ -408,7 +399,6 @@ const PathManager: React.FC = () => {
 
   // 处理拖拽悬停（创建新路径）
   const handleDragOverCreatePath = (e: React.DragEvent) => {
-    // 如果是分组拖拽，不处理（让分组容器处理）
     if (draggedGroup) {
       return;
     }
@@ -419,12 +409,10 @@ const PathManager: React.FC = () => {
 
   // 处理拖拽放下（创建新路径）
   const handleDropCreatePath = async (e: React.DragEvent) => {
-    // 检查是否是分组拖拽
     const types = Array.from(e.dataTransfer.types);
     const isGroupDrag = draggedGroup || types.includes('application/x-group');
     
     if (isGroupDrag) {
-      // 分组拖拽，不处理文件拖拽，让分组容器处理
       return;
     }
     
@@ -437,10 +425,10 @@ const PathManager: React.FC = () => {
       const checkAndHandleAppFile = async (filePath: string): Promise<boolean> => {
         if (!filePath) return false;
         
-        // 统一路径分隔符并清理
-        let cleanPath = filePath.trim().replace(/\//g, '\\');
+        // 修复：使用 replaceAll 避免正则字面量中的斜杠问题
+        let cleanPath = filePath.trim().replaceAll('/', '\\');
         
-        // 优先检查是否是应用文件（.exe, .lnk）- 必须在判断URL之前
+        // 优先检查是否是应用文件（.exe, .lnk）
         if (isAppFile(cleanPath)) {
           const appInfo = await handleDroppedAppFile(cleanPath);
           if (appInfo) {
@@ -456,25 +444,18 @@ const PathManager: React.FC = () => {
         return false;
       };
 
-      // 首先检查是否是文件拖拽（优先级最高）
       const files = e.dataTransfer.files;
       if (files && files.length > 0) {
         const file = files[0];
-        // 在 Tauri 环境中，文件对象可能有 path 属性
-        // 在浏览器环境中，只能获取文件名
         const filePath = (file as any).path || file.name;
         const fileName = file.name;
         const lowerFileName = fileName.toLowerCase();
         
-        // 优先检查是否是应用文件（通过扩展名判断）
-        // 检查文件名是否以 .exe 或 .lnk 结尾
         if (lowerFileName.endsWith('.exe') || lowerFileName.endsWith('.lnk')) {
           console.log('[PathManager] 文件拖拽识别为应用文件:', filePath, fileName);
-          // 尝试处理应用文件
           if (await checkAndHandleAppFile(filePath)) {
             return;
           }
-          // 如果处理失败，仍然作为应用文件类型添加
           const appName = extractAppName(filePath || fileName);
           setDraggedPath({ 
             path: filePath || fileName, 
@@ -485,48 +466,37 @@ const PathManager: React.FC = () => {
           return;
         }
         
-        // 如果不是应用文件，尝试作为普通路径处理
         if (filePath && (filePath.match(/^[A-Za-z]:/) || filePath.startsWith('/'))) {
           await handleDroppedPath(filePath, 'local');
           return;
         }
       }
       
-      // 尝试获取拖拽的文本（可能是URL或路径）
-      // 注意：在 Windows 上拖拽文件时，可能会同时有 files 和 text/uri-list
-      // 在Windows上，快捷方式(.lnk)可能只出现在text/uri-list中
       const textUriList = e.dataTransfer.getData('text/uri-list');
       const textPlain = e.dataTransfer.getData('text/plain');
       const text = textPlain || e.dataTransfer.getData('text');
       
-      // 优先处理 text/uri-list（Windows 文件拖拽常用，特别是.lnk快捷方式）
       if (textUriList) {
-        // 检查是否是文件路径（file:// 协议）
         if (textUriList.startsWith('file://')) {
-          // 提取文件路径（Windows 路径格式）
-          let filePath = textUriList.replace(/^file:\/\/\//, '').replace(/^file:\/\//, '');
-          // Windows 路径可能需要解码
+          // 修复：使用 new RegExp 替代字面量，防止解析错误
+          let filePath = textUriList.replace(new RegExp('^file:///?'), '');
+          
           try {
             filePath = decodeURIComponent(filePath);
           } catch {
             // 解码失败，使用原始路径
           }
-          // 统一路径分隔符为 Windows 格式
-          filePath = filePath.replace(/\//g, '\\');
+          // 修复：使用 replaceAll
+          filePath = filePath.replaceAll('/', '\\');
           
-          // 调试日志
           console.log('[PathManager] 检测到 file:// 路径:', filePath);
           
-          // 优先检查是否是应用文件（.exe, .lnk）- 必须在判断URL之前
-          // 检查路径是否以 .lnk 或 .exe 结尾（不区分大小写）
           const lowerPath = filePath.toLowerCase();
           if (lowerPath.endsWith('.lnk') || lowerPath.endsWith('.exe')) {
             console.log('[PathManager] file:// 识别为应用文件:', filePath);
-            // 直接处理为应用文件，不进行URL检查
             if (await checkAndHandleAppFile(filePath)) {
               return;
             }
-            // 如果处理失败，仍然作为应用文件类型添加
             setDraggedPath({ 
               path: filePath, 
               name: extractAppName(filePath), 
@@ -536,27 +506,24 @@ const PathManager: React.FC = () => {
             return;
           }
           
-          // 本地文件路径（非应用文件）
           console.log('[PathManager] file:// 识别为本地路径:', filePath);
           await handleDroppedPath(filePath, 'local');
           return;
         }
-        // 检查是否是网页 URL（只有明确的 http:// 或 https:// 才识别为网页）
+        
         if (textUriList.startsWith('http://') || textUriList.startsWith('https://')) {
           console.log('[PathManager] 识别为网页 URL:', textUriList);
           await handleDroppedPath(textUriList, 'web');
           return;
         }
-        // 如果textUriList不是file://也不是http://，可能是其他协议，检查是否包含路径分隔符
+        
         if (textUriList.includes('\\') || textUriList.includes('/')) {
-          // 可能是本地路径，优先检查是否是应用文件
           const lowerUri = textUriList.toLowerCase();
           if (lowerUri.endsWith('.lnk') || lowerUri.endsWith('.exe')) {
             if (await checkAndHandleAppFile(textUriList)) {
               return;
             }
           }
-          // 作为本地路径处理
           await handleDroppedPath(textUriList, 'local');
           return;
         }
@@ -566,7 +533,6 @@ const PathManager: React.FC = () => {
       if (text) {
         console.log('[PathManager] 处理 text/plain 数据:', text);
         
-        // 优先检查是否是应用文件路径（.exe, .lnk）
         const lowerText = text.toLowerCase();
         if (lowerText.endsWith('.lnk') || lowerText.endsWith('.exe')) {
           console.log('[PathManager] text/plain 识别为应用文件:', text);
@@ -575,38 +541,29 @@ const PathManager: React.FC = () => {
           }
         }
 
-        // 判断是URL还是路径
-        // 只有明确的 http:// 或 https:// 开头才识别为网页
         if (text.startsWith('http://') || text.startsWith('https://')) {
           console.log('[PathManager] text/plain 识别为网页 URL:', text);
           await handleDroppedPath(text, 'web');
         } else if (text.startsWith('\\\\') || text.startsWith('//')) {
-          // 网络路径
           console.log('[PathManager] text/plain 识别为网络路径:', text);
           await handleDroppedPath(text, 'network');
         } else if (text.match(/^[A-Za-z]:[\\/]/) || text.startsWith('/') || text.match(/^[A-Za-z]:$/)) {
-          // 本地路径（Windows 路径如 C:\ 或 C:/，或 Unix 路径）
           console.log('[PathManager] text/plain 识别为本地路径:', text);
           await handleDroppedPath(text, 'local');
         } else if (text.includes('\\') || text.includes('/')) {
-          // 包含路径分隔符，优先识别为本地路径
           console.log('[PathManager] text/plain 包含路径分隔符，识别为本地路径:', text);
           await handleDroppedPath(text, 'local');
         } else {
-          // 其他情况，尝试作为URL处理（但只有明确的协议才识别为网页）
           try {
             const url = new URL(text);
-            // 只有 http 或 https 协议才识别为网页
             if (url.protocol === 'http:' || url.protocol === 'https:') {
               console.log('[PathManager] text/plain URL 解析为网页:', text);
               await handleDroppedPath(text, 'web');
             } else {
-              // 其他协议（如 file://）识别为本地路径
               console.log('[PathManager] text/plain URL 其他协议，识别为本地路径:', text);
               await handleDroppedPath(text, 'local');
             }
           } catch {
-            // 不是有效的URL，识别为本地路径
             console.log('[PathManager] text/plain 不是有效URL，识别为本地路径:', text);
             await handleDroppedPath(text, 'local');
           }
@@ -614,7 +571,6 @@ const PathManager: React.FC = () => {
         return;
       }
       
-      // 最后尝试从浏览器地址栏拖拽
       const url = e.dataTransfer.getData('URL');
       if (url && (url.startsWith('http://') || url.startsWith('https://'))) {
         await handleDroppedPath(url, 'web');
@@ -627,14 +583,11 @@ const PathManager: React.FC = () => {
 
   // 处理拖拽的路径
   const handleDroppedPath = async (path: string, type: PathType) => {
-    // 尝试获取路径名称
     let name = '';
     
     if (type === 'web') {
       try {
-        // 尝试获取网页标题
         const response = await fetch(path, { mode: 'no-cors' });
-        // 由于CORS限制，我们只能使用路径本身
         const url = new URL(path);
         name = url.hostname || path;
       } catch {
@@ -646,8 +599,8 @@ const PathManager: React.FC = () => {
         }
       }
     } else {
-      // 对于本地路径，使用文件夹名
-      const parts = path.replace(/\\/g, '/').split('/').filter(p => p);
+      // 修复：使用 replaceAll 和 split
+      const parts = path.replaceAll('\\', '/').split('/').filter(p => p);
       name = parts[parts.length - 1] || path;
     }
 
@@ -703,17 +656,13 @@ const PathManager: React.FC = () => {
 
   const groupedPaths = useMemo(() => {
     if (sortMode === 'tag') {
-      // 按标签排序模式
       const groups: Record<string, PathItem[]> = {};
       
-      // 先处理选中标签的路径（多个标签合并为一组，显示包含任一标签的所有路径）
       if (selectedTags.length > 0) {
         const selectedTagPaths = paths.filter(p => 
           p.tags && p.tags.some(tag => selectedTags.includes(tag))
         );
         if (selectedTagPaths.length > 0) {
-          // 如果有多个选中标签，显示为"标签: 标签1, 标签2, ..."
-          // 如果只有一个，显示为"标签: 标签1"
           const groupName = selectedTags.length === 1 
             ? `标签: ${selectedTags[0]}`
             : `标签: ${selectedTags.join(', ')}`;
@@ -721,7 +670,6 @@ const PathManager: React.FC = () => {
         }
       }
       
-      // 然后处理其他标签的路径（不在选中标签中的）
       allTags.forEach(tag => {
         if (!selectedTags.includes(tag)) {
           const tagPaths = paths.filter(p => 
@@ -734,7 +682,6 @@ const PathManager: React.FC = () => {
         }
       });
       
-      // 最后处理无标签的路径
       const noTagPaths = paths.filter(p => !p.tags || p.tags.length === 0);
       if (noTagPaths.length > 0) {
         groups['无标签'] = noTagPaths;
@@ -742,7 +689,6 @@ const PathManager: React.FC = () => {
       
       return groups;
     } else {
-      // 按分类分组模式（原有逻辑）
       const groups: Record<string, PathItem[]> = {};
       paths.forEach(p => {
         const g = p.group || '默认分组';
@@ -762,7 +708,6 @@ const PathManager: React.FC = () => {
     }
   }, [paths, groupOrder, sortMode, selectedTags, allTags]);
   
-  // 初始化分组顺序
   useEffect(() => {
     if (groupOrder.length === 0 && paths.length > 0) {
       const groups = Array.from(new Set(paths.map(p => p.group || '默认分组'))).sort();
@@ -770,7 +715,6 @@ const PathManager: React.FC = () => {
     }
   }, [paths.length, groupOrder.length]);
 
-  // 保存到本地存储
   useEffect(() => {
     if (paths.length > 0) {
       localStorage.setItem('arthub_paths', JSON.stringify(paths));
@@ -783,22 +727,18 @@ const PathManager: React.FC = () => {
     }
   }, [groupOrder]);
   
-  // 保存列数设置
   useEffect(() => {
     localStorage.setItem('arthub_path_columns', columnsPerRow.toString());
   }, [columnsPerRow]);
 
-  // 保存排序模式
   useEffect(() => {
     localStorage.setItem('arthub_path_sort_mode', sortMode);
   }, [sortMode]);
 
-  // 保存选中标签
   useEffect(() => {
     localStorage.setItem('arthub_path_selected_tags', JSON.stringify(selectedTags));
   }, [selectedTags]);
 
-  // 关闭添加模态框并重置表单
   const handleCloseAddModal = () => {
     setIsModalOpen(false);
     setNewName('');
@@ -822,7 +762,7 @@ const PathManager: React.FC = () => {
       path: finalPath,
       type: newType,
       group: groupName,
-      tags: newTags || [] // 使用新添加的标签
+      tags: newTags || []
     };
     
     setPaths([item, ...paths]);
@@ -904,13 +844,10 @@ const PathManager: React.FC = () => {
     console.log('[PathManager] handleJump 被调用:', item.type, item.path);
     
     try {
-      // 首先检查路径本身是否是应用文件（无论类型是什么）
       const lowerPath = item.path.toLowerCase();
       const isAppFilePath = lowerPath.endsWith('.lnk') || lowerPath.endsWith('.exe');
       
       if (item.type === 'app' || isAppFilePath) {
-        // 应用类型：启动应用（.exe 或 .lnk）
-        // 即使类型不是'app'，但路径是应用文件，也启动应用
         console.log('[PathManager] 启动应用:', item.path);
         try {
           await launchApp(item.path);
@@ -922,67 +859,43 @@ const PathManager: React.FC = () => {
         }
       }
       
-      // 只有明确的 web 类型才打开网页
       if (item.type === 'web') {
-        // 再次确认路径确实是URL（防止误判）
         if (item.path.startsWith('http://') || item.path.startsWith('https://')) {
-          console.log('[PathManager] 打开网页:', item.path);
-          console.log('[PathManager] 调用 openUrl 函数...');
           const result = openUrl(item.path, '_blank');
-          console.log('[PathManager] openUrl 返回结果:', result);
           return;
-        } else {
-          // 如果类型是web但路径不是URL，按本地路径处理
-          console.warn('[PathManager] 类型是web但路径不是URL，按本地路径处理:', item.path);
         }
       }
       
-      // 本地路径和网络路径：必须直接打开本地的资源管理器，绝不打开网页
       if (item.type === 'local' || item.type === 'network') {
         console.log('[PathManager] 打开资源管理器/网络路径:', item.path);
         try {
-          // 直接尝试调用 Tauri API，如果失败说明不在 Tauri 环境
-          console.log('[PathManager] 调用 Rust 后端命令 open_folder');
           const { invoke } = await import('@tauri-apps/api/tauri');
           await invoke('open_folder', { path: item.path });
-          console.log('[PathManager] open_folder 调用成功');
           return;
         } catch (error: any) {
-          // 检查是否是 Tauri API 不可用的错误
           const errorMsg = error?.message || String(error);
           if (errorMsg.includes('Tauri API') || errorMsg.includes('__TAURI__') || errorMsg.includes('not available')) {
             console.warn('[PathManager] 非 Tauri 环境，复制路径到剪贴板');
             copyToClipboard(item.path, item.id);
           } else {
             console.error('[PathManager] 打开路径失败:', error);
-            console.error('[PathManager] 错误详情:', JSON.stringify(error, null, 2));
-            // 如果失败，复制到剪贴板
             copyToClipboard(item.path, item.id);
           }
         }
         return;
       }
       
-      // 如果类型未知或为空，根据路径判断
-      // 但绝不打开网页，除非路径明确是http://或https://
       if (item.path.startsWith('http://') || item.path.startsWith('https://')) {
-        console.log('[PathManager] 未知类型但路径是URL，打开网页:', item.path);
         openUrl(item.path, '_blank');
       } else {
-        // 其他情况都按本地路径处理
-        console.log('[PathManager] 未知类型，按本地路径处理:', item.path);
         try {
-          // 直接尝试调用 Tauri API
           const { invoke } = await import('@tauri-apps/api/tauri');
           await invoke('open_folder', { path: item.path });
         } catch (error: any) {
-          // 检查是否是 Tauri API 不可用的错误
           const errorMsg = error?.message || String(error);
           if (errorMsg.includes('Tauri API') || errorMsg.includes('__TAURI__') || errorMsg.includes('not available')) {
-            console.warn('[PathManager] 非 Tauri 环境，复制路径到剪贴板');
             copyToClipboard(item.path, item.id);
           } else {
-            console.error('[PathManager] 打开路径失败:', error);
             copyToClipboard(item.path, item.id);
           }
         }
@@ -993,7 +906,6 @@ const PathManager: React.FC = () => {
     }
   };
 
-  // 添加到收藏（使用新的收藏服务）
   const handleAddToFavorites = (item: PathItem, e: React.MouseEvent) => {
     e.stopPropagation();
     
@@ -1013,7 +925,6 @@ const PathManager: React.FC = () => {
       setTimeout(() => setJustFavoritedId(null), 1000);
     }
     
-    // 同时更新旧的快捷路径（兼容性）
     const currentPresetId = localStorage.getItem('arthub_naming_preset') || 'fgui_card';
     const quickPathsKey = `arthub_quick_paths_${currentPresetId}`;
     const saved = localStorage.getItem(quickPathsKey);
@@ -1052,7 +963,6 @@ const PathManager: React.FC = () => {
   };
 
   const getIcon = (item: PathItem) => {
-    // 如果有自定义图标，显示图标
     if (item.icon) {
       return (
         <img 
@@ -1060,14 +970,12 @@ const PathManager: React.FC = () => {
           alt={item.name}
           className="w-[18px] h-[18px] object-contain"
           onError={(e) => {
-            // 如果图标加载失败，显示默认图标
             (e.target as HTMLImageElement).style.display = 'none';
           }}
         />
       );
     }
     
-    // 根据类型显示默认图标
     switch (item.type) {
       case 'app': return <Play size={18} className="text-green-400" />;
       case 'web': return <Globe size={18} className="text-cyan-400" />;
@@ -1076,70 +984,40 @@ const PathManager: React.FC = () => {
     }
   };
 
-  // 拖拽处理函数
   const handleDragStart = (item: PathItem, e: React.DragEvent) => {
-    e.stopPropagation(); // 阻止事件冒泡，避免触发点击事件
+    e.stopPropagation();
     e.dataTransfer.effectAllowed = 'move';
     e.dataTransfer.dropEffect = 'move';
     setDraggedItem(item);
-    setIsDragging(true); // 标记开始拖拽
-    // 设置拖拽数据，支持跨组拖动
+    setIsDragging(true);
     e.dataTransfer.setData('text/plain', item.id);
-    // 设置自定义数据格式
     e.dataTransfer.setData('application/x-path-item', JSON.stringify({ id: item.id, type: 'path-item' }));
   };
 
   const handleDragStartGroup = (groupName: string, e: React.DragEvent) => {
-    console.log('[PathManager] 开始拖拽分组:', groupName, {
-      target: e.target,
-      currentTarget: e.currentTarget,
-      button: e.button,
-      buttons: e.buttons,
-      dataTransfer: e.dataTransfer
-    });
-    
-    // 不要阻止事件传播，让全局监听器也能捕获
-    // e.stopPropagation(); // 移除这个，可能阻止了拖拽操作
-    
-    // 设置拖拽数据 - 必须在 dragstart 事件中同步设置
     e.dataTransfer.effectAllowed = 'move';
     e.dataTransfer.dropEffect = 'move';
     
-    // 设置拖拽数据 - 使用简单的文本格式
     try {
       e.dataTransfer.setData('text/plain', groupName);
       e.dataTransfer.setData('application/x-group', 'true');
-      console.log('[PathManager] 拖拽数据已设置:', groupName, {
-        types: Array.from(e.dataTransfer.types),
-        effectAllowed: e.dataTransfer.effectAllowed,
-        dropEffect: e.dataTransfer.dropEffect
-      });
     } catch (err) {
-      // 某些浏览器可能不支持 setData，使用状态管理
       console.warn('[PathManager] 设置拖拽数据失败:', err);
     }
     
-    // 不创建自定义拖拽图像，使用浏览器默认行为
-    // 创建拖拽图像可能导致拖拽操作失败
-    
-    // 立即设置状态和 ref
     setDraggedGroup(groupName);
     draggedGroupRef.current = groupName;
     setIsDragging(true);
-    
-    console.log('[PathManager] 拖拽状态已设置:', groupName);
   };
 
   const handleDragOver = (groupName: string, index: number, e: React.DragEvent) => {
     e.preventDefault();
     e.stopPropagation();
-    // 检查是否是路径项拖拽（使用状态而不是 getData，因为 dragOver 事件中无法读取数据）
     if (draggedItem) {
       e.dataTransfer.dropEffect = 'move';
       setDragOverGroup(groupName);
       setDragOverIndex(index);
     } else {
-      // 检查拖拽类型（通过 types 数组）
       const types = Array.from(e.dataTransfer.types);
       if (types.includes('application/x-path-item') || types.includes('text/plain')) {
         e.dataTransfer.dropEffect = 'move';
@@ -1150,7 +1028,6 @@ const PathManager: React.FC = () => {
   };
 
   const handleDragOverGroup = (groupName: string, e: React.DragEvent) => {
-    // 只处理分组拖拽
     if (!draggedGroup || draggedGroup === groupName) {
       return;
     }
@@ -1158,14 +1035,12 @@ const PathManager: React.FC = () => {
     e.stopPropagation();
     e.dataTransfer.dropEffect = 'move';
     setDragOverGroup(groupName);
-    console.log('[PathManager] 拖拽悬停在分组上:', groupName, '被拖拽的分组:', draggedGroup);
   };
 
   const handleDrop = (targetGroup: string, targetIndex: number, e: React.DragEvent) => {
     e.preventDefault();
     e.stopPropagation();
     
-    // 检查是否有拖拽的路径项
     const types = Array.from(e.dataTransfer.types);
     const isPathItemDrag = draggedItem || types.includes('application/x-path-item');
     
@@ -1176,17 +1051,11 @@ const PathManager: React.FC = () => {
       return;
     }
 
-    const sourceGroup = draggedItem.group || '默认分组';
-    
-    // 确保目标分组在分组顺序中
     if (!groupOrder.includes(targetGroup)) {
       setGroupOrder([...groupOrder, targetGroup]);
     }
     
-    // 更新路径项的分组和位置
     const updatedPaths = [...paths];
-    
-    // 找到被拖拽的项在原数组中的索引
     const draggedIndex = updatedPaths.findIndex(p => p.id === draggedItem.id);
     if (draggedIndex === -1) {
       setDraggedItem(null);
@@ -1195,13 +1064,9 @@ const PathManager: React.FC = () => {
       return;
     }
     
-    // 移除被拖拽的项
     const [draggedItemData] = updatedPaths.splice(draggedIndex, 1);
-    
-    // 更新分组
     draggedItemData.group = targetGroup;
     
-    // 找到目标分组中所有项的索引
     const targetGroupIndices: number[] = [];
     updatedPaths.forEach((p, idx) => {
       if ((p.group || '默认分组') === targetGroup) {
@@ -1209,46 +1074,35 @@ const PathManager: React.FC = () => {
       }
     });
     
-    // 计算插入位置
     let insertIndex: number;
     if (targetGroupIndices.length === 0) {
-      // 目标分组为空，插入到末尾
       insertIndex = updatedPaths.length;
     } else {
-      // 找到目标索引对应的实际位置
       const targetActualIndex = targetIndex < targetGroupIndices.length 
         ? targetGroupIndices[targetIndex]
         : targetGroupIndices[targetGroupIndices.length - 1] + 1;
       insertIndex = targetActualIndex;
     }
     
-    // 插入到目标位置
     updatedPaths.splice(insertIndex, 0, draggedItemData);
-    
-    // 更新路径列表
     setPaths(updatedPaths);
-    
     setDraggedItem(null);
     setDragOverGroup(null);
     setDragOverIndex(null);
   };
 
-  // 拖拽分组到指定分组之前
-
   const handleDragEnd = () => {
-    // 延迟清除状态，确保拖拽事件完全结束
     setTimeout(() => {
       setDraggedItem(null);
       setDraggedGroup(null);
       setDragOverGroup(null);
       setDragOverIndex(null);
-      setIsDragging(false); // 清除拖拽标记
+      setIsDragging(false);
       draggedGroupRef.current = null;
       dragOverGroupRef.current = null;
     }, 100);
   };
 
-  // 类型选择按钮组件
   const TypeSelector = ({ value, onChange }: { value: PathType; onChange: (t: PathType) => void }) => (
     <div className="flex gap-2 flex-wrap">
       {(['local', 'network', 'web', 'app'] as PathType[]).map(t => (
@@ -1273,7 +1127,6 @@ const PathManager: React.FC = () => {
     <div className="h-full flex flex-col overflow-hidden bg-[#0a0a0a]">
       {/* 顶部工具栏 */}
       <div className="flex items-center justify-between p-6 border-b border-[#1a1a1a] shrink-0">
-        {/* 排序切换按钮和标签选择 */}
         <div className="flex items-center gap-2">
           <button
             onClick={() => setSortMode(sortMode === 'group' ? 'tag' : 'group')}
@@ -1293,7 +1146,6 @@ const PathManager: React.FC = () => {
             )}
           </button>
           
-          {/* 标签选择器（仅在按标签排序模式下显示） */}
           {sortMode === 'tag' && allTags.length > 0 && (
             <div className="flex items-center gap-2 flex-wrap">
               {allTags.map(tag => {
@@ -1322,7 +1174,6 @@ const PathManager: React.FC = () => {
         </div>
         
         <div className="flex items-center gap-2">
-          {/* 列数设置按钮 */}
           <div className="relative">
             <button
               onClick={() => setShowColumnsMenu(!showColumnsMenu)}
@@ -1340,7 +1191,6 @@ const PathManager: React.FC = () => {
               <span className="text-sm">{columnsPerRow}列</span>
             </button>
             
-            {/* 列数选择菜单 */}
             {showColumnsMenu && (
               <>
                 <div 
@@ -1393,33 +1243,24 @@ const PathManager: React.FC = () => {
         </div>
       </div>
 
-      {/* 拖拽区域 */}
       <div
         ref={scrollContainerRef}
         onDragEnter={handleDragEnter}
         onDragLeave={handleDragLeave}
         onDragOver={(e) => {
-          // 检查是否是分组拖拽
           const types = Array.from(e.dataTransfer.types);
           const isGroupDrag = draggedGroupRef.current || types.includes('application/x-group') || types.includes('text/plain');
           if (isGroupDrag) {
-            // 分组拖拽，不阻止默认行为，让全局监听器处理
-            // 但也不调用 handleDragOverCreatePath
             return;
           }
-          // 非分组拖拽，处理文件拖拽创建路径
           handleDragOverCreatePath(e);
         }}
         onDrop={(e) => {
-          // 检查是否是分组拖拽
           const types = Array.from(e.dataTransfer.types);
           const isGroupDrag = draggedGroupRef.current || types.includes('application/x-group');
           if (isGroupDrag) {
-            // 分组拖拽，不阻止默认行为，让全局监听器处理
-            // 但也不调用 handleDropCreatePath
             return;
           }
-          // 非分组拖拽，处理文件拖拽创建路径
           handleDropCreatePath(e);
         }}
         className={[
@@ -1441,31 +1282,23 @@ const PathManager: React.FC = () => {
           <div 
             className="space-y-4"
             onDragOver={(e) => {
-              // 检查是否是分组拖拽
               const types = Array.from(e.dataTransfer.types);
               const isGroupDrag = draggedGroup || types.includes('application/x-group');
               
               if (isGroupDrag && draggedGroup) {
-                // 分组拖拽：允许事件传播到子元素，但设置 dropEffect
                 e.preventDefault();
-                // 不调用 stopPropagation，让事件传播到分组容器
                 e.dataTransfer.dropEffect = 'move';
-                console.log('[PathManager] 外层容器 onDragOver: 分组拖拽', draggedGroup);
               }
-              // 如果不是分组拖拽，不处理，让其他处理器处理
             }}
           >
             {(sortMode === 'group' ? groupOrder : Object.keys(groupedPaths)).map((groupName, groupIndex) => {
               if (!groupedPaths[groupName]) return null;
               
-              // 按标签排序时，判断是否需要显示分割线
-              // 检查是否是选中标签的分组（支持单个标签和多个标签的组合）
               const selectedGroupName = selectedTags.length > 0 
                 ? (selectedTags.length === 1 
                     ? `标签: ${selectedTags[0]}`
                     : `标签: ${selectedTags.join(', ')}`)
                 : '';
-              const isSelectedTag = sortMode === 'tag' && selectedTags.length > 0 && groupName === selectedGroupName;
               const groupKeys = Object.keys(groupedPaths);
               const firstNonSelectedIndex = groupKeys.findIndex(key => key !== selectedGroupName);
               const isDividerNeeded = sortMode === 'tag' && 
@@ -1473,17 +1306,14 @@ const PathManager: React.FC = () => {
                 firstNonSelectedIndex > 0 &&
                 selectedTags.length > 0;
               
-              // 计算插入点位置
               const showInsertBefore = draggedGroup && draggedGroup !== groupName && dragOverGroup === groupName;
               
               return (
                 <React.Fragment key={groupName}>
-                  {/* 分割线 - 在按标签排序时，选中标签和其他标签之间 */}
                   {isDividerNeeded && (
                     <div className="my-4 border-t border-[#2a2a2a]" />
                   )}
                   
-                  {/* 插入点 - 在分组之前 */}
                   {showInsertBefore && (
                     <div
                       className="h-1 bg-blue-500 rounded-full mx-2 my-1"
@@ -1505,12 +1335,10 @@ const PathManager: React.FC = () => {
                     />
                   )}
                   
-                  {/* 分组容器 - 只处理路径项拖拽，分组拖拽由全局监听器处理 */}
                   <div 
                     className="space-y-2"
                     data-group-name={groupName}
                   >
-                    {/* 分组标题 - 只负责启动拖拽 */}
                     <div 
                       draggable={true}
                       data-drag-group={groupName}
@@ -1518,19 +1346,9 @@ const PathManager: React.FC = () => {
                         handleDragStartGroup(groupName, e);
                       }}
                       onDragEnd={(e) => {
-                        console.log('[PathManager] 拖拽结束', {
-                          groupName,
-                          draggedGroup: draggedGroupRef.current,
-                          dataTransfer: {
-                            types: Array.from(e.dataTransfer.types),
-                            effectAllowed: e.dataTransfer.effectAllowed,
-                            dropEffect: e.dataTransfer.dropEffect
-                          }
-                        });
                         handleDragEnd();
                       }}
                     onClick={(e) => {
-                      // 如果正在拖拽，不触发折叠/展开
                       if (isDragging || draggedGroup) {
                         e.preventDefault();
                         e.stopPropagation();
@@ -1562,7 +1380,6 @@ const PathManager: React.FC = () => {
                     </span>
                   </div>
 
-                  {/* 分组内容 */}
                   {!collapsedGroups.has(groupName) && (
                     <div 
                       className={['ml-2', columnsPerRow === 1 ? 'space-y-1.5' : 'grid gap-3'].filter(Boolean).join(' ')}
@@ -1592,15 +1409,13 @@ const PathManager: React.FC = () => {
                             e.stopPropagation();
                             handleDrop(groupName, index, e);
                           }}
-                          onDragEnd={(e) => handleDragEnd(e)}
+                          onDragEnd={(e) => handleDragEnd()}
                           onClick={(e) => {
-                            // 如果正在拖拽，不触发跳转
                             if (isDragging || draggedItem) {
                               e.preventDefault();
                               e.stopPropagation();
                               return;
                             }
-                            // 直接执行跳转
                             handleJump(item);
                           }}
                           className={[
@@ -1612,9 +1427,7 @@ const PathManager: React.FC = () => {
                             dragOverGroup === groupName && dragOverIndex === index ? 'border-blue-500' : '',
                             columnsPerRow > 1 ? 'min-w-0' : ''
                           ].filter(Boolean).join(' ')}
-                          style={columnsPerRow > 1 ? {} : undefined}
                         >
-                          {/* 复制成功反馈 */}
                           {copiedId === item.id && (
                             <div className={'absolute inset-0 rounded-lg ' + OPACITY_CLASSES.bgGreen50090 + ' flex items-center justify-center text-white text-sm font-medium animate-fade-in z-20'}>
                               <Check size={16} className="mr-2" />
@@ -1622,7 +1435,6 @@ const PathManager: React.FC = () => {
                             </div>
                           )}
 
-                          {/* 图标和收藏按钮 */}
                           <div className="flex flex-col items-center gap-1 shrink-0">
                             <div className="
                               p-2 rounded-lg
@@ -1631,7 +1443,6 @@ const PathManager: React.FC = () => {
                             ">
                               {getIcon(item)}
                             </div>
-                            {/* 收藏按钮 - 放在图标下面 */}
                             <button 
                               onClick={(e) => {
                                 e.stopPropagation();
@@ -1650,9 +1461,7 @@ const PathManager: React.FC = () => {
                             </button>
                           </div>
 
-                          {/* 内容 */}
                           <div className={['flex-1 min-w-0', columnsPerRow > 1 ? 'overflow-hidden' : ''].filter(Boolean).join(' ')}>
-                            {/* 标题 - 优先显示完整内容，可以换行 */}
                             <h3 className="
                               text-[14px] font-medium text-white
                               group-hover:text-blue-400
@@ -1660,7 +1469,6 @@ const PathManager: React.FC = () => {
                             " title={item.name}>
                               {item.name}
                             </h3>
-                            {/* 标签显示 - 允许换行，显示完整标签 */}
                             {item.tags && item.tags.length > 0 && (
                               <div className="flex items-center gap-1.5 flex-wrap mt-2">
                                 {item.tags.map((tag, tagIndex) => {
@@ -1681,7 +1489,6 @@ const PathManager: React.FC = () => {
                             )}
                           </div>
 
-                          {/* 操作按钮 - 移到最右侧 */}
                           <div className="flex items-center gap-0.5 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
                               <button 
                                 onClick={(e) => {
@@ -1724,7 +1531,6 @@ const PathManager: React.FC = () => {
                   )}
                 </div>
                 
-                {/* 插入点 - 在分组之后（最后一个分组） */}
                 {groupIndex === groupOrder.length - 1 && draggedGroup && draggedGroup !== groupName && !dragOverGroup && (
                   <div
                     className="h-1 bg-blue-500 rounded-full mx-2 my-1"
@@ -1738,7 +1544,6 @@ const PathManager: React.FC = () => {
                       e.stopPropagation();
                       const draggedGroupName = e.dataTransfer.getData('text/plain') || draggedGroup;
                       if (draggedGroupName && draggedGroupName !== groupName) {
-                        // 插入到最后一个分组之后
                         const allGroups = Array.from(new Set([...groupOrder, ...Object.keys(groupedPaths)]));
                         const newOrder = [...allGroups];
                         const draggedIndex = newOrder.indexOf(draggedGroupName);
