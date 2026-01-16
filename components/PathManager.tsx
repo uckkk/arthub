@@ -32,7 +32,7 @@ const isTauriEnvironment = (): boolean => {
 // 从文件路径提取应用名称
 const extractAppName = (filePath: string): string => {
   // FIX: 使用 new RegExp 避免 regex 字面量在 TSX 中引起的解析错误
-  const separatorRegex = new RegExp('[' + B_L + B_L + B_L + S_L + ']'); 
+  const separatorRegex = new RegExp('[\\\\/]'); 
   const fileName = filePath.split(separatorRegex).pop() || '';
   // 移除扩展名
   const extRegex = new RegExp('\\.(lnk|exe|app)$', 'i');
@@ -573,7 +573,8 @@ const PathManager: React.FC = () => {
     let finalPath = draggedPath.path.trim();
     
     if (draggedPath.type === 'network' && !finalPath.startsWith('\\\\')) {
-      finalPath = '\\\\' + finalPath.replace(/^\\+/, '');
+      const leadingBackslashRegex = new RegExp('^' + B_L + '+');
+      finalPath = '\\\\' + finalPath.replace(leadingBackslashRegex, '');
     }
     
     const item: PathItem = {
@@ -708,7 +709,8 @@ const PathManager: React.FC = () => {
     
     let finalPath = newPath.trim();
     if (newType === 'network' && !finalPath.startsWith('\\\\')) {
-      finalPath = '\\\\' + finalPath.replace(/^\\+/, '');
+      const leadingBackslashRegex = new RegExp('^' + B_L + '+');
+      finalPath = '\\\\' + finalPath.replace(leadingBackslashRegex, '');
     }
     
     const item: PathItem = {
@@ -763,7 +765,8 @@ const PathManager: React.FC = () => {
     const groupName = editGroup.trim() || '默认分组';
     let finalPath = editPath.trim();
     if (editType === 'network' && !finalPath.startsWith('\\\\')) {
-      finalPath = '\\\\' + finalPath.replace(/^\\+/, '');
+      const leadingBackslashRegex = new RegExp('^' + B_L + '+');
+      finalPath = '\\\\' + finalPath.replace(leadingBackslashRegex, '');
     }
     
     const updatedItem: PathItem = {
