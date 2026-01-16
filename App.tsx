@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, lazy, Suspense } from 'react';
 import { 
   Type, Menu, User, Settings, 
-  Code, HardDrive, Home
+  Code, HardDrive, Home, CheckSquare
 } from 'lucide-react';
 import { getStorageConfig, saveStorageConfig } from './services/fileStorageService';
 import { getUserInfo, clearUserInfo, UserInfo } from './services/userAuthService';
@@ -24,6 +24,7 @@ const UserAuthModal = lazy(() => import('./components/UserAuthModal'));
 const AITool = lazy(() => import('./components/AITool'));
 const UpdateNotification = lazy(() => import('./components/UpdateNotification'));
 const HomePage = lazy(() => import('./components/HomePage'));
+const QuadrantTodo = lazy(() => import('./components/QuadrantTodo'));
 
 // 预加载所有组件的函数
 const preloadComponents = () => {
@@ -104,6 +105,7 @@ const createMenuGroups = (): MenuGroup[] => [
       { id: 'api', label: 'AI盒子', icon: Code },
       { id: 'naming', label: '资产命名', icon: Type },
       { id: 'paths', label: '常用入口', icon: Menu },
+      { id: 'todo', label: '四象限TODO', icon: CheckSquare },
     ],
   },
 ];
@@ -289,6 +291,12 @@ const App: React.FC = () => {
         return (
           <Suspense fallback={<LoadingPlaceholder />}>
             <PathManager />
+          </Suspense>
+        );
+      case 'todo':
+        return (
+          <Suspense fallback={<LoadingPlaceholder />}>
+            <QuadrantTodo />
           </Suspense>
         );
       default:
