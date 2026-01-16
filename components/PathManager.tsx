@@ -17,11 +17,9 @@ import { useMiddleMouseScroll } from '../utils/useMiddleMouseScroll';
 import { openUrl } from '../services/windowService';
 import { TagEditor } from './common';
 
-// 定义斜杠常量，避免在字符串和正则中使用字面量斜杠
 const S_L = '/';
 const B_L = '\\';
 
-// 检查是否在 Tauri 环境中
 const isTauriEnvironment = (): boolean => {
   if (typeof window === 'undefined') return false;
   return !!(window as any).__TAURI__ || 
@@ -29,19 +27,14 @@ const isTauriEnvironment = (): boolean => {
          !!(window as any).__TAURI_METADATA__;
 };
 
-// 从文件路径提取应用名称
 const extractAppName = (filePath: string): string => {
-  // FIX: 使用 new RegExp 避免 regex 字面量在 TSX 中引起的解析错误
-  const separatorRegex = new RegExp('[\\\\/]'); 
+  const separatorRegex = new RegExp('[' + B_L + B_L + B_L + S_L + ']');
   const fileName = filePath.split(separatorRegex).pop() || '';
-  // 移除扩展名
   const extRegex = new RegExp('\\.(lnk|exe|app)$', 'i');
   const nameWithoutExt = fileName.replace(extRegex, '');
   return nameWithoutExt || '未知应用';
 };
 
-// 标签颜色配置
-// 定义常用的 opacity 类名常量，使用字符串拼接避免斜杠解析问题
 const OPACITY_CLASSES = {
   bgBlack70: 'bg-black' + S_L + '70',
   bgGreen50090: 'bg-green-500' + S_L + '90',
@@ -55,7 +48,6 @@ const OPACITY_CLASSES = {
   hoverBgBlue50030: 'hover:bg-blue-500' + S_L + '30',
 } as const;
 
-// 标签颜色配置
 const TAG_COLORS = [
   { bg: 'bg-blue-500' + S_L + '20', text: 'text-blue-400', border: 'border-blue-500' + S_L + '30' },
   { bg: 'bg-green-500' + S_L + '20', text: 'text-green-400', border: 'border-green-500' + S_L + '30' },
@@ -69,7 +61,6 @@ const TAG_COLORS = [
   { bg: 'bg-teal-500' + S_L + '20', text: 'text-teal-400', border: 'border-teal-500' + S_L + '30' },
 ];
 
-// 根据标签名称获取颜色
 const getTagColor = (tagName: string) => {
   let hash = 0;
   for (let i = 0; i < tagName.length; i++) {
@@ -87,23 +78,19 @@ const PathManager: React.FC = () => {
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
   
-  // 快速路径状态
   const [quickPaths, setQuickPaths] = useState<PathItem[]>([]);
   const [justFavoritedId, setJustFavoritedId] = useState<string | null>(null);
   
-  // 拖拽创建路径状态
   const [isDraggingOver, setIsDraggingOver] = useState(false);
   const [showDragModal, setShowDragModal] = useState(false);
   const [draggedPath, setDraggedPath] = useState<{ path: string; name?: string; type?: PathType } | null>(null);
   
-  // 编辑模态框状态
   const [editingItem, setEditingItem] = useState<PathItem | null>(null);
   const [editName, setEditName] = useState('');
   const [editPath, setEditPath] = useState('');
   const [editType, setEditType] = useState<PathType>('local');
   const [editGroup, setEditGroup] = useState('');
   
-  // 拖拽状态
   const [draggedItem, setDraggedItem] = useState<PathItem | null>(null);
   const [draggedGroup, setDraggedGroup] = useState<string | null>(null);
   const [dragOverGroup, setDragOverGroup] = useState<string | null>(null);
@@ -125,17 +112,14 @@ const PathManager: React.FC = () => {
     startGroup: null
   });
 
-  // 表单状态
   const [newName, setNewName] = useState('');
   const [newPath, setNewPath] = useState('');
   const [newType, setNewType] = useState<PathType>('local');
   const [newGroup, setNewGroup] = useState('');
   const [newTags, setNewTags] = useState<string[]>([]);
   
-  // 分组顺序状态
   const [groupOrder, setGroupOrder] = useState<string[]>([]);
   
-  // 列数设置状态
   const [columnsPerRow, setColumnsPerRow] = useState<number>(() => {
     const saved = localStorage.getItem('arthub_path_columns');
     return saved ? parseInt(saved, 10) : 1;
@@ -434,7 +418,6 @@ const PathManager: React.FC = () => {
           return;
         }
         
-        // FIX: 使用 new RegExp 替代字面量
         const driveRegex = new RegExp('^[A-Za-z]:');
         if (filePath && (driveRegex.test(filePath) || filePath.startsWith('/'))) {
           await handleDroppedPath(filePath, 'local');
@@ -448,14 +431,12 @@ const PathManager: React.FC = () => {
       
       if (textUriList) {
         if (textUriList.startsWith('file://')) {
-          // FIX: 使用 new RegExp 构造，避免字面量
           const fileProtocolRegex = new RegExp('^file:' + S_L + S_L + S_L + '?');
           let filePath = textUriList.replace(fileProtocolRegex, '');
           
           try {
             filePath = decodeURIComponent(filePath);
           } catch {
-            // ignore
           }
           filePath = filePath.replaceAll(S_L, B_L);
           
@@ -494,7 +475,6 @@ const PathManager: React.FC = () => {
         }
       }
       
-      // 处理 text/plain 数据
       if (text) {
         const lowerText = text.toLowerCase();
         if (lowerText.endsWith('.lnk') || lowerText.endsWith('.exe')) {
@@ -503,7 +483,6 @@ const PathManager: React.FC = () => {
           }
         }
 
-        // FIX: 最关键的修复 - 将包含斜杠的正则字面量改为 new RegExp
         const winPathRegex = new RegExp('^[A-Za-z]:[' + B_L + B_L + B_L + S_L + ']');
         const winDriveRegex = new RegExp('^[A-Za-z]:$');
 
@@ -512,7 +491,6 @@ const PathManager: React.FC = () => {
         } else if (text.startsWith('\\\\') || text.startsWith('//')) {
           await handleDroppedPath(text, 'network');
         } else if (winPathRegex.test(text) || text.startsWith('/') || winDriveRegex.test(text)) {
-          // 命中了本地路径规则
           await handleDroppedPath(text, 'local');
         } else if (text.includes('\\') || text.includes('/')) {
           await handleDroppedPath(text, 'local');
@@ -1475,10 +1453,10 @@ const PathManager: React.FC = () => {
                     </div>
                   )}
                 </div>
-                
-                {groupIndex === groupOrder.length - 1 && draggedGroup && draggedGroup !== groupName && !dragOverGroup && (
-                  <div
-                    className="h-1 bg-blue-500 rounded-full mx-2 my-1"
+                  
+                  {groupIndex === groupOrder.length - 1 && draggedGroup && draggedGroup !== groupName && !dragOverGroup && (
+                    <div
+                      className="h-1 bg-blue-500 rounded-full mx-2 my-1"
                     onDragOver={(e) => {
                       e.preventDefault();
                       e.stopPropagation();
@@ -1505,26 +1483,19 @@ const PathManager: React.FC = () => {
                   />
                 )}
               </React.Fragment>
-              );
-            })}
+            );
+          })}
           </div>
         )}
       </div>
 
-      {/* 添加模态框 */}
       {isModalOpen && (
         <div 
           className={'fixed inset-0 z-50 flex items-center justify-center ' + OPACITY_CLASSES.bgBlack70 + ' backdrop-blur-sm'}
           onClick={handleCloseAddModal}
         >
           <div 
-            className={[
-              'w-full max-w-md mx-4',
-              'bg-[#151515] border border-[#2a2a2a] rounded-xl',
-              'shadow-2xl',
-              OPACITY_CLASSES.shadowBlack50,
-              'animate-scale-in'
-            ].join(' ')}
+            className={'w-full max-w-md mx-4 bg-[#151515] border border-[#2a2a2a] rounded-xl shadow-2xl ' + OPACITY_CLASSES.shadowBlack50 + ' animate-scale-in'}
             onClick={(e) => e.stopPropagation()}
           >
             <div className="flex items-center justify-between px-6 py-4 border-b border-[#2a2a2a]">
@@ -1549,19 +1520,13 @@ const PathManager: React.FC = () => {
                   list="groups-list"
                   value={newGroup}
                   onChange={(e) => setNewGroup(e.target.value)}
-                  className={[
-                    'w-full px-4 py-2.5 rounded-lg',
-                    'bg-[#0f0f0f] border border-[#2a2a2a]',
-                    'text-white placeholder-[#666666]',
-                    'focus:outline-none focus:border-blue-500',
-                    'transition-colors'
-                  ].join(' ')}
+                  className="w-full px-4 py-2.5 rounded-lg bg-[#0f0f0f] border border-[#2a2a2a] text-white placeholder-[#666666] focus:outline-none focus:border-blue-500 transition-colors"
                   placeholder="例如：工作目录（留空则为默认分组）"
                 />
                 <datalist id="groups-list">
-                  {existingGroups.map((g, index) => (
-                    <option key={'group-' + index} value={String(g)} />
-                  ))}
+                  {existingGroups.map((g, i) => {
+                    return (<option key={i} value={g} />);
+                  })}
                 </datalist>
               </div>
 
@@ -1581,13 +1546,7 @@ const PathManager: React.FC = () => {
                 <input 
                   value={newName}
                   onChange={(e) => setNewName(e.target.value)}
-                  className={[
-                    'w-full px-4 py-2.5 rounded-lg',
-                    'bg-[#0f0f0f] border border-[#2a2a2a]',
-                    'text-white placeholder-[#666666]',
-                    'focus:outline-none focus:border-blue-500',
-                    'transition-colors'
-                  ].join(' ')}
+                  className="w-full px-4 py-2.5 rounded-lg bg-[#0f0f0f] border border-[#2a2a2a] text-white placeholder-[#666666] focus:outline-none focus:border-blue-500 transition-colors"
                   placeholder="例如：角色工作目录"
                 />
               </div>
@@ -1597,13 +1556,7 @@ const PathManager: React.FC = () => {
                 <input 
                   value={newPath}
                   onChange={(e) => setNewPath(e.target.value)}
-                  className={[
-                    'w-full px-4 py-2.5 rounded-lg font-mono',
-                    'bg-[#0f0f0f] border border-[#2a2a2a]',
-                    'text-white placeholder-[#666666]',
-                    'focus:outline-none focus:border-blue-500',
-                    'transition-colors'
-                  ].join(' ')}
+                  className="w-full px-4 py-2.5 rounded-lg font-mono bg-[#0f0f0f] border border-[#2a2a2a] text-white placeholder-[#666666] focus:outline-none focus:border-blue-500 transition-colors"
                   placeholder={newType === 'web' ? "https://..." : newType === 'network' ? "\\\\192.168.1.100\\Share" : newType === 'app' ? "C:\\Program Files\\App\\app.exe" : "D:\\Projects\\..."}
                 />
                 {newType === 'network' && (
@@ -1617,23 +1570,13 @@ const PathManager: React.FC = () => {
             <div className="flex justify-end gap-3 px-6 py-4 border-t border-[#2a2a2a]">
               <button 
                 onClick={handleCloseAddModal}
-                className={[
-                  'px-4 py-2.5 rounded-lg',
-                  'bg-[#1a1a1a] border border-[#2a2a2a]',
-                  'text-[#a0a0a0] hover:text-white hover:border-[#3a3a3a]',
-                  'transition-colors font-medium'
-                ].join(' ')}
+                className="px-4 py-2.5 rounded-lg bg-[#1a1a1a] border border-[#2a2a2a] text-[#a0a0a0] hover:text-white hover:border-[#3a3a3a] transition-colors font-medium"
               >
                 取消
               </button>
               <button 
                 onClick={handleAddPath}
-                className={[
-                  'flex items-center gap-2 px-4 py-2.5 rounded-lg',
-                  'bg-blue-600 hover:bg-blue-700',
-                  'text-white font-medium',
-                  'transition-colors'
-                ].join(' ')}
+                className="flex items-center gap-2 px-4 py-2.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-medium transition-colors"
               >
                 <Save size={16} />
                 保存
@@ -1643,20 +1586,13 @@ const PathManager: React.FC = () => {
         </div>
       )}
 
-      {/* 编辑模态框 */}
       {editingItem && (
         <div 
           className={'fixed inset-0 z-50 flex items-center justify-center ' + OPACITY_CLASSES.bgBlack70 + ' backdrop-blur-sm'}
           onClick={handleEditCancel}
         >
           <div 
-            className={[
-              'w-full max-w-md mx-4',
-              'bg-[#151515] border border-[#2a2a2a] rounded-xl',
-              'shadow-2xl',
-              OPACITY_CLASSES.shadowBlack50,
-              'animate-scale-in'
-            ].join(' ')}
+            className={'w-full max-w-md mx-4 bg-[#151515] border border-[#2a2a2a] rounded-xl shadow-2xl ' + OPACITY_CLASSES.shadowBlack50 + ' animate-scale-in'}
             onClick={(e) => e.stopPropagation()}
           >
             <div className="flex items-center justify-between px-6 py-4 border-b border-[#2a2a2a]">
@@ -1681,19 +1617,13 @@ const PathManager: React.FC = () => {
                   list="edit-groups-list"
                   value={editGroup}
                   onChange={(e) => setEditGroup(e.target.value)}
-                  className={[
-                    'w-full px-4 py-2.5 rounded-lg',
-                    'bg-[#0f0f0f] border border-[#2a2a2a]',
-                    'text-white placeholder-[#666666]',
-                    'focus:outline-none focus:border-blue-500',
-                    'transition-colors'
-                  ].join(' ')}
+                  className="w-full px-4 py-2.5 rounded-lg bg-[#0f0f0f] border border-[#2a2a2a] text-white placeholder-[#666666] focus:outline-none focus:border-blue-500 transition-colors"
                   placeholder="例如：工作目录（留空则为默认分组）"
                 />
                 <datalist id="edit-groups-list">
-                  {existingGroups.map((g, index) => (
-                    <option key={'edit-group-' + index} value={String(g)} />
-                  ))}
+                  {existingGroups.map((g, i) => {
+                    return (<option key={i} value={g} />);
+                  })}
                 </datalist>
               </div>
 
@@ -1713,13 +1643,7 @@ const PathManager: React.FC = () => {
                 <input 
                   value={editName}
                   onChange={(e) => setEditName(e.target.value)}
-                  className={[
-                    'w-full px-4 py-2.5 rounded-lg',
-                    'bg-[#0f0f0f] border border-[#2a2a2a]',
-                    'text-white placeholder-[#666666]',
-                    'focus:outline-none focus:border-blue-500',
-                    'transition-colors'
-                  ].join(' ')}
+                  className="w-full px-4 py-2.5 rounded-lg bg-[#0f0f0f] border border-[#2a2a2a] text-white placeholder-[#666666] focus:outline-none focus:border-blue-500 transition-colors"
                   placeholder="例如：角色工作目录"
                 />
               </div>
@@ -1729,13 +1653,7 @@ const PathManager: React.FC = () => {
                 <input 
                   value={editPath}
                   onChange={(e) => setEditPath(e.target.value)}
-                  className={[
-                    'w-full px-4 py-2.5 rounded-lg font-mono',
-                    'bg-[#0f0f0f] border border-[#2a2a2a]',
-                    'text-white placeholder-[#666666]',
-                    'focus:outline-none focus:border-blue-500',
-                    'transition-colors'
-                  ].join(' ')}
+                  className="w-full px-4 py-2.5 rounded-lg font-mono bg-[#0f0f0f] border border-[#2a2a2a] text-white placeholder-[#666666] focus:outline-none focus:border-blue-500 transition-colors"
                   placeholder={editType === 'web' ? "https://..." : editType === 'network' ? "\\\\192.168.1.100\\Share" : editType === 'app' ? "C:\\Program Files\\App\\app.exe" : "D:\\Projects\\..."}
                 />
                 {editType === 'network' && (
@@ -1749,23 +1667,13 @@ const PathManager: React.FC = () => {
             <div className="flex justify-end gap-3 px-6 py-4 border-t border-[#2a2a2a]">
               <button 
                 onClick={handleEditCancel}
-                className={[
-                  'px-4 py-2.5 rounded-lg',
-                  'bg-[#1a1a1a] border border-[#2a2a2a]',
-                  'text-[#a0a0a0] hover:text-white hover:border-[#3a3a3a]',
-                  'transition-colors font-medium'
-                ].join(' ')}
+                className="px-4 py-2.5 rounded-lg bg-[#1a1a1a] border border-[#2a2a2a] text-[#a0a0a0] hover:text-white hover:border-[#3a3a3a] transition-colors font-medium"
               >
                 取消
               </button>
               <button 
                 onClick={handleEditSave}
-                className={[
-                  'flex items-center gap-2 px-4 py-2.5 rounded-lg',
-                  'bg-blue-600 hover:bg-blue-700',
-                  'text-white font-medium',
-                  'transition-colors'
-                ].join(' ')}
+                className="flex items-center gap-2 px-4 py-2.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-medium transition-colors"
               >
                 <Save size={16} />
                 保存
@@ -1775,7 +1683,6 @@ const PathManager: React.FC = () => {
         </div>
       )}
 
-      {/* 拖拽创建路径模态框 */}
       {showDragModal && draggedPath && (
         <div 
           className={'fixed inset-0 z-50 flex items-center justify-center ' + OPACITY_CLASSES.bgBlack70 + ' backdrop-blur-sm'}
@@ -1785,13 +1692,7 @@ const PathManager: React.FC = () => {
           }}
         >
           <div 
-            className={[
-              'w-full max-w-md mx-4',
-              'bg-[#151515] border border-[#2a2a2a] rounded-xl',
-              'shadow-2xl',
-              OPACITY_CLASSES.shadowBlack50,
-              'animate-scale-in'
-            ].join(' ')}
+            className={'w-full max-w-md mx-4 bg-[#151515] border border-[#2a2a2a] rounded-xl shadow-2xl ' + OPACITY_CLASSES.shadowBlack50 + ' animate-scale-in'}
             onClick={(e) => e.stopPropagation()}
           >
             <div className="flex items-center justify-between px-6 py-4 border-b border-[#2a2a2a]">
@@ -1825,18 +1726,12 @@ const PathManager: React.FC = () => {
                   list="drag-groups-list"
                   value={newGroup}
                   onChange={(e) => setNewGroup(e.target.value)}
-                  className={[
-                    'w-full px-4 py-2.5 rounded-lg',
-                    'bg-[#0f0f0f] border border-[#2a2a2a]',
-                    'text-white placeholder-[#666666]',
-                    'focus:outline-none focus:border-blue-500',
-                    'transition-colors'
-                  ].join(' ')}
+                  className="w-full px-4 py-2.5 rounded-lg bg-[#0f0f0f] border border-[#2a2a2a] text-white placeholder-[#666666] focus:outline-none focus:border-blue-500 transition-colors"
                   placeholder="例如：工作目录（留空则为默认分组）"
                 />
                 <datalist id="drag-groups-list">
-                  {existingGroups.map((g, index) => {
-                    return <option key={'dg-' + index} value={String(g)} />;
+                  {existingGroups.map((g, i) => {
+                    return (<option key={i} value={g} />);
                   })}
                 </datalist>
               </div>
@@ -1848,23 +1743,13 @@ const PathManager: React.FC = () => {
                   setShowDragModal(false);
                   setDraggedPath(null);
                 }}
-                className={[
-                  'px-4 py-2.5 rounded-lg',
-                  'bg-[#1a1a1a] border border-[#2a2a2a]',
-                  'text-[#a0a0a0] hover:text-white hover:border-[#3a3a3a]',
-                  'transition-colors font-medium'
-                ].join(' ')}
+                className="px-4 py-2.5 rounded-lg bg-[#1a1a1a] border border-[#2a2a2a] text-[#a0a0a0] hover:text-white hover:border-[#3a3a3a] transition-colors font-medium"
               >
                 取消
               </button>
               <button 
                 onClick={handleConfirmDragPath}
-                className={[
-                  'flex items-center gap-2 px-4 py-2.5 rounded-lg',
-                  'bg-blue-600 hover:bg-blue-700',
-                  'text-white font-medium',
-                  'transition-colors'
-                ].join(' ')}
+                className="flex items-center gap-2 px-4 py-2.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-medium transition-colors"
               >
                 <Save size={16} />
                 添加
