@@ -17,6 +17,10 @@ import { useMiddleMouseScroll } from '../utils/useMiddleMouseScroll';
 import { openUrl } from '../services/windowService';
 import { TagEditor } from './common';
 
+// 定义斜杠常量，避免在字符串和正则中使用字面量斜杠
+const S_L = '/';
+const B_L = '\\';
+
 // 检查是否在 Tauri 环境中
 const isTauriEnvironment = (): boolean => {
   if (typeof window === 'undefined') return false;
@@ -28,40 +32,41 @@ const isTauriEnvironment = (): boolean => {
 // 从文件路径提取应用名称
 const extractAppName = (filePath: string): string => {
   // FIX: 使用 new RegExp 避免 regex 字面量在 TSX 中引起的解析错误
-  const separatorRegex = new RegExp('[\\\\/]'); 
+  const separatorRegex = new RegExp('[' + B_L + B_L + B_L + S_L + ']'); 
   const fileName = filePath.split(separatorRegex).pop() || '';
   // 移除扩展名
-  const nameWithoutExt = fileName.replace(/\.(lnk|exe|app)$/i, '');
+  const extRegex = new RegExp('\\.(lnk|exe|app)$', 'i');
+  const nameWithoutExt = fileName.replace(extRegex, '');
   return nameWithoutExt || '未知应用';
 };
 
 // 标签颜色配置
 // 定义常用的 opacity 类名常量，使用字符串拼接避免斜杠解析问题
 const OPACITY_CLASSES = {
-  bgBlack70: 'bg-black' + '/70',
-  bgGreen50090: 'bg-green-500' + '/90',
-  bgRed50010: 'hover:bg-red-500' + '/10',
-  shadowBlack50: 'shadow-black' + '/50',
-  bgBlue50010: 'bg-blue-500' + '/10',
-  borderWhite30: 'border-white' + '/30',
-  bgWhite5: 'bg-white' + '/5',
-  bgBlue50020: 'bg-blue-500' + '/20',
-  borderBlue50050: 'border-blue-500' + '/50',
-  hoverBgBlue50030: 'hover:bg-blue-500' + '/30',
+  bgBlack70: 'bg-black' + S_L + '70',
+  bgGreen50090: 'bg-green-500' + S_L + '90',
+  bgRed50010: 'hover:bg-red-500' + S_L + '10',
+  shadowBlack50: 'shadow-black' + S_L + '50',
+  bgBlue50010: 'bg-blue-500' + S_L + '10',
+  borderWhite30: 'border-white' + S_L + '30',
+  bgWhite5: 'bg-white' + S_L + '5',
+  bgBlue50020: 'bg-blue-500' + S_L + '20',
+  borderBlue50050: 'border-blue-500' + S_L + '50',
+  hoverBgBlue50030: 'hover:bg-blue-500' + S_L + '30',
 } as const;
 
 // 标签颜色配置
 const TAG_COLORS = [
-  { bg: 'bg-blue-500' + '/20', text: 'text-blue-400', border: 'border-blue-500' + '/30' },
-  { bg: 'bg-green-500' + '/20', text: 'text-green-400', border: 'border-green-500' + '/30' },
-  { bg: 'bg-purple-500' + '/20', text: 'text-purple-400', border: 'border-purple-500' + '/30' },
-  { bg: 'bg-orange-500' + '/20', text: 'text-orange-400', border: 'border-orange-500' + '/30' },
-  { bg: 'bg-pink-500' + '/20', text: 'text-pink-400', border: 'border-pink-500' + '/30' },
-  { bg: 'bg-cyan-500' + '/20', text: 'text-cyan-400', border: 'border-cyan-500' + '/30' },
-  { bg: 'bg-yellow-500' + '/20', text: 'text-yellow-400', border: 'border-yellow-500' + '/30' },
-  { bg: 'bg-red-500' + '/20', text: 'text-red-400', border: 'border-red-500' + '/30' },
-  { bg: 'bg-indigo-500' + '/20', text: 'text-indigo-400', border: 'border-indigo-500' + '/30' },
-  { bg: 'bg-teal-500' + '/20', text: 'text-teal-400', border: 'border-teal-500' + '/30' },
+  { bg: 'bg-blue-500' + S_L + '20', text: 'text-blue-400', border: 'border-blue-500' + S_L + '30' },
+  { bg: 'bg-green-500' + S_L + '20', text: 'text-green-400', border: 'border-green-500' + S_L + '30' },
+  { bg: 'bg-purple-500' + S_L + '20', text: 'text-purple-400', border: 'border-purple-500' + S_L + '30' },
+  { bg: 'bg-orange-500' + S_L + '20', text: 'text-orange-400', border: 'border-orange-500' + S_L + '30' },
+  { bg: 'bg-pink-500' + S_L + '20', text: 'text-pink-400', border: 'border-pink-500' + S_L + '30' },
+  { bg: 'bg-cyan-500' + S_L + '20', text: 'text-cyan-400', border: 'border-cyan-500' + S_L + '30' },
+  { bg: 'bg-yellow-500' + S_L + '20', text: 'text-yellow-400', border: 'border-yellow-500' + S_L + '30' },
+  { bg: 'bg-red-500' + S_L + '20', text: 'text-red-400', border: 'border-red-500' + S_L + '30' },
+  { bg: 'bg-indigo-500' + S_L + '20', text: 'text-indigo-400', border: 'border-indigo-500' + S_L + '30' },
+  { bg: 'bg-teal-500' + S_L + '20', text: 'text-teal-400', border: 'border-teal-500' + S_L + '30' },
 ];
 
 // 根据标签名称获取颜色
@@ -391,7 +396,7 @@ const PathManager: React.FC = () => {
       const checkAndHandleAppFile = async (filePath: string): Promise<boolean> => {
         if (!filePath) return false;
         
-        let cleanPath = filePath.trim().replaceAll('/', '\\');
+        let cleanPath = filePath.trim().replaceAll(S_L, B_L);
         
         if (isAppFile(cleanPath)) {
           const appInfo = await handleDroppedAppFile(cleanPath);
@@ -444,14 +449,15 @@ const PathManager: React.FC = () => {
       if (textUriList) {
         if (textUriList.startsWith('file://')) {
           // FIX: 使用 new RegExp 构造，避免字面量
-          let filePath = textUriList.replace(new RegExp('^file:///?'), '');
+          const fileProtocolRegex = new RegExp('^file:' + S_L + S_L + S_L + '?');
+          let filePath = textUriList.replace(fileProtocolRegex, '');
           
           try {
             filePath = decodeURIComponent(filePath);
           } catch {
             // ignore
           }
-          filePath = filePath.replaceAll('/', '\\');
+          filePath = filePath.replaceAll(S_L, B_L);
           
           const lowerPath = filePath.toLowerCase();
           if (lowerPath.endsWith('.lnk') || lowerPath.endsWith('.exe')) {
@@ -497,10 +503,9 @@ const PathManager: React.FC = () => {
           }
         }
 
-        // FIX: 最关键的修复 - 将包含 [\/] 的正则字面量改为 new RegExp
-        const winPathRegex = new RegExp('^[A-Za-z]:[\\\\/]');
+        // FIX: 最关键的修复 - 将包含斜杠的正则字面量改为 new RegExp
+        const winPathRegex = new RegExp('^[A-Za-z]:[' + B_L + B_L + B_L + S_L + ']');
         const winDriveRegex = new RegExp('^[A-Za-z]:$');
-        const unixPathRegex = new RegExp('^[A-Za-z]:[\\\\/]');
 
         if (text.startsWith('http://') || text.startsWith('https://')) {
           await handleDroppedPath(text, 'web');
@@ -553,7 +558,7 @@ const PathManager: React.FC = () => {
         }
       }
     } else {
-      const parts = path.replaceAll('\\', '/').split('/').filter(p => p);
+      const parts = path.replaceAll(B_L, S_L).split(S_L).filter(p => p);
       name = parts[parts.length - 1] || path;
     }
 
@@ -1514,7 +1519,7 @@ const PathManager: React.FC = () => {
               'w-full max-w-md mx-4',
               'bg-[#151515] border border-[#2a2a2a] rounded-xl',
               'shadow-2xl',
-              'shadow-black/50',
+              OPACITY_CLASSES.shadowBlack50,
               'animate-scale-in'
             ].join(' ')}
             onClick={(e) => e.stopPropagation()}
@@ -1644,7 +1649,7 @@ const PathManager: React.FC = () => {
               'w-full max-w-md mx-4',
               'bg-[#151515] border border-[#2a2a2a] rounded-xl',
               'shadow-2xl',
-              'shadow-black/50',
+              OPACITY_CLASSES.shadowBlack50,
               'animate-scale-in'
             ].join(' ')}
             onClick={(e) => e.stopPropagation()}
@@ -1777,7 +1782,7 @@ const PathManager: React.FC = () => {
               'w-full max-w-md mx-4',
               'bg-[#151515] border border-[#2a2a2a] rounded-xl',
               'shadow-2xl',
-              'shadow-black/50',
+              OPACITY_CLASSES.shadowBlack50,
               'animate-scale-in'
             ].join(' ')}
             onClick={(e) => e.stopPropagation()}
