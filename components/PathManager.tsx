@@ -36,18 +36,18 @@ const extractAppName = (filePath: string): string => {
 
 // 标签颜色配置（不同颜色的组合）
 // 标签颜色配置
-// 定义常用的 opacity 类名常量，避免在 JSX 中直接使用斜杠
+// 定义常用的 opacity 类名常量，使用字符串拼接避免斜杠解析问题
 const OPACITY_CLASSES = {
-  bgBlack70: 'bg-black/70',
-  bgGreen50090: 'bg-green-500/90',
-  bgRed50010: 'hover:bg-red-500/10',
-  shadowBlack50: 'shadow-black/50',
-  bgBlue50010: 'bg-blue-500/10',
-  borderWhite30: 'border-white/30',
-  bgWhite5: 'bg-white/5',
-  bgBlue50020: 'bg-blue-500/20',
-  borderBlue50050: 'border-blue-500/50',
-  hoverBgBlue50030: 'hover:bg-blue-500/30',
+  bgBlack70: 'bg-black' + '/70',
+  bgGreen50090: 'bg-green-500' + '/90',
+  bgRed50010: 'hover:bg-red-500' + '/10',
+  shadowBlack50: 'shadow-black' + '/50',
+  bgBlue50010: 'bg-blue-500' + '/10',
+  borderWhite30: 'border-white' + '/30',
+  bgWhite5: 'bg-white' + '/5',
+  bgBlue50020: 'bg-blue-500' + '/20',
+  borderBlue50050: 'border-blue-500' + '/50',
+  hoverBgBlue50030: 'hover:bg-blue-500' + '/30',
 } as const;
 
 // 标签颜色配置 - 使用字符串拼接避免斜杠解析问题
