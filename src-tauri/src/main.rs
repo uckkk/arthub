@@ -1139,9 +1139,9 @@ fn get_app_icon(path: String) -> Result<String, String> {
     }
     
     let lower_path = path.to_lowercase();
-    let is_exe = lower_path.endsWith(".exe");
-    let is_lnk = lower_path.endsWith(".lnk");
-    let is_bat = lower_path.endsWith(".bat");
+    let is_exe = lower_path.ends_with(".exe");
+    let is_lnk = lower_path.ends_with(".lnk");
+    let is_bat = lower_path.ends_with(".bat");
     
     if !is_exe && !is_lnk && !is_bat {
         return Err("不支持的文件类型".to_string());
