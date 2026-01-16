@@ -88,27 +88,48 @@ const getCurrentPlatform = (): 'windows' | 'macos' | 'linux' | 'unknown' => {
  */
 export const checkForUpdates = async (): Promise<UpdateCheckResult> => {
   try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 5000);
+    
     const response = await fetch(
       `https://api.github.com/repos/${GITHUB_REPO}/releases/latest`,
       {
         headers: {
           'Accept': 'application/vnd.github.v3+json',
         },
+        signal: controller.signal,
       }
-    );
+    ).catch(() => null);
+    
+    clearTimeout(timeoutId);
+
+    if (!response) {
+      return {
+        hasUpdate: false,
+        currentVersion: CURRENT_VERSION,
+        latestVersion: null,
+        releaseInfo: null,
+        error: null,
+      };
+    }
 
     if (!response.ok) {
       if (response.status === 404) {
-        // 404 是正常情况（没有发布版本），静默处理，不记录错误
         return {
           hasUpdate: false,
           currentVersion: CURRENT_VERSION,
           latestVersion: null,
           releaseInfo: null,
-          error: null, // 改为 null，表示没有错误
+          error: null,
         };
       }
-      throw new Error(`GitHub API 错误: ${response.status}`);
+      return {
+        hasUpdate: false,
+        currentVersion: CURRENT_VERSION,
+        latestVersion: null,
+        releaseInfo: null,
+        error: null,
+      };
     }
 
     const data = await response.json();

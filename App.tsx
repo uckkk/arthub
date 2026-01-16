@@ -255,6 +255,7 @@ const App: React.FC = () => {
       'naming': 'naming',
       'paths': 'paths',
       'api': 'ai',
+      'todo': 'todo',
     };
     setActiveTab(tabMapping[id] || 'home');
   };
