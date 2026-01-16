@@ -100,6 +100,7 @@ export const PathGroupItem: React.FC<PathGroupItemProps> = ({
   dragOverIndex,
   copiedId,
   justFavoritedId,
+  isDragging,
   isFavorited,
   isLastGroup,
   showDivider,
