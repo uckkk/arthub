@@ -1050,9 +1050,9 @@ const PathManager: React.FC = () => {
 
   const TypeSelector = ({ value, onChange }: { value: PathType; onChange: (t: PathType) => void }) => (
     <div className="flex gap-2 flex-wrap">
-      {(['local', 'network', 'web', 'app'] as PathType[]).map(t => (
+      {(['local', 'network', 'web', 'app'] as PathType[]).map((t, index) => (
         <button
-          key={t}
+          key={'type-' + index + '-' + t}
           onClick={() => onChange(t)}
           className={[
             'flex-1 py-2 text-sm font-medium rounded-lg',
@@ -1100,7 +1100,7 @@ const PathManager: React.FC = () => {
                 const unselectedClassName = 'px-2.5 py-1 rounded-md text-xs font-medium transition-colors duration-150 border bg-[#1a1a1a] text-[#808080] border-[#2a2a2a] hover:border-[#3a3a3a] hover:text-white';
                 return (
                   <button
-                    key={tag}
+                    key={'tag-' + tag}
                     onClick={() => {
                       if (isSelected) {
                         setSelectedTags(selectedTags.filter(t => t !== tag));
@@ -1559,7 +1559,7 @@ const PathManager: React.FC = () => {
                   placeholder="例如：工作目录（留空则为默认分组）"
                 />
                 <datalist id="groups-list">
-                  {existingGroups.map(g => <option key={g} value={g} />)}
+                  {existingGroups.map((g, index) => <option key={'group-' + index} value={g} />)}
                 </datalist>
               </div>
 
@@ -1591,7 +1591,7 @@ const PathManager: React.FC = () => {
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-[#a0a0a0] mb-2">路径 / URL</label>
+                <label className="block text-sm font-medium text-[#a0a0a0] mb-2">{'路径 ' + S_L + ' URL'}</label>
                 <input 
                   value={newPath}
                   onChange={(e) => setNewPath(e.target.value)}
@@ -1689,7 +1689,7 @@ const PathManager: React.FC = () => {
                   placeholder="例如：工作目录（留空则为默认分组）"
                 />
                 <datalist id="edit-groups-list">
-                  {existingGroups.map(g => <option key={g} value={g} />)}
+                  {existingGroups.map((g, index) => <option key={'edit-group-' + index} value={g} />)}
                 </datalist>
               </div>
 
@@ -1721,7 +1721,7 @@ const PathManager: React.FC = () => {
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-[#a0a0a0] mb-2">路径 / URL</label>
+                <label className="block text-sm font-medium text-[#a0a0a0] mb-2">{'路径 ' + S_L + ' URL'}</label>
                 <input 
                   value={editPath}
                   onChange={(e) => setEditPath(e.target.value)}
@@ -1831,7 +1831,7 @@ const PathManager: React.FC = () => {
                   placeholder="例如：工作目录（留空则为默认分组）"
                 />
                 <datalist id="drag-groups-list">
-                  {existingGroups.map(g => <option key={g} value={g} />)}
+                  {existingGroups.map((g, index) => <option key={'drag-group-' + index} value={g} />)}
                 </datalist>
               </div>
             </div>
