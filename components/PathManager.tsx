@@ -1122,14 +1122,14 @@ const PathManager: React.FC = () => {
           <div className="relative">
             <button
               onClick={() => setShowColumnsMenu(!showColumnsMenu)}
-              className="
-                flex items-center gap-2 px-4 py-2.5
-                bg-[#1a1a1a] hover:bg-[#222222]
-                text-[#a0a0a0] hover:text-white
-                border border-[#2a2a2a] hover:border-[#3a3a3a]
-                rounded-lg
-                transition-colors duration-150
-              "
+              className={[
+                'flex items-center gap-2 px-4 py-2.5',
+                'bg-[#1a1a1a] hover:bg-[#222222]',
+                'text-[#a0a0a0] hover:text-white',
+                'border border-[#2a2a2a] hover:border-[#3a3a3a]',
+                'rounded-lg',
+                'transition-colors duration-150'
+              ].join(' ')}
               title="设置列数"
             >
               <Grid3X3 size={18} />
@@ -1175,12 +1175,12 @@ const PathManager: React.FC = () => {
           
           <button 
             onClick={() => setIsModalOpen(true)}
-            className="
-              flex items-center gap-2 px-4 py-2.5
-              bg-blue-600 hover:bg-blue-700
-              text-white font-medium rounded-lg
-              transition-colors duration-150
-            "
+            className={[
+              'flex items-center gap-2 px-4 py-2.5',
+              'bg-blue-600 hover:bg-blue-700',
+              'text-white font-medium rounded-lg',
+              'transition-colors duration-150'
+            ].join(' ')}
           >
             <Plus size={18} />
             添加路径
@@ -1317,10 +1317,10 @@ const PathManager: React.FC = () => {
                     <span className="text-xs font-medium uppercase tracking-wider">
                       {groupName}
                     </span>
-                    <span className="
-                      px-1.5 py-0.5 rounded text-[10px] font-medium
-                      bg-[#1a1a1a] text-[#666666]
-                    ">
+                    <span className={[
+                      'px-1.5 py-0.5 rounded text-[10px] font-medium',
+                      'bg-[#1a1a1a] text-[#666666]'
+                    ].join(' ')}>
                       {groupedPaths[groupName].length}
                     </span>
                   </div>
@@ -1381,11 +1381,11 @@ const PathManager: React.FC = () => {
                           )}
 
                           <div className="flex flex-col items-center gap-1 shrink-0">
-                            <div className="
-                              p-2 rounded-lg
-                              bg-[#0f0f0f] group-hover:bg-[#151515]
-                              transition-colors flex items-center justify-center
-                            ">
+                            <div className={[
+                              'p-2 rounded-lg',
+                              'bg-[#0f0f0f] group-hover:bg-[#151515]',
+                              'transition-colors flex items-center justify-center'
+                            ].join(' ')}>
                               {getIcon(item)}
                             </div>
                             <button 
@@ -1407,11 +1407,11 @@ const PathManager: React.FC = () => {
                           </div>
 
                           <div className={['flex-1 min-w-0', columnsPerRow > 1 ? 'overflow-hidden' : ''].filter(Boolean).join(' ')}>
-                            <h3 className="
-                              text-[14px] font-medium text-white
-                              group-hover:text-blue-400
-                              transition-colors break-words
-                            " title={item.name}>
+                            <h3 className={[
+                              'text-[14px] font-medium text-white',
+                              'group-hover:text-blue-400',
+                              'transition-colors break-words'
+                            ].join(' ')} title={item.name}>
                               {item.name}
                             </h3>
                             {item.tags && item.tags.length > 0 && (
@@ -1549,13 +1549,13 @@ const PathManager: React.FC = () => {
                   list="groups-list"
                   value={newGroup}
                   onChange={(e) => setNewGroup(e.target.value)}
-                  className="
-                    w-full px-4 py-2.5 rounded-lg
-                    bg-[#0f0f0f] border border-[#2a2a2a]
-                    text-white placeholder-[#666666]
-                    focus:outline-none focus:border-blue-500
-                    transition-colors
-                  "
+                  className={[
+                    'w-full px-4 py-2.5 rounded-lg',
+                    'bg-[#0f0f0f] border border-[#2a2a2a]',
+                    'text-white placeholder-[#666666]',
+                    'focus:outline-none focus:border-blue-500',
+                    'transition-colors'
+                  ].join(' ')}
                   placeholder="例如：工作目录（留空则为默认分组）"
                 />
                 <datalist id="groups-list">
@@ -1597,13 +1597,13 @@ const PathManager: React.FC = () => {
                 <input 
                   value={newPath}
                   onChange={(e) => setNewPath(e.target.value)}
-                  className="
-                    w-full px-4 py-2.5 rounded-lg font-mono
-                    bg-[#0f0f0f] border border-[#2a2a2a]
-                    text-white placeholder-[#666666]
-                    focus:outline-none focus:border-blue-500
-                    transition-colors
-                  "
+                  className={[
+                    'w-full px-4 py-2.5 rounded-lg font-mono',
+                    'bg-[#0f0f0f] border border-[#2a2a2a]',
+                    'text-white placeholder-[#666666]',
+                    'focus:outline-none focus:border-blue-500',
+                    'transition-colors'
+                  ].join(' ')}
                   placeholder={newType === 'web' ? "https://..." : newType === 'network' ? "\\\\192.168.1.100\\Share" : newType === 'app' ? "C:\\Program Files\\App\\app.exe" : "D:\\Projects\\..."}
                 />
                 {newType === 'network' && (
@@ -1617,23 +1617,23 @@ const PathManager: React.FC = () => {
             <div className="flex justify-end gap-3 px-6 py-4 border-t border-[#2a2a2a]">
               <button 
                 onClick={handleCloseAddModal}
-                className="
-                  px-4 py-2.5 rounded-lg
-                  bg-[#1a1a1a] border border-[#2a2a2a]
-                  text-[#a0a0a0] hover:text-white hover:border-[#3a3a3a]
-                  transition-colors font-medium
-                "
+                className={[
+                  'px-4 py-2.5 rounded-lg',
+                  'bg-[#1a1a1a] border border-[#2a2a2a]',
+                  'text-[#a0a0a0] hover:text-white hover:border-[#3a3a3a]',
+                  'transition-colors font-medium'
+                ].join(' ')}
               >
                 取消
               </button>
               <button 
                 onClick={handleAddPath}
-                className="
-                  flex items-center gap-2 px-4 py-2.5 rounded-lg
-                  bg-blue-600 hover:bg-blue-700
-                  text-white font-medium
-                  transition-colors
-                "
+                className={[
+                  'flex items-center gap-2 px-4 py-2.5 rounded-lg',
+                  'bg-blue-600 hover:bg-blue-700',
+                  'text-white font-medium',
+                  'transition-colors'
+                ].join(' ')}
               >
                 <Save size={16} />
                 保存
@@ -1681,13 +1681,13 @@ const PathManager: React.FC = () => {
                   list="edit-groups-list"
                   value={editGroup}
                   onChange={(e) => setEditGroup(e.target.value)}
-                  className="
-                    w-full px-4 py-2.5 rounded-lg
-                    bg-[#0f0f0f] border border-[#2a2a2a]
-                    text-white placeholder-[#666666]
-                    focus:outline-none focus:border-blue-500
-                    transition-colors
-                  "
+                  className={[
+                    'w-full px-4 py-2.5 rounded-lg',
+                    'bg-[#0f0f0f] border border-[#2a2a2a]',
+                    'text-white placeholder-[#666666]',
+                    'focus:outline-none focus:border-blue-500',
+                    'transition-colors'
+                  ].join(' ')}
                   placeholder="例如：工作目录（留空则为默认分组）"
                 />
                 <datalist id="edit-groups-list">
@@ -1713,13 +1713,13 @@ const PathManager: React.FC = () => {
                 <input 
                   value={editName}
                   onChange={(e) => setEditName(e.target.value)}
-                  className="
-                    w-full px-4 py-2.5 rounded-lg
-                    bg-[#0f0f0f] border border-[#2a2a2a]
-                    text-white placeholder-[#666666]
-                    focus:outline-none focus:border-blue-500
-                    transition-colors
-                  "
+                  className={[
+                    'w-full px-4 py-2.5 rounded-lg',
+                    'bg-[#0f0f0f] border border-[#2a2a2a]',
+                    'text-white placeholder-[#666666]',
+                    'focus:outline-none focus:border-blue-500',
+                    'transition-colors'
+                  ].join(' ')}
                   placeholder="例如：角色工作目录"
                 />
               </div>
@@ -1729,13 +1729,13 @@ const PathManager: React.FC = () => {
                 <input 
                   value={editPath}
                   onChange={(e) => setEditPath(e.target.value)}
-                  className="
-                    w-full px-4 py-2.5 rounded-lg font-mono
-                    bg-[#0f0f0f] border border-[#2a2a2a]
-                    text-white placeholder-[#666666]
-                    focus:outline-none focus:border-blue-500
-                    transition-colors
-                  "
+                  className={[
+                    'w-full px-4 py-2.5 rounded-lg font-mono',
+                    'bg-[#0f0f0f] border border-[#2a2a2a]',
+                    'text-white placeholder-[#666666]',
+                    'focus:outline-none focus:border-blue-500',
+                    'transition-colors'
+                  ].join(' ')}
                   placeholder={editType === 'web' ? "https://..." : editType === 'network' ? "\\\\192.168.1.100\\Share" : editType === 'app' ? "C:\\Program Files\\App\\app.exe" : "D:\\Projects\\..."}
                 />
                 {editType === 'network' && (
@@ -1749,23 +1749,23 @@ const PathManager: React.FC = () => {
             <div className="flex justify-end gap-3 px-6 py-4 border-t border-[#2a2a2a]">
               <button 
                 onClick={handleEditCancel}
-                className="
-                  px-4 py-2.5 rounded-lg
-                  bg-[#1a1a1a] border border-[#2a2a2a]
-                  text-[#a0a0a0] hover:text-white hover:border-[#3a3a3a]
-                  transition-colors font-medium
-                "
+                className={[
+                  'px-4 py-2.5 rounded-lg',
+                  'bg-[#1a1a1a] border border-[#2a2a2a]',
+                  'text-[#a0a0a0] hover:text-white hover:border-[#3a3a3a]',
+                  'transition-colors font-medium'
+                ].join(' ')}
               >
                 取消
               </button>
               <button 
                 onClick={handleEditSave}
-                className="
-                  flex items-center gap-2 px-4 py-2.5 rounded-lg
-                  bg-blue-600 hover:bg-blue-700
-                  text-white font-medium
-                  transition-colors
-                "
+                className={[
+                  'flex items-center gap-2 px-4 py-2.5 rounded-lg',
+                  'bg-blue-600 hover:bg-blue-700',
+                  'text-white font-medium',
+                  'transition-colors'
+                ].join(' ')}
               >
                 <Save size={16} />
                 保存
@@ -1825,19 +1825,19 @@ const PathManager: React.FC = () => {
                   list="drag-groups-list"
                   value={newGroup}
                   onChange={(e) => setNewGroup(e.target.value)}
-                  className="
-                    w-full px-4 py-2.5 rounded-lg
-                    bg-[#0f0f0f] border border-[#2a2a2a]
-                    text-white placeholder-[#666666]
-                    focus:outline-none focus:border-blue-500
-                    transition-colors
-                  "
+                  className={[
+                    'w-full px-4 py-2.5 rounded-lg',
+                    'bg-[#0f0f0f] border border-[#2a2a2a]',
+                    'text-white placeholder-[#666666]',
+                    'focus:outline-none focus:border-blue-500',
+                    'transition-colors'
+                  ].join(' ')}
                   placeholder="例如：工作目录（留空则为默认分组）"
                 />
                 <datalist id="drag-groups-list">
-                  {existingGroups.map((g, index) => (
-                    <option key={'drag-group-' + index} value={String(g)} />
-                  ))}
+                  {existingGroups.map((g, index) => {
+                    return <option key={'dg-' + index} value={String(g)} />;
+                  })}
                 </datalist>
               </div>
             </div>
@@ -1848,23 +1848,23 @@ const PathManager: React.FC = () => {
                   setShowDragModal(false);
                   setDraggedPath(null);
                 }}
-                className="
-                  px-4 py-2.5 rounded-lg
-                  bg-[#1a1a1a] border border-[#2a2a2a]
-                  text-[#a0a0a0] hover:text-white hover:border-[#3a3a3a]
-                  transition-colors font-medium
-                "
+                className={[
+                  'px-4 py-2.5 rounded-lg',
+                  'bg-[#1a1a1a] border border-[#2a2a2a]',
+                  'text-[#a0a0a0] hover:text-white hover:border-[#3a3a3a]',
+                  'transition-colors font-medium'
+                ].join(' ')}
               >
                 取消
               </button>
               <button 
                 onClick={handleConfirmDragPath}
-                className="
-                  flex items-center gap-2 px-4 py-2.5 rounded-lg
-                  bg-blue-600 hover:bg-blue-700
-                  text-white font-medium
-                  transition-colors
-                "
+                className={[
+                  'flex items-center gap-2 px-4 py-2.5 rounded-lg',
+                  'bg-blue-600 hover:bg-blue-700',
+                  'text-white font-medium',
+                  'transition-colors'
+                ].join(' ')}
               >
                 <Save size={16} />
                 添加
