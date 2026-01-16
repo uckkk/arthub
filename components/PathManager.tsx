@@ -28,7 +28,7 @@ const isTauriEnvironment = (): boolean => {
 };
 
 const extractAppName = (filePath: string): string => {
-  const separatorRegex = new RegExp('[' + B_L + B_L + B_L + S_L + ']');
+  const separatorRegex = new RegExp('[\\\\/]', 'g');
   const fileName = filePath.split(separatorRegex).pop() || '';
   const extRegex = new RegExp('\\.(lnk|exe|app)$', 'i');
   const nameWithoutExt = fileName.replace(extRegex, '');
@@ -577,6 +577,12 @@ const PathManager: React.FC = () => {
   const existingGroups = useMemo(() => {
     return Array.from(new Set(paths.map(p => p.group || '默认分组')));
   }, [paths]);
+
+  const dragGroupOptions = useMemo(() => {
+    return existingGroups.map((g, i) => (
+      <option key={i} value={g} />
+    ));
+  }, [existingGroups]);
 
   const allTags = useMemo(() => {
     const tagSet = new Set<string>();
@@ -1457,7 +1463,7 @@ const PathManager: React.FC = () => {
                   {groupIndex === groupOrder.length - 1 && draggedGroup && draggedGroup !== groupName && !dragOverGroup && (
                     <div
                       className="h-1 bg-blue-500 rounded-full mx-2 my-1"
-                    onDragOver={(e) => {
+                      onDragOver={(e) => {
                       e.preventDefault();
                       e.stopPropagation();
                       e.dataTransfer.dropEffect = 'move';
@@ -1730,9 +1736,7 @@ const PathManager: React.FC = () => {
                   placeholder="例如：工作目录（留空则为默认分组）"
                 />
                 <datalist id="drag-groups-list">
-                  {existingGroups.map((g, i) => {
-                    return (<option key={i} value={g} />);
-                  })}
+                  {dragGroupOptions}
                 </datalist>
               </div>
             </div>
