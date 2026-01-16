@@ -87,7 +87,20 @@ export async function launchApp(appPath: string): Promise<void> {
   }
 
   try {
-    // 使用 shell.open 启动应用
+    const lowerPath = appPath.toLowerCase();
+    const isLnk = lowerPath.endsWith('.lnk');
+    
+    // 对于 .lnk 文件，在 Windows 上使用 cmd start 命令来正确启动
+    // 这样可以确保启动的是快捷方式指向的应用，而不是打开快捷方式文件本身
+    if (isLnk) {
+      const { Command } = await import('@tauri-apps/api/shell');
+      // 使用 start "" "path" 格式，空字符串表示使用默认窗口标题
+      const command = Command.create('cmd', ['/c', 'start', '', `"${appPath}"`]);
+      await command.execute();
+      return;
+    }
+    
+    // 对于 .exe 和 .bat 文件，使用 shell.open
     const { open } = await import('@tauri-apps/api/shell');
     await open(appPath);
   } catch (error) {
