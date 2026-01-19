@@ -1176,6 +1176,51 @@ fn get_app_icon(_path: String) -> Result<String, String> {
     Err("图标提取功能仅在 Windows 上支持".to_string())
 }
 
+// Tauri 命令：写入文件（绕过文件系统作用域限制）
+#[tauri::command]
+fn write_file_with_path(file_path: String, content: String) -> Result<(), String> {
+    use std::fs;
+    use std::path::Path;
+    
+    let path = Path::new(&file_path);
+    
+    // 确保父目录存在
+    if let Some(parent) = path.parent() {
+        if let Err(e) = fs::create_dir_all(parent) {
+            return Err(format!("创建目录失败: {}", e));
+        }
+    }
+    
+    // 写入文件
+    if let Err(e) = fs::write(path, content) {
+        return Err(format!("写入文件失败: {}", e));
+    }
+    
+    Ok(())
+}
+
+// Tauri 命令：读取文件（绕过文件系统作用域限制）
+#[tauri::command]
+fn read_file_with_path(file_path: String) -> Result<String, String> {
+    use std::fs;
+    use std::path::Path;
+    
+    let path = Path::new(&file_path);
+    
+    match fs::read_to_string(path) {
+        Ok(content) => Ok(content),
+        Err(e) => Err(format!("读取文件失败: {}", e)),
+    }
+}
+
+// Tauri 命令：检查文件是否存在（绕过文件系统作用域限制）
+#[tauri::command]
+fn file_exists_with_path(file_path: String) -> Result<bool, String> {
+    use std::path::Path;
+    
+    Ok(Path::new(&file_path).exists())
+}
+
 // Tauri 命令：打开文件夹（使用系统命令，最可靠的方法）
 #[tauri::command]
 fn open_folder(path: String) -> Result<(), String> {
@@ -1687,7 +1732,10 @@ fn main() {
             send_workflow_to_comfyui,
             open_devtools,
             open_folder,
-            get_app_icon
+            get_app_icon,
+            write_file_with_path,
+            read_file_with_path,
+            file_exists_with_path
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

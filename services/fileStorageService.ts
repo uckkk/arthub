@@ -67,6 +67,7 @@ export async function selectStorageDirectory(): Promise<{ path: string } | null>
     const directoryPath = selectedPath as string;
     cachedStoragePath = directoryPath;
 
+
     // 更新配置
     saveStorageConfig({
       enabled: true,
@@ -157,13 +158,21 @@ export async function autoSyncToFile(): Promise<boolean> {
     const storagePath = await getSavedStoragePath();
     if (storagePath) {
       try {
-        // 检查目录是否存在，如果不存在则创建（Tauri 的 writeTextFile 会自动创建文件，但不会创建目录）
-        // 这里我们直接写入文件，如果目录不存在会失败，但用户应该已经选择了存在的目录
-        await writeTextFile(dataFilePath, JSON.stringify(allData, null, 2));
+        // 使用 Rust 命令写入文件，绕过文件系统作用域限制
+        const { invoke } = await import('@tauri-apps/api/tauri');
+        await invoke('write_file_with_path', {
+          filePath: dataFilePath,
+          content: JSON.stringify(allData, null, 2)
+        });
       } catch (error: any) {
-        // 如果写入失败，可能是目录不存在，尝试创建
-        console.warn('写入文件失败，尝试创建目录:', error);
-        throw error;
+        // 如果 Rust 命令失败，尝试使用 Tauri FS API（可能受作用域限制）
+        console.warn('使用 Rust 命令写入失败，尝试使用 FS API:', error);
+        try {
+          await writeTextFile(dataFilePath, JSON.stringify(allData, null, 2));
+        } catch (fsError: any) {
+          console.error('FS API 写入也失败:', fsError);
+          throw fsError;
+        }
       }
     } else {
       return false;

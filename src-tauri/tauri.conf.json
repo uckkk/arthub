@@ -60,6 +60,7 @@
           "$APPDATA/**",
           "$DOCUMENT/**",
           "$DESKTOP/**",
+          "$HOME/**",
           "$APPDATA/comfyui工作流/**"
         ]
       },
