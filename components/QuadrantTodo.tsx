@@ -29,6 +29,24 @@ const QuadrantTodo: React.FC = () => {
   const [dragOverQuadrant, setDragOverQuadrant] = useState<TodoItem['quadrant'] | null>(null);
   const [showPathSelector, setShowPathSelector] = useState(false);
   const [showPathSelectorEdit, setShowPathSelectorEdit] = useState(false);
+  const [quickAddTexts, setQuickAddTexts] = useState<Record<TodoItem['quadrant'], string>>({
+    'urgent-important': '',
+    'not-urgent-important': '',
+    'urgent-not-important': '',
+    'not-urgent-not-important': '',
+  });
+  const [showQuickAdd, setShowQuickAdd] = useState<Record<TodoItem['quadrant'], boolean>>({
+    'urgent-important': false,
+    'not-urgent-important': false,
+    'urgent-not-important': false,
+    'not-urgent-not-important': false,
+  });
+  const [showPathSelectorQuick, setShowPathSelectorQuick] = useState<Record<TodoItem['quadrant'], boolean>>({
+    'urgent-important': false,
+    'not-urgent-important': false,
+    'urgent-not-important': false,
+    'not-urgent-not-important': false,
+  });
 
   const scrollContainerRef = useMiddleMouseScroll<HTMLDivElement>({
     enabled: true,
@@ -228,6 +246,47 @@ const QuadrantTodo: React.FC = () => {
     setShowPathSelector(false);
   };
 
+  // 快速添加TODO到指定象限
+  const handleQuickAddTodo = (quadrant: TodoItem['quadrant']) => {
+    const text = quickAddTexts[quadrant].trim();
+    if (!text) return;
+    
+    const linkedPathIds = extractPathReferences(text);
+    
+    const newTodo: TodoItem = {
+      id: Date.now().toString(),
+      text: text,
+      quadrant: quadrant,
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+      linkedPaths: linkedPathIds.length > 0 ? linkedPathIds : undefined,
+    };
+    
+    setTodos([...todos, newTodo]);
+    setQuickAddTexts({ ...quickAddTexts, [quadrant]: '' });
+    setShowQuickAdd({ ...showQuickAdd, [quadrant]: false });
+    setShowPathSelectorQuick({ ...showPathSelectorQuick, [quadrant]: false });
+  };
+
+  // 快速插入路径到指定象限的输入框
+  const insertPathToQuickAdd = (path: PathItem, quadrant: TodoItem['quadrant']) => {
+    const pathRef = `[path:${path.id}]`;
+    const currentText = quickAddTexts[quadrant];
+    const textarea = document.getElementById(`quick-add-${quadrant}`) as HTMLTextAreaElement;
+    const cursorPos = textarea?.selectionStart || currentText.length;
+    const newText = currentText.slice(0, cursorPos) + pathRef + currentText.slice(cursorPos);
+    setQuickAddTexts({ ...quickAddTexts, [quadrant]: newText });
+    
+    // 恢复光标位置
+    setTimeout(() => {
+      if (textarea) {
+        const newPos = cursorPos + pathRef.length;
+        textarea.setSelectionRange(newPos, newPos);
+        textarea.focus();
+      }
+    }, 0);
+  };
+
   const handleDelete = (id: string) => {
     if (window.confirm('确定要删除这个TODO吗？')) {
       setTodos(todos.filter(t => t.id !== id));
@@ -336,10 +395,101 @@ const QuadrantTodo: React.FC = () => {
                 <h2 className={`text-lg font-semibold ${quadrant.color}`}>
                   {quadrant.title}
                 </h2>
-                <span className="text-sm text-[#666666]">
-                  {quadrantTodos.length} 项
-                </span>
+                <div className="flex items-center gap-3">
+                  <span className="text-sm text-[#666666]">
+                    {quadrantTodos.length} 项
+                  </span>
+                  {!showQuickAdd[quadrant.key] && (
+                    <button
+                      onClick={() => setShowQuickAdd({ ...showQuickAdd, [quadrant.key]: true })}
+                      className="p-1.5 rounded text-[#666666] hover:text-blue-400 hover:bg-blue-500/10 transition-colors"
+                      title="快速添加"
+                    >
+                      <Plus size={16} />
+                    </button>
+                  )}
+                </div>
               </div>
+
+              {/* 快速添加输入框 */}
+              {showQuickAdd[quadrant.key] && (
+                <div className="mb-3 p-3 rounded-lg bg-[#1a1a1a] border border-[#2a2a2a]">
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-xs text-[#a0a0a0]">快速添加</span>
+                    {availablePaths.length > 0 && (
+                      <button
+                        type="button"
+                        onClick={() => setShowPathSelectorQuick({ ...showPathSelectorQuick, [quadrant.key]: !showPathSelectorQuick[quadrant.key] })}
+                        className="flex items-center gap-1 px-1.5 py-0.5 rounded text-xs text-blue-400 hover:text-blue-300 hover:bg-blue-500/10 transition-colors"
+                      >
+                        <LinkIcon size={10} />
+                        <span>路径</span>
+                        {showPathSelectorQuick[quadrant.key] ? <ChevronUp size={10} /> : <ChevronDown size={10} />}
+                      </button>
+                    )}
+                  </div>
+                  {showPathSelectorQuick[quadrant.key] && availablePaths.length > 0 && (
+                    <div className="mb-2 p-2 rounded-lg bg-[#0f0f0f] border border-[#2a2a2a] max-h-32 overflow-y-auto">
+                      <div className="space-y-1">
+                        {availablePaths.map((path) => (
+                          <button
+                            key={path.id}
+                            type="button"
+                            onClick={() => {
+                              insertPathToQuickAdd(path, quadrant.key);
+                              setShowPathSelectorQuick({ ...showPathSelectorQuick, [quadrant.key]: false });
+                            }}
+                            className="w-full text-left px-2 py-1 rounded text-xs text-[#a0a0a0] hover:text-white hover:bg-[#1a1a1a] transition-colors flex items-center gap-2"
+                          >
+                            <LinkIcon size={10} className="text-blue-400 flex-shrink-0" />
+                            <span className="flex-1 truncate">{path.name}</span>
+                            <span className="text-[10px] text-[#666666] truncate max-w-[120px]">{path.path}</span>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                  <textarea
+                    id={`quick-add-${quadrant.key}`}
+                    value={quickAddTexts[quadrant.key]}
+                    onChange={(e) => setQuickAddTexts({ ...quickAddTexts, [quadrant.key]: e.target.value })}
+                    className="w-full px-2 py-1.5 rounded-lg bg-[#0f0f0f] border border-[#2a2a2a] text-white placeholder-[#666666] focus:outline-none focus:border-blue-500 resize-none text-sm"
+                    rows={2}
+                    placeholder="输入TODO内容，按Enter创建..."
+                    autoFocus
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+                        e.preventDefault();
+                        handleQuickAddTodo(quadrant.key);
+                      } else if (e.key === 'Escape') {
+                        setShowQuickAdd({ ...showQuickAdd, [quadrant.key]: false });
+                        setQuickAddTexts({ ...quickAddTexts, [quadrant.key]: '' });
+                        setShowPathSelectorQuick({ ...showPathSelectorQuick, [quadrant.key]: false });
+                      }
+                    }}
+                  />
+                  <div className="flex items-center justify-end gap-2 mt-2">
+                    <button
+                      onClick={() => {
+                        setShowQuickAdd({ ...showQuickAdd, [quadrant.key]: false });
+                        setQuickAddTexts({ ...quickAddTexts, [quadrant.key]: '' });
+                        setShowPathSelectorQuick({ ...showPathSelectorQuick, [quadrant.key]: false });
+                      }}
+                      className="px-2 py-1 rounded text-xs text-[#666666] hover:text-white hover:bg-[#2a2a2a] transition-colors"
+                    >
+                      取消
+                    </button>
+                    <button
+                      onClick={() => handleQuickAddTodo(quadrant.key)}
+                      disabled={!quickAddTexts[quadrant.key].trim()}
+                      className="px-2 py-1 rounded text-xs bg-blue-600 hover:bg-blue-700 text-white disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center gap-1"
+                    >
+                      <Plus size={12} />
+                      添加
+                    </button>
+                  </div>
+                </div>
+              )}
 
               {/* TODO列表 */}
               <div className="space-y-2">
