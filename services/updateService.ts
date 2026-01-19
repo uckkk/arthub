@@ -7,8 +7,9 @@ const GITHUB_REPO = 'uckkk/arthub';
 
 // 从 package.json 读取版本号（构建时会被替换）
 // Vite 的 define 配置会在构建时将 process.env.APP_VERSION 和 window.__APP_VERSION__ 替换为实际的版本号字符串
-// 例如：process.env.APP_VERSION 会被替换为 "1.0.20240119.1530"
+// 例如：process.env.APP_VERSION 会被替换为 "1.0.202401191530"
 // 注意：Vite 会在构建时进行全局字符串替换，所以构建后的代码中这些值会直接是字符串字面量
+// 版本号格式：1.0.YYYYMMDDHHMM（符合 semver 规范：major.minor.patch）
 
 // 默认版本号（如果构建时注入失败，使用此值）
 // 注意：这个值只会在开发环境中使用，生产构建时会由 Vite 替换

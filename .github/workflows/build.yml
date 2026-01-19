@@ -89,11 +89,12 @@ jobs:
             # 自动生成基于日期和时间的版本号（符合 semver 规范）
             # 格式：1.0.YYYYMMDDHHMM（使用日期时间作为补丁版本号）
             # 例如：1.0.202401191530
-            # 注意：semver 要求补丁版本号必须是数字，所以不能使用点号分隔
+            # 注意：semver 要求版本号格式为 major.minor.patch，所有部分都必须是数字
             BUILD_TIMESTAMP=$(date -u +"%Y%m%d%H%M")
             VERSION="1.0.${BUILD_TIMESTAMP}"
             echo "自动生成版本号: $VERSION"
             echo "构建时间戳: $BUILD_TIMESTAMP"
+            echo "版本号格式验证: major=1, minor=0, patch=${BUILD_TIMESTAMP}"
           fi
           echo "version=$VERSION" >> $GITHUB_OUTPUT
           echo "当前版本号: $VERSION"
