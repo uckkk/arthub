@@ -2,6 +2,8 @@ import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { Plus, X, Edit2, Trash2, GripVertical, Link as LinkIcon, ChevronDown, ChevronUp } from 'lucide-react';
 import { useMiddleMouseScroll } from '../utils/useMiddleMouseScroll';
 import { PathItem } from '../types';
+import { launchApp } from '../services/appService';
+import { openUrl } from '../services/windowService';
 
 interface TodoItem {
   id: string;
@@ -63,6 +65,65 @@ const QuadrantTodo: React.FC = () => {
     return matches;
   };
 
+  // 处理路径跳转
+  const handlePathJump = async (path: PathItem, e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    
+    try {
+      const lowerPath = path.path.toLowerCase();
+      const isAppFilePath = lowerPath.endsWith('.lnk') || lowerPath.endsWith('.exe') || lowerPath.endsWith('.bat');
+      
+      if (path.type === 'app' || isAppFilePath) {
+        try {
+          await launchApp(path.path);
+          return;
+        } catch (error) {
+          console.error('启动应用失败:', error);
+          // 失败时复制路径到剪贴板
+          navigator.clipboard.writeText(path.path);
+          return;
+        }
+      }
+      
+      if (path.type === 'web') {
+        if (path.path.startsWith('http://') || path.path.startsWith('https://')) {
+          openUrl(path.path, '_blank');
+          return;
+        }
+      }
+      
+      if (path.type === 'local' || path.type === 'network') {
+        try {
+          const { invoke } = await import('@tauri-apps/api/tauri');
+          await invoke('open_folder', { path: path.path });
+          return;
+        } catch (error: any) {
+          console.error('打开文件夹失败:', error);
+          // 失败时复制路径到剪贴板
+          navigator.clipboard.writeText(path.path);
+        }
+        return;
+      }
+      
+      // 默认处理：尝试打开URL或文件夹
+      if (path.path.startsWith('http://') || path.path.startsWith('https://')) {
+        openUrl(path.path, '_blank');
+      } else {
+        try {
+          const { invoke } = await import('@tauri-apps/api/tauri');
+          await invoke('open_folder', { path: path.path });
+        } catch (error: any) {
+          console.error('打开路径失败:', error);
+          navigator.clipboard.writeText(path.path);
+        }
+      }
+    } catch (error) {
+      console.error('路径跳转失败:', error);
+      navigator.clipboard.writeText(path.path);
+    }
+  };
+
   // 渲染带路径链接的文本
   const renderTextWithPaths = (text: string) => {
     const pathRegex = /\[path:([^\]]+)\]/g;
@@ -82,7 +143,12 @@ const QuadrantTodo: React.FC = () => {
       
       if (path) {
         parts.push(
-          <span key={match.index} className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-blue-500/20 text-blue-400 text-xs">
+          <span
+            key={match.index}
+            onClick={(e) => handlePathJump(path, e)}
+            className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-blue-500/20 text-blue-400 text-xs cursor-pointer hover:bg-blue-500/30 hover:text-blue-300 transition-colors"
+            title={`点击跳转到: ${path.path}`}
+          >
             <LinkIcon size={12} />
             <span>{path.name}</span>
           </span>
