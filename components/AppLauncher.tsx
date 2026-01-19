@@ -79,12 +79,37 @@ const AppLauncher: React.FC = () => {
         const { listen } = await import('@tauri-apps/api/event');
         
         // 监听文件拖拽事件
+        // 注意：在 Tauri 1.5 中，payload 是 string[] 类型（文件路径数组）
         const unlisten = await listen<string[]>('tauri://file-drop', async (event) => {
-          console.log('[AppLauncher] Tauri file-drop event received:', event.payload);
+          console.log('[AppLauncher] Tauri file-drop event received:', {
+            event: event.event,
+            windowLabel: event.windowLabel,
+            payload: event.payload,
+            payloadType: typeof event.payload,
+            isArray: Array.isArray(event.payload),
+          });
           
-          if (event.payload && Array.isArray(event.payload) && event.payload.length > 0) {
+          // 处理 payload：可能是数组，也可能是单个字符串
+          let filePaths: string[] = [];
+          if (Array.isArray(event.payload)) {
+            filePaths = event.payload;
+          } else if (typeof event.payload === 'string') {
+            filePaths = [event.payload];
+          } else if (event.payload && typeof event.payload === 'object') {
+            // 尝试从对象中提取路径
+            const payloadObj = event.payload as any;
+            if (Array.isArray(payloadObj.paths)) {
+              filePaths = payloadObj.paths;
+            } else if (payloadObj.path) {
+              filePaths = [payloadObj.path];
+            }
+          }
+          
+          console.log('[AppLauncher] Extracted file paths:', filePaths);
+          
+          if (filePaths.length > 0) {
             // 处理所有拖拽的文件
-            for (const filePath of event.payload) {
+            for (const filePath of filePaths) {
               if (!filePath || typeof filePath !== 'string') {
                 console.warn('[AppLauncher] Invalid file path in Tauri drop:', filePath);
                 continue;
@@ -594,10 +619,45 @@ const AppLauncher: React.FC = () => {
 
       <div
         ref={scrollContainerRef}
-        onDragEnter={handleDragOver}
-        onDragLeave={handleDragLeave}
-        onDragOver={handleDragOver}
-        onDrop={handleDrop}
+        onDragEnter={(e) => {
+          // 如果 Tauri 事件可用，只处理非文件拖拽（避免冲突）
+          // 文件拖拽由 Tauri 原生事件处理
+          if (e.dataTransfer.types.includes('Files')) {
+            setIsDraggingOver(true);
+          } else {
+            handleDragOver(e);
+          }
+        }}
+        onDragLeave={(e) => {
+          if (e.dataTransfer.types.includes('Files')) {
+            if (e.currentTarget === e.target) {
+              setIsDraggingOver(false);
+            }
+          } else {
+            handleDragLeave(e);
+          }
+        }}
+        onDragOver={(e) => {
+          // 对于文件拖拽，只更新 UI 状态，不阻止默认行为（让 Tauri 处理）
+          if (e.dataTransfer.types.includes('Files')) {
+            e.preventDefault();
+            setIsDraggingOver(true);
+          } else {
+            handleDragOver(e);
+          }
+        }}
+        onDrop={(e) => {
+          // 如果 Tauri 事件可用，文件拖拽由 Tauri 处理，这里只处理非文件拖拽
+          if (e.dataTransfer.types.includes('Files')) {
+            e.preventDefault();
+            e.stopPropagation();
+            setIsDraggingOver(false);
+            // 文件拖拽由 Tauri 原生事件处理，这里不做任何操作
+            console.log('[AppLauncher] File drop detected, handled by Tauri native event');
+          } else {
+            handleDrop(e);
+          }
+        }}
         className={'flex-1 min-h-0 max-h-full overflow-y-auto px-6 py-6 transition-colors duration-200 ' + (isDraggingOver ? 'bg-blue-500' + S_L + '10 border-2 border-dashed border-blue-500' : '')}
         style={{ scrollbarWidth: 'thin', scrollbarColor: '#2a2a2a #0a0a0a', maxHeight: '100%' }}
       >
