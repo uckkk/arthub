@@ -79,6 +79,76 @@ const AppLauncher: React.FC = () => {
     }
   };
 
+  // 检查路径是否是应用文件（通过扩展名）
+  const isAppFilePath = (path: string): boolean => {
+    if (!path) return false;
+    const lowerPath = path.toLowerCase().trim();
+    return lowerPath.endsWith('.exe') || lowerPath.endsWith('.lnk') || lowerPath.endsWith('.bat');
+  };
+
+  // 规范化文件路径（处理各种格式）
+  const normalizeFilePath = (rawPath: string): string => {
+    if (!rawPath) return '';
+    
+    // 处理 file:// URI
+    let path = rawPath.replace(/^file:\/\//, '').replace(/^file:\/\/\//, '');
+    
+    // Windows 路径格式: file:///C:/path/to/file.exe -> C:/path/to/file.exe
+    if (path.startsWith('/') && /^\/[A-Za-z]:/.test(path)) {
+      path = path.substring(1);
+    }
+    
+    // URL 解码
+    try {
+      path = decodeURIComponent(path);
+    } catch {
+      // 解码失败，使用原始路径
+    }
+    
+    // 统一路径分隔符
+    path = path.replaceAll(S_L, B_L);
+    
+    return path.trim();
+  };
+
+  // 从拖拽事件中提取所有可能的文件路径
+  const extractPathsFromDropEvent = (e: React.DragEvent): string[] => {
+    const paths: string[] = [];
+    
+    // 1. 从 files 数组提取
+    const files = e.dataTransfer.files;
+    if (files && files.length > 0) {
+      for (let i = 0; i < files.length; i++) {
+        const file = files[i];
+        const filePath = (file as any).path || (file as any).webkitRelativePath;
+        if (filePath) {
+          paths.push(normalizeFilePath(filePath));
+        }
+        // 也添加文件名（可能包含扩展名信息）
+        if (file.name) {
+          paths.push(file.name);
+        }
+      }
+    }
+    
+    // 2. 从 text/uri-list 提取
+    const textUriList = e.dataTransfer.getData('text/uri-list');
+    if (textUriList) {
+      const uriPaths = textUriList.split('\n').map(uri => normalizeFilePath(uri));
+      paths.push(...uriPaths);
+    }
+    
+    // 3. 从 text/plain 提取
+    const textPlain = e.dataTransfer.getData('text/plain');
+    if (textPlain) {
+      const plainPaths = textPlain.split('\n').map(text => normalizeFilePath(text));
+      paths.push(...plainPaths);
+    }
+    
+    // 去重并过滤空值
+    return [...new Set(paths)].filter(p => p.length > 0);
+  };
+
   const handleDrop = async (e: React.DragEvent) => {
     e.preventDefault();
     e.stopPropagation();
@@ -89,112 +159,79 @@ const AppLauncher: React.FC = () => {
       filesCount: e.dataTransfer.files.length,
     });
 
-    // 优先处理 text/uri-list（Windows 开始菜单拖拽常用）
-    const textUriList = e.dataTransfer.getData('text/uri-list');
-    if (textUriList) {
-      console.log('[AppLauncher] text/uri-list:', textUriList);
-      let filePath = textUriList.replace(/^file:\/\//, '').replace(/^file:\/\/\//, '');
-      // Windows 路径格式: file:///C:/path/to/file.exe
-      // 需要移除开头的斜杠
-      if (filePath.startsWith('/') && /^\/[A-Za-z]:/.test(filePath)) {
-        filePath = filePath.substring(1);
-      }
-      try {
-        filePath = decodeURIComponent(filePath);
-      } catch {
-        // 解码失败，使用原始路径
-      }
-      filePath = filePath.replaceAll(S_L, B_L);
-      const lowerPath = filePath.toLowerCase();
-      console.log('[AppLauncher] Processed path from uri-list:', filePath);
-      
-      if (lowerPath.endsWith('.exe') || lowerPath.endsWith('.lnk') || lowerPath.endsWith('.bat')) {
-        console.log('[AppLauncher] Detected app file:', filePath);
-        const appInfo = await handleDroppedAppFile(filePath);
-        if (appInfo) {
-          console.log('[AppLauncher] App info:', appInfo);
-          const icon = await getAppIcon(appInfo.path);
-          const newApp: AppItem = {
-            id: Date.now().toString(),
-            name: appInfo.name,
-            path: appInfo.path,
-            icon: icon,
-          };
-          setApps([...apps, newApp]);
-          return;
-        } else {
-          console.warn('[AppLauncher] handleDroppedAppFile returned null for:', filePath);
+    // 提取所有可能的路径
+    const allPaths = extractPathsFromDropEvent(e);
+    console.log('[AppLauncher] Extracted paths:', allPaths);
+
+    // 查找第一个应用文件路径
+    let appFilePath: string | null = null;
+    
+    for (const path of allPaths) {
+      // 检查是否是应用文件（通过扩展名）
+      if (isAppFilePath(path)) {
+        // 验证路径格式（必须是完整路径，不能只是文件名）
+        if (path.includes(B_L) || path.match(/^[A-Za-z]:/)) {
+          appFilePath = path;
+          console.log('[AppLauncher] Found app file path:', appFilePath);
+          break;
         }
       }
     }
 
-    // 处理 files 数组
-    const files = e.dataTransfer.files;
-    if (files && files.length > 0) {
-      const file = files[0];
-      const filePath = (file as any).path || (file as any).webkitRelativePath || file.name;
-      const fileName = file.name.toLowerCase();
-      
-      console.log('[AppLauncher] File dropped:', {
-        name: file.name,
-        path: filePath,
-        hasPath: !!(file as any).path,
-      });
-
-      if (fileName.endsWith('.exe') || fileName.endsWith('.lnk') || fileName.endsWith('.bat')) {
-        // 如果只有文件名没有路径，尝试从 text/plain 获取完整路径
-        let finalPath = filePath;
-        if (!filePath.includes(B_L) && !filePath.includes(S_L) && !filePath.match(/^[A-Za-z]:/)) {
+    // 如果没有找到完整路径，尝试从文件名和 text/plain 组合
+    if (!appFilePath) {
+      const files = e.dataTransfer.files;
+      if (files && files.length > 0) {
+        const file = files[0];
+        const fileName = file.name.toLowerCase();
+        
+        if (fileName.endsWith('.exe') || fileName.endsWith('.lnk') || fileName.endsWith('.bat')) {
+          // 尝试从 text/plain 获取完整路径
           const textPlain = e.dataTransfer.getData('text/plain');
-          if (textPlain && (textPlain.includes(B_L) || textPlain.includes(S_L) || textPlain.match(/^[A-Za-z]:/))) {
-            finalPath = textPlain.trim();
-            console.log('[AppLauncher] Using path from text/plain:', finalPath);
+          if (textPlain) {
+            const plainPath = normalizeFilePath(textPlain);
+            if (isAppFilePath(plainPath) && (plainPath.includes(B_L) || plainPath.match(/^[A-Za-z]:/))) {
+              appFilePath = plainPath;
+              console.log('[AppLauncher] Found app file path from text/plain:', appFilePath);
+            }
           }
         }
-        
-        const appInfo = await handleDroppedAppFile(finalPath);
-        if (appInfo) {
-          console.log('[AppLauncher] App info from files:', appInfo);
-          const icon = await getAppIcon(appInfo.path);
-          const newApp: AppItem = {
-            id: Date.now().toString(),
-            name: appInfo.name,
-            path: appInfo.path,
-            icon: icon,
-          };
-          setApps([...apps, newApp]);
-          return;
-        } else {
-          console.warn('[AppLauncher] handleDroppedAppFile returned null for:', finalPath);
-        }
       }
     }
 
-    // 最后尝试 text/plain
-    const textPlain = e.dataTransfer.getData('text/plain');
-    if (textPlain) {
-      console.log('[AppLauncher] text/plain:', textPlain);
-      const text = textPlain.trim();
-      const lowerText = text.toLowerCase();
+    // 如果找到了应用文件路径，处理它
+    if (appFilePath) {
+      console.log('[AppLauncher] Processing app file:', appFilePath);
       
-      // 检查是否是文件路径
-      if ((text.includes(B_L) || text.includes(S_L) || text.match(/^[A-Za-z]:/)) && 
-          (lowerText.endsWith('.exe') || lowerText.endsWith('.lnk') || lowerText.endsWith('.bat'))) {
-        const cleanPath = text.replaceAll(S_L, B_L);
-        console.log('[AppLauncher] Detected app file from text/plain:', cleanPath);
-        const appInfo = await handleDroppedAppFile(cleanPath);
-        if (appInfo) {
-          console.log('[AppLauncher] App info from text/plain:', appInfo);
-          const icon = await getAppIcon(appInfo.path);
-          const newApp: AppItem = {
-            id: Date.now().toString(),
-            name: appInfo.name,
-            path: appInfo.path,
-            icon: icon,
-          };
-          setApps([...apps, newApp]);
-          return;
+      // 验证文件是否存在（在 Tauri 环境中）
+      if (typeof window !== 'undefined' && (window as any).__TAURI__) {
+        try {
+          const { exists } = await import('@tauri-apps/api/fs');
+          const fileExists = await exists(appFilePath);
+          if (!fileExists) {
+            console.warn('[AppLauncher] File does not exist:', appFilePath);
+            // 继续处理，可能路径格式有问题但文件实际存在
+          }
+        } catch (error) {
+          console.warn('[AppLauncher] Failed to check file existence:', error);
+          // 继续处理
         }
+      }
+      
+      const appInfo = await handleDroppedAppFile(appFilePath);
+      if (appInfo) {
+        console.log('[AppLauncher] App info:', appInfo);
+        const icon = await getAppIcon(appInfo.path);
+        const newApp: AppItem = {
+          id: Date.now().toString(),
+          name: appInfo.name,
+          path: appInfo.path,
+          icon: icon,
+        };
+        setApps([...apps, newApp]);
+        return;
+      } else {
+        console.error('[AppLauncher] handleDroppedAppFile returned null for:', appFilePath);
       }
     }
 

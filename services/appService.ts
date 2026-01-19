@@ -26,77 +26,75 @@ function extractAppName(filePath: string): string {
 
 // 处理拖拽的文件
 export async function handleDroppedAppFile(filePath: string): Promise<AppInfo | null> {
-  if (!isTauriEnvironment()) {
-    // 非 Tauri 环境，使用简单处理
-    return {
-      name: extractAppName(filePath),
-      path: filePath,
-    };
+  if (!filePath || typeof filePath !== 'string') {
+    console.error('[appService] Invalid file path:', filePath);
+    return null;
   }
 
-  try {
-    const { basename, extname } = await import('@tauri-apps/api/path');
-    
-    // 规范化路径：确保使用正确的路径分隔符
-    let normalizedPath = filePath.replaceAll('/', '\\');
-    
-    // 尝试获取文件信息
-    let fileName: string;
-    let ext: string;
-    try {
-      fileName = await basename(normalizedPath);
-      ext = await extname(normalizedPath);
-    } catch (error) {
-      // 如果路径解析失败，使用简单提取
-      console.warn('[appService] Failed to parse path, using fallback:', error);
-      const pathParts = normalizedPath.split('\\');
-      fileName = pathParts[pathParts.length - 1] || normalizedPath;
-      const lastDot = fileName.lastIndexOf('.');
-      ext = lastDot >= 0 ? fileName.substring(lastDot) : '';
-    }
-    
-    const lowerExt = ext.toLowerCase();
-    console.log('[appService] Processing file:', {
-      originalPath: filePath,
-      normalizedPath,
-      fileName,
-      ext: lowerExt,
-    });
-    
-    let targetPath = normalizedPath;
-    let appName = extractAppName(fileName);
-    
-    // 如果是快捷方式 (.lnk)，需要读取目标路径
-    if (lowerExt === '.lnk') {
-      // 在 Windows 上，.lnk 文件是二进制文件
-      // 暂时使用快捷方式路径本身，启动时会正确处理
-      appName = extractAppName(fileName);
-      targetPath = normalizedPath;
-      console.log('[appService] LNK file detected:', { appName, targetPath });
-    } else if (lowerExt === '.exe' || lowerExt === '.bat') {
-      // 可执行文件或批处理文件，直接使用
-      targetPath = normalizedPath;
-      appName = extractAppName(fileName);
-      console.log('[appService] EXE/BAT file detected:', { appName, targetPath });
-    } else {
-      // 不支持的文件类型
-      console.warn('[appService] Unsupported file type:', lowerExt, normalizedPath);
-      return null;
-    }
-    
-    return {
-      name: appName,
-      path: targetPath,
-    };
-  } catch (error) {
-    console.error('[appService] Error processing app file:', error, filePath);
-    // 降级处理：直接使用路径
-    const fallbackName = extractAppName(filePath);
-    return {
-      name: fallbackName,
-      path: filePath.replaceAll('/', '\\'),
-    };
+  // 规范化路径：确保使用正确的路径分隔符
+  let normalizedPath = filePath.trim().replaceAll('/', '\\');
+  
+  // 首先通过扩展名判断文件类型（最可靠的方法）
+  const lowerPath = normalizedPath.toLowerCase();
+  const isExe = lowerPath.endsWith('.exe');
+  const isLnk = lowerPath.endsWith('.lnk');
+  const isBat = lowerPath.endsWith('.bat');
+  
+  if (!isExe && !isLnk && !isBat) {
+    console.warn('[appService] File is not an app file (missing .exe/.lnk/.bat extension):', normalizedPath);
+    return null;
   }
+
+  // 提取文件名和扩展名（不依赖 Tauri API，更可靠）
+  const pathParts = normalizedPath.split('\\');
+  const fileName = pathParts[pathParts.length - 1] || normalizedPath;
+  const lastDot = fileName.lastIndexOf('.');
+  const ext = lastDot >= 0 ? fileName.substring(lastDot).toLowerCase() : '';
+  const appName = extractAppName(fileName);
+
+  console.log('[appService] Processing app file:', {
+    originalPath: filePath,
+    normalizedPath,
+    fileName,
+    ext,
+    appName,
+    isExe,
+    isLnk,
+    isBat,
+  });
+
+  // 在 Tauri 环境中，尝试验证文件存在性
+  if (isTauriEnvironment()) {
+    try {
+      const { exists } = await import('@tauri-apps/api/fs');
+      const fileExists = await exists(normalizedPath);
+      if (!fileExists) {
+        console.warn('[appService] File does not exist:', normalizedPath);
+        // 仍然返回，因为可能是路径格式问题但文件实际存在
+      } else {
+        console.log('[appService] File exists:', normalizedPath);
+      }
+    } catch (error) {
+      console.warn('[appService] Failed to check file existence:', error);
+      // 继续处理
+    }
+  }
+
+  // 根据文件类型处理
+  let targetPath = normalizedPath;
+  
+  if (isLnk) {
+    // 快捷方式文件，使用路径本身（启动时会正确处理）
+    console.log('[appService] LNK file detected:', { appName, targetPath });
+  } else if (isExe || isBat) {
+    // 可执行文件或批处理文件
+    console.log('[appService] EXE/BAT file detected:', { appName, targetPath });
+  }
+
+  return {
+    name: appName,
+    path: targetPath,
+  };
 }
 
 // 启动应用
