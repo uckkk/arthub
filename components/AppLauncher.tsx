@@ -65,6 +65,63 @@ const AppLauncher: React.FC = () => {
     localStorage.setItem('arthub_app_columns', columnsPerRow.toString());
   }, [columnsPerRow]);
 
+  // 监听 Tauri 原生文件拖拽事件（获取绝对路径）
+  useEffect(() => {
+    if (typeof window === 'undefined' || !(window as any).__TAURI__) {
+      return;
+    }
+
+    const setupTauriFileDrop = async () => {
+      try {
+        const { listen } = await import('@tauri-apps/api/event');
+        
+        // 监听文件拖拽事件
+        const unlisten = await listen<string[]>('tauri://file-drop', (event) => {
+          console.log('[AppLauncher] Tauri file-drop event:', event.payload);
+          
+          if (event.payload && event.payload.length > 0) {
+            // 处理所有拖拽的文件
+            event.payload.forEach(async (filePath) => {
+              const lowerPath = filePath.toLowerCase();
+              
+              // 检查是否是应用文件
+              if (lowerPath.endsWith('.exe') || lowerPath.endsWith('.lnk') || lowerPath.endsWith('.bat')) {
+                console.log('[AppLauncher] Processing file from Tauri drop:', filePath);
+                
+                const appInfo = await handleDroppedAppFile(filePath);
+                if (appInfo) {
+                  console.log('[AppLauncher] App info from Tauri drop:', appInfo);
+                  const icon = await getAppIcon(appInfo.path);
+                  const newApp: AppItem = {
+                    id: Date.now().toString() + Math.random().toString(36).substr(2, 9),
+                    name: appInfo.name,
+                    path: appInfo.path,
+                    icon: icon,
+                  };
+                  setApps(prev => [...prev, newApp]);
+                }
+              }
+            });
+          }
+        });
+        
+        // 监听文件拖拽悬停事件（可选）
+        const unlistenHover = await listen<string[]>('tauri://file-drop-hover', (event) => {
+          console.log('[AppLauncher] Tauri file-drop-hover event:', event.payload);
+        });
+        
+        return () => {
+          unlisten();
+          unlistenHover();
+        };
+      } catch (error) {
+        console.error('[AppLauncher] Failed to setup Tauri file-drop listener:', error);
+      }
+    };
+
+    setupTauriFileDrop();
+  }, []);
+
   const handleDragOver = (e: React.DragEvent) => {
     e.preventDefault();
     e.stopPropagation();
@@ -127,16 +184,17 @@ const AppLauncher: React.FC = () => {
   };
 
   // 从拖拽事件中提取所有可能的文件路径
-  const extractPathsFromDropEvent = (e: React.DragEvent): string[] => {
+  const extractPathsFromDropEvent = async (e: React.DragEvent): Promise<string[]> => {
     const paths: string[] = [];
     
-    // 1. 从 files 数组提取
+    // 1. 从 files 数组提取（优先处理）
     const files = e.dataTransfer.files;
     if (files && files.length > 0) {
       for (let i = 0; i < files.length; i++) {
         const file = files[i];
-        // 优先使用 path 属性（Tauri 环境）
-        const filePath = (file as any).path || (file as any).webkitRelativePath;
+        
+        // 方法1: 直接使用 path 属性（Tauri 环境可能提供）
+        const filePath = (file as any).path;
         if (filePath) {
           const normalized = normalizeFilePath(filePath);
           if (normalized) {
@@ -144,6 +202,25 @@ const AppLauncher: React.FC = () => {
             console.log('[AppLauncher] Extracted path from file.path:', normalized);
           }
         }
+        
+        // 方法2: 在 Tauri 环境中，尝试通过文件系统 API 获取路径
+        if (!filePath && typeof window !== 'undefined' && (window as any).__TAURI__) {
+          try {
+            // 尝试使用 FileReader 或其他方式获取文件路径
+            // 注意：浏览器 File API 不直接提供路径，但在 Tauri 中可能有扩展
+            const webkitPath = (file as any).webkitRelativePath;
+            if (webkitPath) {
+              const normalized = normalizeFilePath(webkitPath);
+              if (normalized) {
+                paths.push(normalized);
+                console.log('[AppLauncher] Extracted path from webkitRelativePath:', normalized);
+              }
+            }
+          } catch (error) {
+            console.warn('[AppLauncher] Failed to extract path from file:', error);
+          }
+        }
+        
         // 也添加文件名（可能包含扩展名信息）
         if (file.name) {
           paths.push(file.name);
@@ -181,7 +258,7 @@ const AppLauncher: React.FC = () => {
     // 4. 尝试从 text 提取
     try {
       const text = e.dataTransfer.getData('text');
-      if (text && text !== textPlain) {
+      if (text) {
         console.log('[AppLauncher] text raw:', text);
         const textPaths = text.split('\n').map(t => normalizeFilePath(t.trim())).filter(p => p);
         paths.push(...textPaths);
@@ -242,8 +319,38 @@ const AppLauncher: React.FC = () => {
     console.log('[AppLauncher] Drop event details:', JSON.stringify(dropInfo, null, 2));
 
     // 提取所有可能的路径
-    const allPaths = extractPathsFromDropEvent(e);
+    const allPaths = await extractPathsFromDropEvent(e);
     console.log('[AppLauncher] Extracted paths:', allPaths);
+    
+    // 如果 files 数组中有文件但没有路径，尝试通过 Tauri API 获取
+    if (allPaths.length === 0 && dropInfo.files.length > 0) {
+      console.log('[AppLauncher] No paths extracted, trying Tauri-specific methods...');
+      
+      // 在 Tauri 环境中，尝试使用文件系统 API
+      if (typeof window !== 'undefined' && (window as any).__TAURI__) {
+        try {
+          // 尝试从拖拽的文件对象中获取路径
+          // 注意：浏览器 File API 不直接提供路径，但我们可以尝试其他方法
+          const file = e.dataTransfer.files[0];
+          if (file) {
+            // 尝试读取文件内容来确认文件类型，然后通过其他方式获取路径
+            // 但实际上，我们需要的是路径，不是内容
+            
+            // 另一种方法：使用 Tauri 的 dialog API 让用户选择文件
+            // 但这不是我们想要的，因为用户已经拖拽了文件
+            
+            console.log('[AppLauncher] File object details:', {
+              name: file.name,
+              type: file.type,
+              size: file.size,
+              lastModified: file.lastModified,
+            });
+          }
+        } catch (error) {
+          console.error('[AppLauncher] Failed to process file with Tauri API:', error);
+        }
+      }
+    }
 
     // 查找第一个应用文件路径
     let appFilePath: string | null = null;
@@ -295,7 +402,19 @@ const AppLauncher: React.FC = () => {
           }
         }
         
-        // 方法2: 从 text/plain 获取完整路径
+        // 方法2: 在 Tauri 环境中，如果没有路径，尝试通过文件系统搜索
+        if (!appFilePath && typeof window !== 'undefined' && (window as any).__TAURI__) {
+          if (lowerFileName.endsWith('.exe') || lowerFileName.endsWith('.lnk') || lowerFileName.endsWith('.bat')) {
+            console.log('[AppLauncher] File has no path, but is app file. File name:', fileName);
+            // 注意：浏览器 File API 不提供文件路径，这是安全限制
+            // 但在 Tauri 中，我们可以尝试其他方法
+            // 实际上，如果 file.path 不存在，我们无法直接获取路径
+            // 需要用户通过其他方式提供路径，或者使用文件选择对话框
+            console.warn('[AppLauncher] Cannot get file path from File object. This is a browser security limitation.');
+          }
+        }
+        
+        // 方法3: 从 text/plain 获取完整路径
         if (!appFilePath && (lowerFileName.endsWith('.exe') || lowerFileName.endsWith('.lnk') || lowerFileName.endsWith('.bat'))) {
           try {
             const textPlain = e.dataTransfer.getData('text/plain');
@@ -318,7 +437,7 @@ const AppLauncher: React.FC = () => {
           }
         }
         
-        // 方法3: 如果文件名是应用文件，尝试在所有路径中查找匹配的完整路径
+        // 方法4: 如果文件名是应用文件，尝试在所有路径中查找匹配的完整路径
         if (!appFilePath && fallbackAppFileName) {
           console.log('[AppLauncher] Trying to match file name with full paths...');
           for (const path of allPaths) {
@@ -331,6 +450,13 @@ const AppLauncher: React.FC = () => {
               break;
             }
           }
+        }
+        
+        // 方法5: 如果仍然没有找到路径，但文件名是应用文件，提示用户
+        if (!appFilePath && (lowerFileName.endsWith('.exe') || lowerFileName.endsWith('.lnk') || lowerFileName.endsWith('.bat'))) {
+          console.warn('[AppLauncher] App file detected but no path found. File:', fileName);
+          // 在 Tauri 环境中，可以尝试使用文件选择对话框让用户重新选择
+          // 但这会打断用户体验，所以暂时不实现
         }
       }
     }
