@@ -88,25 +88,40 @@ const AppLauncher: React.FC = () => {
 
   // 规范化文件路径（处理各种格式）
   const normalizeFilePath = (rawPath: string): string => {
-    if (!rawPath) return '';
+    if (!rawPath || typeof rawPath !== 'string') return '';
     
-    // 处理 file:// URI
-    let path = rawPath.replace(/^file:\/\//, '').replace(/^file:\/\/\//, '');
+    let path = rawPath.trim();
+    if (!path) return '';
     
-    // Windows 路径格式: file:///C:/path/to/file.exe -> C:/path/to/file.exe
+    // 处理 file:// URI（多种格式）
+    // file:///C:/path/to/file.exe
+    // file://C:/path/to/file.exe
+    // file:///path/to/file.exe
+    path = path.replace(/^file:\/\/\/+/, '').replace(/^file:\/\//, '');
+    
+    // Windows 路径格式: /C:/path/to/file.exe -> C:/path/to/file.exe
     if (path.startsWith('/') && /^\/[A-Za-z]:/.test(path)) {
       path = path.substring(1);
     }
     
-    // URL 解码
+    // URL 解码（可能需要多次解码）
     try {
-      path = decodeURIComponent(path);
+      let decoded = decodeURIComponent(path);
+      // 如果解码后还有编码字符，再解码一次
+      if (decoded !== path && decoded.includes('%')) {
+        decoded = decodeURIComponent(decoded);
+      }
+      path = decoded;
     } catch {
       // 解码失败，使用原始路径
     }
     
-    // 统一路径分隔符
-    path = path.replaceAll(S_L, B_L);
+    // 统一路径分隔符（保留 UNC 路径的双反斜杠开头）
+    if (path.startsWith('\\\\')) {
+      path = '\\\\' + path.substring(2).replaceAll(S_L, B_L);
+    } else {
+      path = path.replaceAll(S_L, B_L);
+    }
     
     return path.trim();
   };
@@ -232,11 +247,12 @@ const AppLauncher: React.FC = () => {
 
     // 查找第一个应用文件路径
     let appFilePath: string | null = null;
+    let fallbackAppFileName: string | null = null;
     
     for (const path of allPaths) {
       console.log('[AppLauncher] Checking path:', path);
       const isApp = isAppFilePath(path);
-      const hasFullPath = path.includes(B_L) || path.match(/^[A-Za-z]:/);
+      const hasFullPath = path.includes(B_L) || path.match(/^[A-Za-z]:/) || path.startsWith('\\\\');
       console.log('[AppLauncher] Path check:', { path, isApp, hasFullPath });
       
       // 检查是否是应用文件（通过扩展名）
@@ -247,44 +263,72 @@ const AppLauncher: React.FC = () => {
           console.log('[AppLauncher] Found app file path:', appFilePath);
           break;
         } else {
-          console.log('[AppLauncher] Path is app file but not full path, saving for fallback:', path);
+          // 保存文件名作为备选（如果后面找不到完整路径，可以尝试组合）
+          if (!fallbackAppFileName) {
+            fallbackAppFileName = path;
+            console.log('[AppLauncher] Saved app file name for fallback:', fallbackAppFileName);
+          }
         }
       }
     }
 
-    // 如果没有找到完整路径，尝试从文件名和 text/plain 组合
+    // 如果没有找到完整路径，尝试多种备选方案
     if (!appFilePath) {
+      console.log('[AppLauncher] No full path found, trying fallback methods...');
+      
       const files = e.dataTransfer.files;
       if (files && files.length > 0) {
         const file = files[0];
-        const fileName = file.name.toLowerCase();
+        const fileName = file.name;
+        const lowerFileName = fileName.toLowerCase();
         
         console.log('[AppLauncher] Trying fallback with file name:', fileName);
         
-        if (fileName.endsWith('.exe') || fileName.endsWith('.lnk') || fileName.endsWith('.bat')) {
-          // 尝试从 text/plain 获取完整路径
-          const textPlain = e.dataTransfer.getData('text/plain');
-          console.log('[AppLauncher] text/plain content:', textPlain);
-          
-          if (textPlain) {
-            const plainPath = normalizeFilePath(textPlain);
-            console.log('[AppLauncher] Normalized plain path:', plainPath);
-            
-            if (isAppFilePath(plainPath) && (plainPath.includes(B_L) || plainPath.match(/^[A-Za-z]:/))) {
-              appFilePath = plainPath;
-              console.log('[AppLauncher] Found app file path from text/plain:', appFilePath);
-            }
+        // 方法1: 检查 file.path 属性（Tauri 环境）
+        const filePath = (file as any).path;
+        if (filePath) {
+          const normalized = normalizeFilePath(filePath);
+          console.log('[AppLauncher] file.path normalized:', normalized);
+          if (isAppFilePath(normalized)) {
+            appFilePath = normalized;
+            console.log('[AppLauncher] Found app file path from file.path:', appFilePath);
           }
-          
-          // 如果 text/plain 也没有，尝试使用 file.path
-          if (!appFilePath) {
-            const filePath = (file as any).path;
-            if (filePath) {
-              const normalized = normalizeFilePath(filePath);
-              if (isAppFilePath(normalized)) {
-                appFilePath = normalized;
-                console.log('[AppLauncher] Found app file path from file.path:', appFilePath);
+        }
+        
+        // 方法2: 从 text/plain 获取完整路径
+        if (!appFilePath && (lowerFileName.endsWith('.exe') || lowerFileName.endsWith('.lnk') || lowerFileName.endsWith('.bat'))) {
+          try {
+            const textPlain = e.dataTransfer.getData('text/plain');
+            console.log('[AppLauncher] text/plain content:', textPlain);
+            
+            if (textPlain) {
+              const plainPath = normalizeFilePath(textPlain);
+              console.log('[AppLauncher] Normalized plain path:', plainPath);
+              
+              if (isAppFilePath(plainPath)) {
+                const hasFullPath = plainPath.includes(B_L) || plainPath.match(/^[A-Za-z]:/) || plainPath.startsWith('\\\\');
+                if (hasFullPath) {
+                  appFilePath = plainPath;
+                  console.log('[AppLauncher] Found app file path from text/plain:', appFilePath);
+                }
               }
+            }
+          } catch (error) {
+            console.warn('[AppLauncher] Failed to get text/plain:', error);
+          }
+        }
+        
+        // 方法3: 如果文件名是应用文件，尝试在所有路径中查找匹配的完整路径
+        if (!appFilePath && fallbackAppFileName) {
+          console.log('[AppLauncher] Trying to match file name with full paths...');
+          for (const path of allPaths) {
+            const pathLower = path.toLowerCase();
+            const fileNameLower = fallbackAppFileName.toLowerCase();
+            // 检查路径是否以文件名结尾
+            if (pathLower.endsWith(fileNameLower) && (path.includes(B_L) || path.match(/^[A-Za-z]:/) || path.startsWith('\\\\'))) {
+              appFilePath = path;
+              console.log('[AppLauncher] Matched file name with full path:', appFilePath);
+              break;
             }
           }
         }
