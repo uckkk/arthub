@@ -120,33 +120,66 @@ const AppLauncher: React.FC = () => {
     if (files && files.length > 0) {
       for (let i = 0; i < files.length; i++) {
         const file = files[i];
+        // 优先使用 path 属性（Tauri 环境）
         const filePath = (file as any).path || (file as any).webkitRelativePath;
         if (filePath) {
-          paths.push(normalizeFilePath(filePath));
+          const normalized = normalizeFilePath(filePath);
+          if (normalized) {
+            paths.push(normalized);
+            console.log('[AppLauncher] Extracted path from file.path:', normalized);
+          }
         }
         // 也添加文件名（可能包含扩展名信息）
         if (file.name) {
           paths.push(file.name);
+          console.log('[AppLauncher] Extracted file name:', file.name);
         }
       }
     }
     
     // 2. 从 text/uri-list 提取
-    const textUriList = e.dataTransfer.getData('text/uri-list');
-    if (textUriList) {
-      const uriPaths = textUriList.split('\n').map(uri => normalizeFilePath(uri));
-      paths.push(...uriPaths);
+    try {
+      const textUriList = e.dataTransfer.getData('text/uri-list');
+      if (textUriList) {
+        console.log('[AppLauncher] text/uri-list raw:', textUriList);
+        const uriPaths = textUriList.split('\n').map(uri => normalizeFilePath(uri.trim())).filter(p => p);
+        paths.push(...uriPaths);
+        console.log('[AppLauncher] Extracted paths from text/uri-list:', uriPaths);
+      }
+    } catch (error) {
+      console.warn('[AppLauncher] Failed to get text/uri-list:', error);
     }
     
     // 3. 从 text/plain 提取
-    const textPlain = e.dataTransfer.getData('text/plain');
-    if (textPlain) {
-      const plainPaths = textPlain.split('\n').map(text => normalizeFilePath(text));
-      paths.push(...plainPaths);
+    try {
+      const textPlain = e.dataTransfer.getData('text/plain');
+      if (textPlain) {
+        console.log('[AppLauncher] text/plain raw:', textPlain);
+        const plainPaths = textPlain.split('\n').map(text => normalizeFilePath(text.trim())).filter(p => p);
+        paths.push(...plainPaths);
+        console.log('[AppLauncher] Extracted paths from text/plain:', plainPaths);
+      }
+    } catch (error) {
+      console.warn('[AppLauncher] Failed to get text/plain:', error);
+    }
+    
+    // 4. 尝试从 text 提取
+    try {
+      const text = e.dataTransfer.getData('text');
+      if (text && text !== textPlain) {
+        console.log('[AppLauncher] text raw:', text);
+        const textPaths = text.split('\n').map(t => normalizeFilePath(t.trim())).filter(p => p);
+        paths.push(...textPaths);
+        console.log('[AppLauncher] Extracted paths from text:', textPaths);
+      }
+    } catch (error) {
+      console.warn('[AppLauncher] Failed to get text:', error);
     }
     
     // 去重并过滤空值
-    return [...new Set(paths)].filter(p => p.length > 0);
+    const uniquePaths = [...new Set(paths)].filter(p => p.length > 0);
+    console.log('[AppLauncher] All extracted unique paths:', uniquePaths);
+    return uniquePaths;
   };
 
   const handleDrop = async (e: React.DragEvent) => {
@@ -154,10 +187,44 @@ const AppLauncher: React.FC = () => {
     e.stopPropagation();
     setIsDraggingOver(false);
 
-    console.log('[AppLauncher] Drop event:', {
+    // 详细记录拖拽事件的所有信息
+    const dropInfo = {
       types: Array.from(e.dataTransfer.types),
       filesCount: e.dataTransfer.files.length,
-    });
+      files: [] as any[],
+      textUriList: '',
+      textPlain: '',
+      text: '',
+    };
+
+    // 记录 files 数组的详细信息
+    if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+      for (let i = 0; i < e.dataTransfer.files.length; i++) {
+        const file = e.dataTransfer.files[i];
+        dropInfo.files.push({
+          name: file.name,
+          type: file.type,
+          size: file.size,
+          path: (file as any).path,
+          webkitRelativePath: (file as any).webkitRelativePath,
+        });
+      }
+    }
+
+    // 记录所有可能的数据
+    try {
+      dropInfo.textUriList = e.dataTransfer.getData('text/uri-list') || '';
+    } catch {}
+    
+    try {
+      dropInfo.textPlain = e.dataTransfer.getData('text/plain') || '';
+    } catch {}
+    
+    try {
+      dropInfo.text = e.dataTransfer.getData('text') || '';
+    } catch {}
+
+    console.log('[AppLauncher] Drop event details:', JSON.stringify(dropInfo, null, 2));
 
     // 提取所有可能的路径
     const allPaths = extractPathsFromDropEvent(e);
@@ -167,13 +234,20 @@ const AppLauncher: React.FC = () => {
     let appFilePath: string | null = null;
     
     for (const path of allPaths) {
+      console.log('[AppLauncher] Checking path:', path);
+      const isApp = isAppFilePath(path);
+      const hasFullPath = path.includes(B_L) || path.match(/^[A-Za-z]:/);
+      console.log('[AppLauncher] Path check:', { path, isApp, hasFullPath });
+      
       // 检查是否是应用文件（通过扩展名）
-      if (isAppFilePath(path)) {
+      if (isApp) {
         // 验证路径格式（必须是完整路径，不能只是文件名）
-        if (path.includes(B_L) || path.match(/^[A-Za-z]:/)) {
+        if (hasFullPath) {
           appFilePath = path;
           console.log('[AppLauncher] Found app file path:', appFilePath);
           break;
+        } else {
+          console.log('[AppLauncher] Path is app file but not full path, saving for fallback:', path);
         }
       }
     }
@@ -185,14 +259,32 @@ const AppLauncher: React.FC = () => {
         const file = files[0];
         const fileName = file.name.toLowerCase();
         
+        console.log('[AppLauncher] Trying fallback with file name:', fileName);
+        
         if (fileName.endsWith('.exe') || fileName.endsWith('.lnk') || fileName.endsWith('.bat')) {
           // 尝试从 text/plain 获取完整路径
           const textPlain = e.dataTransfer.getData('text/plain');
+          console.log('[AppLauncher] text/plain content:', textPlain);
+          
           if (textPlain) {
             const plainPath = normalizeFilePath(textPlain);
+            console.log('[AppLauncher] Normalized plain path:', plainPath);
+            
             if (isAppFilePath(plainPath) && (plainPath.includes(B_L) || plainPath.match(/^[A-Za-z]:/))) {
               appFilePath = plainPath;
               console.log('[AppLauncher] Found app file path from text/plain:', appFilePath);
+            }
+          }
+          
+          // 如果 text/plain 也没有，尝试使用 file.path
+          if (!appFilePath) {
+            const filePath = (file as any).path;
+            if (filePath) {
+              const normalized = normalizeFilePath(filePath);
+              if (isAppFilePath(normalized)) {
+                appFilePath = normalized;
+                console.log('[AppLauncher] Found app file path from file.path:', appFilePath);
+              }
             }
           }
         }
@@ -208,6 +300,7 @@ const AppLauncher: React.FC = () => {
         try {
           const { exists } = await import('@tauri-apps/api/fs');
           const fileExists = await exists(appFilePath);
+          console.log('[AppLauncher] File existence check:', { path: appFilePath, exists: fileExists });
           if (!fileExists) {
             console.warn('[AppLauncher] File does not exist:', appFilePath);
             // 继续处理，可能路径格式有问题但文件实际存在
@@ -236,6 +329,7 @@ const AppLauncher: React.FC = () => {
     }
 
     console.warn('[AppLauncher] No valid app file found in drop event');
+    console.warn('[AppLauncher] Full drop event data:', dropInfo);
   };
 
   const handleLaunch = async (app: AppItem) => {
