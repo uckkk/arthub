@@ -76,8 +76,8 @@ jobs:
         with:
           targets: ${{ matrix.target }}
 
-      # 4. 提取版本号（如果打了标签，从标签提取；否则使用 package.json）
-      - name: Extract version
+      # 4. 提取或生成版本号
+      - name: Extract or generate version
         id: version
         shell: bash
         run: |
@@ -86,16 +86,21 @@ jobs:
             VERSION=$(echo "${{ github.ref }}" | sed 's/refs\/tags\/v//')
             echo "从 Git tag 提取版本号: $VERSION"
           else
-            # 从 package.json 读取版本号
-            VERSION=$(node -p "require('./package.json').version")
-            echo "从 package.json 读取版本号: $VERSION"
+            # 自动生成基于日期和时间的版本号
+            # 格式：1.0.YYYYMMDD.HHMM
+            # 例如：1.0.20240119.1530
+            BUILD_DATE=$(date -u +"%Y%m%d")
+            BUILD_TIME=$(date -u +"%H%M")
+            VERSION="1.0.${BUILD_DATE}.${BUILD_TIME}"
+            echo "自动生成版本号: $VERSION"
+            echo "构建日期: $BUILD_DATE"
+            echo "构建时间: $BUILD_TIME"
           fi
           echo "version=$VERSION" >> $GITHUB_OUTPUT
           echo "当前版本号: $VERSION"
       
-      # 4.5. 更新版本号到 package.json（如果从 tag 提取）
+      # 4.5. 更新版本号到 package.json
       - name: Update version in package.json
-        if: startsWith(github.ref, 'refs/tags/v')
         shell: bash
         run: |
           npm pkg set version=${{ steps.version.outputs.version }}

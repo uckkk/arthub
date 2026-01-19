@@ -7,23 +7,26 @@ const GITHUB_REPO = 'uckkk/arthub';
 
 // 从 package.json 读取版本号（构建时会被替换）
 // Vite 的 define 配置会在构建时将 process.env.APP_VERSION 和 window.__APP_VERSION__ 替换为实际的版本号字符串
-// 例如：process.env.APP_VERSION 会被替换为 "1.0.1"
+// 例如：process.env.APP_VERSION 会被替换为 "1.0.20240119.1530"
 // 注意：Vite 会在构建时进行全局字符串替换，所以构建后的代码中这些值会直接是字符串字面量
 
 // 默认版本号（如果构建时注入失败，使用此值）
+// 注意：这个值只会在开发环境中使用，生产构建时会由 Vite 替换
 const DEFAULT_VERSION = '1.0.1';
 
 // 获取版本号：优先使用构建时注入的值
 // Vite 会在构建时将 window.__APP_VERSION__ 替换为实际的版本号字符串
-// 所以构建后的代码中，这里会直接是字符串字面量，例如 "1.0.1"
+// 所以构建后的代码中，这里会直接是字符串字面量，例如 "1.0.20240119.1530"
 // 使用 window.__APP_VERSION__ 因为它在浏览器环境中可用，且 Vite 会进行替换
+// 注意：在构建后的代码中，这行会被替换为：let CURRENT_VERSION: string = "1.0.20240119.1530" || DEFAULT_VERSION;
 let CURRENT_VERSION: string = (window as any).__APP_VERSION__ || DEFAULT_VERSION;
 
 // 如果 window.__APP_VERSION__ 不可用（开发环境或构建失败），尝试从 process.env.APP_VERSION 读取
 // Vite 也会将 process.env.APP_VERSION 替换为实际的版本号字符串
+// 注意：在构建后的代码中，这行会被替换为：const envVersion = "1.0.20240119.1530";
 if (!CURRENT_VERSION || CURRENT_VERSION === DEFAULT_VERSION) {
   const envVersion = (process as any).env?.APP_VERSION;
-  if (envVersion && typeof envVersion === 'string') {
+  if (envVersion && typeof envVersion === 'string' && envVersion !== DEFAULT_VERSION) {
     CURRENT_VERSION = envVersion;
   }
 }
@@ -33,11 +36,13 @@ if (typeof CURRENT_VERSION !== 'string' || !CURRENT_VERSION) {
   CURRENT_VERSION = DEFAULT_VERSION;
 }
 
-// 调试：在控制台输出版本号（仅在开发环境）
-if (typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')) {
+// 调试：在控制台输出版本号（开发和生产环境都输出，便于调试）
+if (typeof window !== 'undefined') {
   console.log('[ArtHub] 当前版本号:', CURRENT_VERSION);
-  console.log('[ArtHub] window.__APP_VERSION__:', (window as any).__APP_VERSION__);
-  console.log('[ArtHub] process.env.APP_VERSION:', (process as any).env?.APP_VERSION);
+  if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
+    console.log('[ArtHub] window.__APP_VERSION__:', (window as any).__APP_VERSION__);
+    console.log('[ArtHub] process.env.APP_VERSION:', (process as any).env?.APP_VERSION);
+  }
 }
 
 interface ReleaseInfo {
