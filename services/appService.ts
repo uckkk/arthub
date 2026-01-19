@@ -8,7 +8,12 @@ interface AppInfo {
 
 // 检查是否在 Tauri 环境中
 function isTauriEnvironment(): boolean {
-  return typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
+  if (typeof window === 'undefined') {
+    return false;
+  }
+  // 多种方式检测 Tauri 环境，提高可靠性
+  const win = window as any;
+  return !!(win.__TAURI__ || win.__TAURI_INTERNALS__ || win.__TAURI_METADATA__);
 }
 
 // 从文件路径提取应用名称
