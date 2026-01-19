@@ -61,7 +61,11 @@ export async function saveNotesToFile(content: string, presetId?: string): Promi
   }
 
   // 检查是否在 Tauri 环境中
-  if (typeof window === 'undefined' || !('__TAURI_INTERNALS__' in window)) {
+  if (typeof window === 'undefined') {
+    return false;
+  }
+  const win = window as any;
+  if (!(win.__TAURI__ || win.__TAURI_INTERNALS__ || win.__TAURI_METADATA__)) {
     return false;
   }
 
