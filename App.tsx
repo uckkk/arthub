@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, lazy, Suspense } from 'react';
 import { 
   Type, Menu, User, Settings, 
-  Code, HardDrive, Home, CheckSquare, Grid3X3
+  Code, Home, CheckSquare, Grid3X3
 } from 'lucide-react';
 import { getStorageConfig, formatSyncTime } from './services/fileStorageService';
 import { getUserInfo, clearUserInfo, UserInfo } from './services/userAuthService';
