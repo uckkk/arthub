@@ -125,28 +125,14 @@ export async function launchApp(appPath: string): Promise<void> {
   }
 
   try {
-    const { Command } = await import('@tauri-apps/api/shell');
+    // 使用 Rust 后端命令来启动应用（最可靠的方法）
+    const { invoke } = await import('@tauri-apps/api/tauri');
     
-    // 统一使用 cmd start 命令来启动所有类型的应用
-    // 这样可以确保：
-    // 1. .lnk 文件正确启动快捷方式指向的应用
-    // 2. .exe 文件直接启动可执行文件
-    // 3. .bat 文件在命令提示符中执行
+    console.log('[appService] Invoking launch_app command with path:', normalizedPath);
     
-    // 转义路径中的引号（如果路径本身包含引号）
-    // 注意：cmd start 命令会自动处理路径中的空格，但我们需要确保路径格式正确
-    const escapedPath = normalizedPath.replace(/"/g, '""');
+    await invoke('launch_app', { appPath: normalizedPath });
     
-    // 使用 start "" "path" 格式
-    // 空字符串表示使用默认窗口标题
-    // 引号确保路径中的空格被正确处理
-    const command = Command.create('cmd', ['/c', 'start', '', `"${escapedPath}"`]);
-    
-    console.log('[appService] Executing command: cmd /c start "" "' + escapedPath + '"');
-    
-    const result = await command.execute();
-    
-    console.log('[appService] Command executed successfully:', result);
+    console.log('[appService] App launched successfully via Rust backend');
   } catch (error: any) {
     // 改进错误日志，显示更多信息
     const errorDetails = {
@@ -159,26 +145,10 @@ export async function launchApp(appPath: string): Promise<void> {
     
     console.error('[appService] 启动应用失败:', errorDetails);
     
-    // 尝试降级方案：直接使用 shell.open
-    try {
-      console.log('[appService] Trying fallback: shell.open');
-      const { open } = await import('@tauri-apps/api/shell');
-      await open(normalizedPath);
-      console.log('[appService] Fallback succeeded');
-    } catch (fallbackError: any) {
-      const fallbackDetails = {
-        message: fallbackError?.message || String(fallbackError),
-        code: fallbackError?.code,
-        path: normalizedPath,
-      };
-      console.error('[appService] 降级启动方案也失败:', fallbackDetails);
-      
-      // 抛出包含详细信息的错误
-      const finalError = new Error(`无法启动应用: ${normalizedPath}. 原因: ${errorDetails.message || '未知错误'}`);
-      (finalError as any).originalError = error;
-      (finalError as any).fallbackError = fallbackError;
-      throw finalError;
-    }
+    // 抛出包含详细信息的错误
+    const finalError = new Error(`无法启动应用: ${normalizedPath}. 原因: ${errorDetails.message || '未知错误'}`);
+    (finalError as any).originalError = error;
+    throw finalError;
   }
 }
 

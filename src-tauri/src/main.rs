@@ -1221,6 +1221,84 @@ fn file_exists_with_path(file_path: String) -> Result<bool, String> {
     Ok(Path::new(&file_path).exists())
 }
 
+// Tauri 命令：启动应用（Windows 上使用 cmd start）
+#[tauri::command]
+fn launch_app(app_path: String) -> Result<(), String> {
+    println!("[ArtHub] Launching app: {}", app_path);
+    
+    #[cfg(target_os = "windows")]
+    {
+        use std::process::Command;
+        
+        // 使用 cmd /c start "" "path" 格式来启动应用
+        // 这样可以正确处理 .exe、.lnk、.bat 等文件
+        let result = Command::new("cmd")
+            .args(&["/c", "start", "", &app_path])
+            .spawn();
+        
+        match result {
+            Ok(_child) => {
+                println!("[ArtHub] Successfully launched app: {}", app_path);
+                Ok(())
+            }
+            Err(e) => {
+                let error_msg = format!("Failed to launch app: {}", e);
+                println!("[ArtHub] Error: {}", error_msg);
+                Err(error_msg)
+            }
+        }
+    }
+    
+    #[cfg(target_os = "macos")]
+    {
+        use std::process::Command;
+        
+        // 在 macOS 上使用 open 命令
+        let result = Command::new("open")
+            .arg(&app_path)
+            .spawn();
+        
+        match result {
+            Ok(_child) => {
+                println!("[ArtHub] Successfully launched app: {}", app_path);
+                Ok(())
+            }
+            Err(e) => {
+                let error_msg = format!("Failed to launch app: {}", e);
+                println!("[ArtHub] Error: {}", error_msg);
+                Err(error_msg)
+            }
+        }
+    }
+    
+    #[cfg(target_os = "linux")]
+    {
+        use std::process::Command;
+        
+        // 在 Linux 上尝试使用 xdg-open
+        let result = Command::new("xdg-open")
+            .arg(&app_path)
+            .spawn();
+        
+        match result {
+            Ok(_child) => {
+                println!("[ArtHub] Successfully launched app: {}", app_path);
+                Ok(())
+            }
+            Err(e) => {
+                let error_msg = format!("Failed to launch app: {}", e);
+                println!("[ArtHub] Error: {}", error_msg);
+                Err(error_msg)
+            }
+        }
+    }
+    
+    #[cfg(not(any(target_os = "windows", target_os = "macos", target_os = "linux")))]
+    {
+        Err("Unsupported platform".to_string())
+    }
+}
+
 // Tauri 命令：打开文件夹（使用系统命令，最可靠的方法）
 #[tauri::command]
 fn open_folder(path: String) -> Result<(), String> {
@@ -1725,6 +1803,7 @@ fn main() {
             icon_mouse_up,
             icon_click,
             app_exit,
+            launch_app,
             open_console_window,
             open_ai_window,
             open_ai_tab,
