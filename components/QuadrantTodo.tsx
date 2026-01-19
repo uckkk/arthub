@@ -1,6 +1,7 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { Plus, X, Edit2, Trash2, GripVertical } from 'lucide-react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
+import { Plus, X, Edit2, Trash2, GripVertical, Link as LinkIcon, ChevronDown, ChevronUp } from 'lucide-react';
 import { useMiddleMouseScroll } from '../utils/useMiddleMouseScroll';
+import { PathItem } from '../types';
 
 interface TodoItem {
   id: string;
@@ -8,6 +9,7 @@ interface TodoItem {
   quadrant: 'urgent-important' | 'not-urgent-important' | 'urgent-not-important' | 'not-urgent-not-important';
   createdAt: number;
   updatedAt: number;
+  linkedPaths?: string[]; // 关联的路径ID列表
 }
 
 const QuadrantTodo: React.FC = () => {
@@ -23,6 +25,8 @@ const QuadrantTodo: React.FC = () => {
   const [showAddModal, setShowAddModal] = useState(false);
   const [draggedTodo, setDraggedTodo] = useState<TodoItem | null>(null);
   const [dragOverQuadrant, setDragOverQuadrant] = useState<TodoItem['quadrant'] | null>(null);
+  const [showPathSelector, setShowPathSelector] = useState(false);
+  const [showPathSelectorEdit, setShowPathSelectorEdit] = useState(false);
 
   const scrollContainerRef = useMiddleMouseScroll<HTMLDivElement>({
     enabled: true,
@@ -34,6 +38,103 @@ const QuadrantTodo: React.FC = () => {
     localStorage.setItem('arthub_quadrant_todos', JSON.stringify(todos));
   }, [todos]);
 
+  // 从常用入口加载路径列表
+  const availablePaths = useMemo<PathItem[]>(() => {
+    try {
+      const saved = localStorage.getItem('arthub_paths');
+      if (saved) {
+        const paths: PathItem[] = JSON.parse(saved);
+        return paths;
+      }
+    } catch (error) {
+      console.error('Failed to load paths:', error);
+    }
+    return [];
+  }, []);
+
+  // 提取文本中的路径引用（格式：[path:路径ID]）
+  const extractPathReferences = (text: string): string[] => {
+    const pathRegex = /\[path:([^\]]+)\]/g;
+    const matches = [];
+    let match;
+    while ((match = pathRegex.exec(text)) !== null) {
+      matches.push(match[1]);
+    }
+    return matches;
+  };
+
+  // 渲染带路径链接的文本
+  const renderTextWithPaths = (text: string) => {
+    const pathRegex = /\[path:([^\]]+)\]/g;
+    const parts = [];
+    let lastIndex = 0;
+    let match;
+
+    while ((match = pathRegex.exec(text)) !== null) {
+      // 添加匹配前的文本
+      if (match.index > lastIndex) {
+        parts.push(text.substring(lastIndex, match.index));
+      }
+      
+      // 查找对应的路径
+      const pathId = match[1];
+      const path = availablePaths.find(p => p.id === pathId);
+      
+      if (path) {
+        parts.push(
+          <span key={match.index} className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-blue-500/20 text-blue-400 text-xs">
+            <LinkIcon size={12} />
+            <span>{path.name}</span>
+          </span>
+        );
+      } else {
+        // 如果路径不存在，显示原始文本
+        parts.push(match[0]);
+      }
+      
+      lastIndex = match.index + match[0].length;
+    }
+    
+    // 添加剩余文本
+    if (lastIndex < text.length) {
+      parts.push(text.substring(lastIndex));
+    }
+    
+    return parts.length > 0 ? parts : text;
+  };
+
+  // 插入路径到文本
+  const insertPathToText = (path: PathItem, isEdit: boolean = false) => {
+    const pathRef = `[path:${path.id}]`;
+    if (isEdit) {
+      const cursorPos = (document.activeElement as HTMLTextAreaElement)?.selectionStart || editText.length;
+      const newText = editText.slice(0, cursorPos) + pathRef + editText.slice(cursorPos);
+      setEditText(newText);
+      // 恢复光标位置
+      setTimeout(() => {
+        const textarea = document.activeElement as HTMLTextAreaElement;
+        if (textarea && textarea.tagName === 'TEXTAREA') {
+          const newPos = cursorPos + pathRef.length;
+          textarea.setSelectionRange(newPos, newPos);
+          textarea.focus();
+        }
+      }, 0);
+    } else {
+      const cursorPos = (document.activeElement as HTMLTextAreaElement)?.selectionStart || newTodoText.length;
+      const newText = newTodoText.slice(0, cursorPos) + pathRef + newTodoText.slice(cursorPos);
+      setNewTodoText(newText);
+      // 恢复光标位置
+      setTimeout(() => {
+        const textarea = document.activeElement as HTMLTextAreaElement;
+        if (textarea && textarea.tagName === 'TEXTAREA') {
+          const newPos = cursorPos + pathRef.length;
+          textarea.setSelectionRange(newPos, newPos);
+          textarea.focus();
+        }
+      }, 0);
+    }
+  };
+
   const quadrants: { key: TodoItem['quadrant']; title: string; color: string; bgColor: string }[] = [
     { key: 'urgent-important', title: '重要且紧急', color: 'text-red-400', bgColor: 'bg-red-500/10' },
     { key: 'not-urgent-important', title: '重要不紧急', color: 'text-blue-400', bgColor: 'bg-blue-500/10' },
@@ -44,17 +145,21 @@ const QuadrantTodo: React.FC = () => {
   const handleAddTodo = () => {
     if (!newTodoText.trim()) return;
     
+    const linkedPathIds = extractPathReferences(newTodoText);
+    
     const newTodo: TodoItem = {
       id: Date.now().toString(),
       text: newTodoText.trim(),
       quadrant: newTodoQuadrant,
       createdAt: Date.now(),
       updatedAt: Date.now(),
+      linkedPaths: linkedPathIds.length > 0 ? linkedPathIds : undefined,
     };
     
     setTodos([...todos, newTodo]);
     setNewTodoText('');
     setShowAddModal(false);
+    setShowPathSelector(false);
   };
 
   const handleDelete = (id: string) => {
@@ -71,13 +176,16 @@ const QuadrantTodo: React.FC = () => {
   const handleSaveEdit = () => {
     if (!editText.trim()) return;
     
+    const linkedPathIds = extractPathReferences(editText);
+    
     setTodos(todos.map(t => 
       t.id === editingId 
-        ? { ...t, text: editText.trim(), updatedAt: Date.now() }
+        ? { ...t, text: editText.trim(), updatedAt: Date.now(), linkedPaths: linkedPathIds.length > 0 ? linkedPathIds : undefined }
         : t
     ));
     setEditingId(null);
     setEditText('');
+    setShowPathSelectorEdit(false);
   };
 
   const handleCancelEdit = () => {
@@ -187,6 +295,40 @@ const QuadrantTodo: React.FC = () => {
                     >
                       {editingId === todo.id ? (
                         <div className="space-y-2">
+                          {availablePaths.length > 0 && (
+                            <div className="flex items-center justify-end">
+                              <button
+                                type="button"
+                                onClick={() => setShowPathSelectorEdit(!showPathSelectorEdit)}
+                                className="flex items-center gap-1 px-2 py-1 rounded text-xs text-blue-400 hover:text-blue-300 hover:bg-blue-500/10 transition-colors"
+                              >
+                                <LinkIcon size={12} />
+                                <span>插入路径</span>
+                                {showPathSelectorEdit ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
+                              </button>
+                            </div>
+                          )}
+                          {showPathSelectorEdit && availablePaths.length > 0 && (
+                            <div className="p-2 rounded-lg bg-[#0f0f0f] border border-[#2a2a2a] max-h-32 overflow-y-auto">
+                              <div className="space-y-1">
+                                {availablePaths.map((path) => (
+                                  <button
+                                    key={path.id}
+                                    type="button"
+                                    onClick={() => {
+                                      insertPathToText(path, true);
+                                      setShowPathSelectorEdit(false);
+                                    }}
+                                    className="w-full text-left px-2 py-1 rounded text-xs text-[#a0a0a0] hover:text-white hover:bg-[#1a1a1a] transition-colors flex items-center gap-2"
+                                  >
+                                    <LinkIcon size={10} className="text-blue-400 flex-shrink-0" />
+                                    <span className="flex-1 truncate">{path.name}</span>
+                                    <span className="text-[10px] text-[#666666] truncate max-w-[150px]">{path.path}</span>
+                                  </button>
+                                ))}
+                              </div>
+                            </div>
+                          )}
                           <textarea
                             value={editText}
                             onChange={(e) => setEditText(e.target.value)}
@@ -223,9 +365,9 @@ const QuadrantTodo: React.FC = () => {
                               size={16} 
                               className="text-[#666666] mt-1 cursor-grab active:cursor-grabbing"
                             />
-                            <p className="flex-1 text-white text-sm break-words">
-                              {todo.text}
-                            </p>
+                            <div className="flex-1 text-white text-sm break-words">
+                              {renderTextWithPaths(todo.text)}
+                            </div>
                           </div>
                           <div className="flex items-center gap-2 mt-2 opacity-0 group-hover:opacity-100 transition-opacity">
                             <button
@@ -289,7 +431,41 @@ const QuadrantTodo: React.FC = () => {
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-[#a0a0a0] mb-2">内容</label>
+                <div className="flex items-center justify-between mb-2">
+                  <label className="block text-sm font-medium text-[#a0a0a0]">内容</label>
+                  {availablePaths.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => setShowPathSelector(!showPathSelector)}
+                      className="flex items-center gap-1 px-2 py-1 rounded text-xs text-blue-400 hover:text-blue-300 hover:bg-blue-500/10 transition-colors"
+                    >
+                      <LinkIcon size={12} />
+                      <span>插入路径</span>
+                      {showPathSelector ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
+                    </button>
+                  )}
+                </div>
+                {showPathSelector && availablePaths.length > 0 && (
+                  <div className="mb-3 p-3 rounded-lg bg-[#0f0f0f] border border-[#2a2a2a] max-h-40 overflow-y-auto">
+                    <div className="space-y-1">
+                      {availablePaths.map((path) => (
+                        <button
+                          key={path.id}
+                          type="button"
+                          onClick={() => {
+                            insertPathToText(path, false);
+                            setShowPathSelector(false);
+                          }}
+                          className="w-full text-left px-2 py-1.5 rounded text-sm text-[#a0a0a0] hover:text-white hover:bg-[#1a1a1a] transition-colors flex items-center gap-2"
+                        >
+                          <LinkIcon size={12} className="text-blue-400 flex-shrink-0" />
+                          <span className="flex-1 truncate">{path.name}</span>
+                          <span className="text-xs text-[#666666] truncate max-w-[200px]">{path.path}</span>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
                 <textarea
                   value={newTodoText}
                   onChange={(e) => setNewTodoText(e.target.value)}
