@@ -118,7 +118,8 @@
         "fullscreen": false,
         "minWidth": 1200,
         "minHeight": 700,
-        "visible": false
+        "visible": false,
+        "fileDropEnabled": true
       }
     ]
   }

@@ -68,58 +68,97 @@ const AppLauncher: React.FC = () => {
   // 监听 Tauri 原生文件拖拽事件（获取绝对路径）
   useEffect(() => {
     if (typeof window === 'undefined' || !(window as any).__TAURI__) {
+      console.log('[AppLauncher] Not in Tauri environment, skipping native file-drop listener');
       return;
     }
+
+    console.log('[AppLauncher] Setting up Tauri file-drop listener...');
 
     const setupTauriFileDrop = async () => {
       try {
         const { listen } = await import('@tauri-apps/api/event');
         
         // 监听文件拖拽事件
-        const unlisten = await listen<string[]>('tauri://file-drop', (event) => {
-          console.log('[AppLauncher] Tauri file-drop event:', event.payload);
+        const unlisten = await listen<string[]>('tauri://file-drop', async (event) => {
+          console.log('[AppLauncher] Tauri file-drop event received:', event.payload);
           
-          if (event.payload && event.payload.length > 0) {
+          if (event.payload && Array.isArray(event.payload) && event.payload.length > 0) {
             // 处理所有拖拽的文件
-            event.payload.forEach(async (filePath) => {
-              const lowerPath = filePath.toLowerCase();
+            for (const filePath of event.payload) {
+              if (!filePath || typeof filePath !== 'string') {
+                console.warn('[AppLauncher] Invalid file path in Tauri drop:', filePath);
+                continue;
+              }
+              
+              const lowerPath = filePath.toLowerCase().trim();
+              console.log('[AppLauncher] Processing file from Tauri drop:', filePath, 'lowerPath:', lowerPath);
               
               // 检查是否是应用文件
               if (lowerPath.endsWith('.exe') || lowerPath.endsWith('.lnk') || lowerPath.endsWith('.bat')) {
-                console.log('[AppLauncher] Processing file from Tauri drop:', filePath);
+                console.log('[AppLauncher] Detected app file from Tauri drop:', filePath);
                 
-                const appInfo = await handleDroppedAppFile(filePath);
-                if (appInfo) {
-                  console.log('[AppLauncher] App info from Tauri drop:', appInfo);
-                  const icon = await getAppIcon(appInfo.path);
-                  const newApp: AppItem = {
-                    id: Date.now().toString() + Math.random().toString(36).substr(2, 9),
-                    name: appInfo.name,
-                    path: appInfo.path,
-                    icon: icon,
-                  };
-                  setApps(prev => [...prev, newApp]);
+                try {
+                  const appInfo = await handleDroppedAppFile(filePath);
+                  if (appInfo) {
+                    console.log('[AppLauncher] App info from Tauri drop:', appInfo);
+                    const icon = await getAppIcon(appInfo.path);
+                    const newApp: AppItem = {
+                      id: Date.now().toString() + Math.random().toString(36).substr(2, 9),
+                      name: appInfo.name,
+                      path: appInfo.path,
+                      icon: icon,
+                    };
+                    setApps(prev => [...prev, newApp]);
+                    console.log('[AppLauncher] Successfully added app from Tauri drop');
+                  } else {
+                    console.error('[AppLauncher] handleDroppedAppFile returned null for:', filePath);
+                  }
+                } catch (error) {
+                  console.error('[AppLauncher] Error processing file from Tauri drop:', error, filePath);
                 }
+              } else {
+                console.log('[AppLauncher] File is not an app file (not .exe/.lnk/.bat):', filePath);
               }
-            });
+            }
+          } else {
+            console.warn('[AppLauncher] Tauri file-drop event has no payload or empty array');
           }
         });
         
-        // 监听文件拖拽悬停事件（可选）
+        // 监听文件拖拽悬停事件（可选，用于UI反馈）
         const unlistenHover = await listen<string[]>('tauri://file-drop-hover', (event) => {
           console.log('[AppLauncher] Tauri file-drop-hover event:', event.payload);
+          setIsDraggingOver(true);
         });
         
+        // 监听文件拖拽取消事件
+        const unlistenCancel = await listen('tauri://file-drop-cancelled', () => {
+          console.log('[AppLauncher] Tauri file-drop-cancelled event');
+          setIsDraggingOver(false);
+        });
+        
+        console.log('[AppLauncher] Tauri file-drop listeners setup successfully');
+        
         return () => {
+          console.log('[AppLauncher] Cleaning up Tauri file-drop listeners');
           unlisten();
           unlistenHover();
+          unlistenCancel();
         };
       } catch (error) {
         console.error('[AppLauncher] Failed to setup Tauri file-drop listener:', error);
       }
     };
 
-    setupTauriFileDrop();
+    const cleanup = setupTauriFileDrop();
+    
+    return () => {
+      cleanup.then(cleanupFn => {
+        if (cleanupFn) cleanupFn();
+      }).catch(err => {
+        console.error('[AppLauncher] Error cleaning up Tauri listeners:', err);
+      });
+    };
   }, []);
 
   const handleDragOver = (e: React.DragEvent) => {
