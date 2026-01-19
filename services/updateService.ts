@@ -6,32 +6,55 @@
 const GITHUB_REPO = 'uckkk/arthub';
 
 // 从 package.json 读取版本号（构建时会被替换）
-// Vite 的 define 配置会在构建时将 process.env.APP_VERSION 替换为实际的版本号字符串
+// Vite 的 define 配置会在构建时将 process.env.APP_VERSION 和 window.__APP_VERSION__ 替换为实际的版本号字符串
 // 例如：process.env.APP_VERSION 会被替换为 "1.0.1"
-let CURRENT_VERSION = '1.0.1';
+// 注意：在浏览器环境中，process 对象不存在，但 Vite 会在构建时进行字符串替换
+
+// 默认版本号（如果构建时注入失败，使用此值）
+const DEFAULT_VERSION = '1.0.1';
+
+// 获取版本号：优先使用构建时注入的值
+// Vite 会在构建时将 process.env.APP_VERSION 替换为实际的版本号字符串
+// 所以构建后的代码中，这里会直接是字符串字面量，例如 "1.0.1"
+let CURRENT_VERSION: string = DEFAULT_VERSION;
 
 // 尝试从构建时注入的版本号读取
-try {
-  // Vite 会将 process.env.APP_VERSION 替换为 JSON.stringify(APP_VERSION)
-  // 所以在构建后的代码中，这里会直接是字符串字面量，例如 "1.0.1"
-  const envVersion = (process as any).env?.APP_VERSION;
-  if (envVersion && typeof envVersion === 'string') {
-    CURRENT_VERSION = envVersion;
+// 在构建时，Vite 会将 process.env.APP_VERSION 替换为实际的版本号字符串
+// 所以这里的代码在构建后会变成：const envVersion = "1.0.1";
+const envVersion = (process as any).env?.APP_VERSION;
+if (envVersion && typeof envVersion === 'string' && envVersion !== DEFAULT_VERSION) {
+  CURRENT_VERSION = envVersion;
+} else {
+  // 如果 process.env.APP_VERSION 不可用，尝试从 window 对象读取
+  // Vite 也会将 window.__APP_VERSION__ 替换为实际的版本号字符串
+  const windowVersion = (window as any).__APP_VERSION__;
+  if (windowVersion && typeof windowVersion === 'string') {
+    CURRENT_VERSION = windowVersion;
   } else {
-    // 如果 process.env.APP_VERSION 不可用，尝试从 window 对象读取
-    const windowVersion = (window as any).__APP_VERSION__;
-    if (windowVersion && typeof windowVersion === 'string') {
-      CURRENT_VERSION = windowVersion;
+    // 如果都不可用，尝试从 package.json 读取（开发环境）
+    try {
+      // 仅在开发环境中尝试动态读取
+      if (typeof window !== 'undefined' && window.location.hostname === 'localhost') {
+        // 开发环境，使用默认值或从 localStorage 读取
+        const cachedVersion = localStorage.getItem('arthub_app_version');
+        if (cachedVersion) {
+          CURRENT_VERSION = cachedVersion;
+        }
+      }
+    } catch (e) {
+      // 忽略错误
     }
   }
-} catch (e) {
-  // 如果读取失败，使用默认值
-  console.warn('无法读取版本号，使用默认值:', e);
 }
 
 // 确保版本号是字符串类型且不为空
 if (typeof CURRENT_VERSION !== 'string' || !CURRENT_VERSION) {
-  CURRENT_VERSION = '1.0.1';
+  CURRENT_VERSION = DEFAULT_VERSION;
+}
+
+// 在开发环境中，将版本号缓存到 localStorage（用于调试）
+if (typeof window !== 'undefined' && window.location.hostname === 'localhost') {
+  localStorage.setItem('arthub_app_version', CURRENT_VERSION);
 }
 
 interface ReleaseInfo {
