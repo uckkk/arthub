@@ -568,9 +568,23 @@ const AppLauncher: React.FC = () => {
 
   const handleLaunch = async (app: AppItem) => {
     try {
+      console.log('[AppLauncher] Launching app:', app);
       await launchApp(app.path);
-    } catch (error) {
-      console.error('启动应用失败:', error);
+      console.log('[AppLauncher] App launched successfully');
+    } catch (error: any) {
+      const errorDetails = {
+        message: error?.message || String(error),
+        code: error?.code,
+        appPath: app.path,
+        appName: app.name,
+        errorType: error?.constructor?.name,
+        originalError: error?.originalError,
+        fallbackError: error?.fallbackError,
+      };
+      console.error('[AppLauncher] 启动应用失败:', errorDetails);
+      
+      // 可以在这里添加用户友好的错误提示
+      // 例如：显示一个 Toast 通知
     }
   };
 

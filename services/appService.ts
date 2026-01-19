@@ -99,39 +99,85 @@ export async function handleDroppedAppFile(filePath: string): Promise<AppInfo | 
 
 // 启动应用
 export async function launchApp(appPath: string): Promise<void> {
+  if (!appPath || typeof appPath !== 'string') {
+    const errorMsg = `无效的应用路径: ${appPath}`;
+    console.error('[appService]', errorMsg);
+    throw new Error(errorMsg);
+  }
+
+  // 规范化路径：确保使用正确的路径分隔符
+  let normalizedPath = appPath.trim().replaceAll('/', '\\');
+  
+  // 检查路径是否为空
+  if (!normalizedPath) {
+    const errorMsg = '应用路径为空';
+    console.error('[appService]', errorMsg);
+    throw new Error(errorMsg);
+  }
+
+  console.log('[appService] Launching app:', normalizedPath);
+
   if (!isTauriEnvironment()) {
     // 非 Tauri 环境，尝试使用 window.open
-    window.open(appPath, '_blank');
+    console.warn('[appService] Not in Tauri environment, using window.open');
+    window.open(normalizedPath, '_blank');
     return;
   }
 
   try {
-    const lowerPath = appPath.toLowerCase();
-    const isLnk = lowerPath.endsWith('.lnk');
+    const { Command } = await import('@tauri-apps/api/shell');
     
-    // 对于 .lnk 文件，在 Windows 上使用 cmd start 命令来正确启动
-    // 这样可以确保启动的是快捷方式指向的应用，而不是打开快捷方式文件本身
-    if (isLnk) {
-      const { Command } = await import('@tauri-apps/api/shell');
-      // 使用 start "" "path" 格式，空字符串表示使用默认窗口标题
-      const command = Command.create('cmd', ['/c', 'start', '', `"${appPath}"`]);
-      await command.execute();
-      return;
-    }
+    // 统一使用 cmd start 命令来启动所有类型的应用
+    // 这样可以确保：
+    // 1. .lnk 文件正确启动快捷方式指向的应用
+    // 2. .exe 文件直接启动可执行文件
+    // 3. .bat 文件在命令提示符中执行
     
-    // 对于 .exe 和 .bat 文件，使用 shell.open
-    const { open } = await import('@tauri-apps/api/shell');
-    await open(appPath);
-  } catch (error) {
-    console.error('启动应用失败:', error);
-    // 降级方案：在 Windows 上使用 cmd start
+    // 转义路径中的引号（如果路径本身包含引号）
+    // 注意：cmd start 命令会自动处理路径中的空格，但我们需要确保路径格式正确
+    const escapedPath = normalizedPath.replace(/"/g, '""');
+    
+    // 使用 start "" "path" 格式
+    // 空字符串表示使用默认窗口标题
+    // 引号确保路径中的空格被正确处理
+    const command = Command.create('cmd', ['/c', 'start', '', `"${escapedPath}"`]);
+    
+    console.log('[appService] Executing command: cmd /c start "" "' + escapedPath + '"');
+    
+    const result = await command.execute();
+    
+    console.log('[appService] Command executed successfully:', result);
+  } catch (error: any) {
+    // 改进错误日志，显示更多信息
+    const errorDetails = {
+      message: error?.message || String(error),
+      code: error?.code,
+      path: normalizedPath,
+      errorType: error?.constructor?.name,
+      stack: error?.stack,
+    };
+    
+    console.error('[appService] 启动应用失败:', errorDetails);
+    
+    // 尝试降级方案：直接使用 shell.open
     try {
-      const { Command } = await import('@tauri-apps/api/shell');
-      const command = Command.create('cmd', ['/c', 'start', '', `"${appPath}"`]);
-      await command.execute();
-    } catch (fallbackError) {
-      console.error('降级启动方案也失败:', fallbackError);
-      throw new Error('无法启动应用');
+      console.log('[appService] Trying fallback: shell.open');
+      const { open } = await import('@tauri-apps/api/shell');
+      await open(normalizedPath);
+      console.log('[appService] Fallback succeeded');
+    } catch (fallbackError: any) {
+      const fallbackDetails = {
+        message: fallbackError?.message || String(fallbackError),
+        code: fallbackError?.code,
+        path: normalizedPath,
+      };
+      console.error('[appService] 降级启动方案也失败:', fallbackDetails);
+      
+      // 抛出包含详细信息的错误
+      const finalError = new Error(`无法启动应用: ${normalizedPath}. 原因: ${errorDetails.message || '未知错误'}`);
+      (finalError as any).originalError = error;
+      (finalError as any).fallbackError = fallbackError;
+      throw finalError;
     }
   }
 }
