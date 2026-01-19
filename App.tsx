@@ -3,7 +3,7 @@ import {
   Type, Menu, User, Settings, 
   Code, HardDrive, Home, CheckSquare, Grid3X3
 } from 'lucide-react';
-import { getStorageConfig, saveStorageConfig } from './services/fileStorageService';
+import { getStorageConfig, formatSyncTime } from './services/fileStorageService';
 import { getUserInfo, clearUserInfo, UserInfo } from './services/userAuthService';
 import { initAutoSync } from './utils/autoSync';
 import { preloadAllData } from './services/preloadService';
@@ -123,9 +123,9 @@ const App: React.FC = () => {
     return localStorage.getItem('arthub_naming_preset') || 'fgui_card';
   });
   
-  // 本地存储开关状态
-  const [storageEnabled, setStorageEnabled] = useState(() => {
-    return getStorageConfig().enabled;
+  // 本地存储同步时间
+  const [lastSyncTime, setLastSyncTime] = useState<number | null>(() => {
+    return getStorageConfig().lastSyncTime;
   });
 
   // 控制台显示状态（使用模态框，不打开新窗口）
@@ -157,6 +157,34 @@ const App: React.FC = () => {
   }, []);
 
   const menuGroups = createMenuGroups();
+
+  // 监听存储配置变化，更新同步时间
+  useEffect(() => {
+    const updateSyncTime = () => {
+      const config = getStorageConfig();
+      setLastSyncTime(config.lastSyncTime);
+    };
+    
+    // 立即更新
+    updateSyncTime();
+    
+    // 监听localStorage变化
+    const handleStorageChange = (e: StorageEvent) => {
+      if (e.key === 'arthub_file_storage_config') {
+        updateSyncTime();
+      }
+    };
+    
+    window.addEventListener('storage', handleStorageChange);
+    
+    // 定期更新同步时间
+    const interval = setInterval(updateSyncTime, 1000);
+    
+    return () => {
+      window.removeEventListener('storage', handleStorageChange);
+      clearInterval(interval);
+    };
+  }, []);
 
   // 监听模板切换
   useEffect(() => {
@@ -348,38 +376,6 @@ const App: React.FC = () => {
                   </Suspense>
                 </div>
 
-                {/* 本地存储快捷开关 */}
-                <div className="
-                  flex items-center justify-between px-3 py-2 rounded-lg
-                  bg-[#0a0a0a] border border-[#1a1a1a]
-                ">
-                  <div className="flex items-center gap-2">
-                    <HardDrive size={14} className="text-[#666666]" />
-                    <span className="text-xs text-[#808080]">本地存储</span>
-                  </div>
-                  <label className="relative inline-flex items-center cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={storageEnabled}
-                      onChange={(e) => {
-                        const enabled = e.target.checked;
-                        setStorageEnabled(enabled);
-                        const config = getStorageConfig();
-                        saveStorageConfig({ ...config, enabled });
-                      }}
-                      className="sr-only peer"
-                    />
-                    <div className="
-                      w-8 h-4 rounded-full
-                      bg-[#2a2a2a] peer-checked:bg-blue-600
-                      after:content-[''] after:absolute after:top-[2px] after:left-[2px]
-                      after:bg-white after:rounded-full after:h-3 after:w-3
-                      after:transition-all
-                      peer-checked:after:translate-x-4
-                    "></div>
-                  </label>
-                </div>
-
                 {/* 用户信息和退出 */}
                 {userInfo && (
                   <div className="
@@ -401,19 +397,23 @@ const App: React.FC = () => {
                   </div>
                 )}
 
-                {/* 版本号 - 显示在左下角 */}
-                <div className="px-3 py-1.5 border-t border-[#1a1a1a] mt-2">
-                  <span className="text-[10px] text-[#333333] font-mono select-none">
-                    v{CURRENT_VERSION}
-                  </span>
-                </div>
               </div>
             }
           />
 
           {/* 主内容区域 */}
-          <main className="flex-1 flex flex-col overflow-hidden">
+          <main className="flex-1 flex flex-col overflow-hidden relative">
             {renderContent()}
+            
+            {/* 版本号和同步时间 - 显示在右下角 */}
+            <div className="absolute bottom-0 right-0 px-4 py-2 z-0 pointer-events-none">
+              <div className="flex items-center gap-2 text-[10px] text-[#333333] font-mono select-none">
+                {lastSyncTime && (
+                  <span>已同步.{formatSyncTime(lastSyncTime)}</span>
+                )}
+                <span>v{CURRENT_VERSION}</span>
+              </div>
+            </div>
           </main>
 
           {/* 设置面板 - 始终渲染以静默加载数据，但只在 showSettings 为 true 时显示 */}
