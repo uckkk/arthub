@@ -200,14 +200,40 @@ export async function importAllDataFromFile(): Promise<void> {
       throw new Error('未选择存储目录');
     }
 
-    // 检查文件是否存在
-    const fileExists = await exists(dataFilePath);
+    // 检查文件是否存在（优先使用 Rust 命令，绕过作用域限制）
+    let fileExists = false;
+    try {
+      const { invoke } = await import('@tauri-apps/api/tauri');
+      fileExists = await invoke('file_exists_with_path', { filePath: dataFilePath });
+    } catch (error) {
+      // 如果 Rust 命令失败，尝试使用 Tauri FS API
+      try {
+        fileExists = await exists(dataFilePath);
+      } catch (fsError) {
+        console.error('检查文件存在性失败:', fsError);
+        throw new Error('无法检查文件是否存在');
+      }
+    }
+    
     if (!fileExists) {
       throw new Error('未找到数据文件，请先导出数据');
     }
 
-    // 读取文件
-    const text = await readTextFile(dataFilePath);
+    // 读取文件内容（优先使用 Rust 命令）
+    let text: string;
+    try {
+      const { invoke } = await import('@tauri-apps/api/tauri');
+      text = await invoke('read_file_with_path', { filePath: dataFilePath });
+    } catch (error) {
+      // 如果 Rust 命令失败，尝试使用 Tauri FS API
+      try {
+        text = await readTextFile(dataFilePath);
+      } catch (fsError) {
+        console.error('读取文件失败:', fsError);
+        throw new Error('无法读取数据文件');
+      }
+    }
+    
     const allData = JSON.parse(text);
 
     // 导入到 localStorage
