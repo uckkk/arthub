@@ -4,9 +4,10 @@
 
 已配置 Git post-commit hook，每次提交代码后会自动：
 1. ✅ 推送到 GitHub
-2. 📦 显示 GitHub Actions 构建链接
-3. 📋 提示构建操作步骤
-4. 🌐 （可选）自动打开浏览器
+2. 🔔 **显示 Windows 推送成功通知**（Toast 通知或消息框）
+3. 📦 显示 GitHub Actions 构建链接
+4. 📋 提示构建操作步骤
+5. 🌐 （可选）自动打开浏览器或通过通知直接跳转
 
 ## 🎯 使用方法
 
@@ -20,8 +21,15 @@ git add .
 git commit -m "你的提交信息"
 ```
 
-提交后会自动执行推送，成功后您会看到：
+提交后会自动执行推送，成功后您会：
 
+1. **收到 Windows 推送成功通知** 🔔
+   - Windows 10/11：显示 Toast 通知（右上角弹出）
+   - 旧版 Windows：显示消息框
+   - 通知中包含分支信息和构建链接
+   - 点击通知中的"查看构建"按钮可直接跳转
+
+2. **在控制台看到提示**：
 ```
 ========================================
   自动推送到 GitHub
@@ -138,7 +146,8 @@ Rename-Item .git\hooks\post-commit.disabled .git\hooks\post-commit
 
 ## 📚 相关文件
 
-- `.git/hooks/post-commit` - Git hook 脚本
+- `.git/hooks/post-commit` - Git hook 脚本（自动推送和通知）
+- `scripts/notify-push-success.ps1` - Windows 推送成功通知脚本
 - `scripts/setup-auto-push.ps1` - 设置脚本
 - `scripts/auto-push-and-notify.ps1` - PowerShell 版本（备用）
 - `auto-push-setup.md` - 详细说明文档
