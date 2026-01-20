@@ -1,7 +1,7 @@
 // Prevents additional console window on Windows
 #![cfg_attr(target_os = "windows", windows_subsystem = "windows")]
 
-use tauri::{Manager, WindowBuilder, PhysicalPosition};
+use tauri::{Manager, WindowBuilder, PhysicalPosition, PhysicalSize};
 use serde::{Deserialize, Serialize};
 use std::sync::Mutex;
 
@@ -92,6 +92,8 @@ fn create_icon_window(app: &tauri::AppHandle) -> Result<tauri::Window, Box<dyn s
     };
     
     // 先创建窗口（使用临时位置）
+    // 确保窗口大小与图标大小完全一致，热区与图标显示区域一致
+    // 使用 inner_size 设置内容区域为 64x64，确保没有额外的边框或透明区域
     let mut builder = WindowBuilder::new(
         app,
         "icon",
@@ -103,6 +105,8 @@ fn create_icon_window(app: &tauri::AppHandle) -> Result<tauri::Window, Box<dyn s
     .resizable(false)
     .visible(true)
     .inner_size(ICON_SIZE as f64, ICON_SIZE as f64)
+    .min_inner_size(ICON_SIZE as f64, ICON_SIZE as f64)
+    .max_inner_size(ICON_SIZE as f64, ICON_SIZE as f64)
     .title("");
     
     // Windows 上启用透明背景
@@ -112,6 +116,12 @@ fn create_icon_window(app: &tauri::AppHandle) -> Result<tauri::Window, Box<dyn s
     }
     
     let icon_window = builder.build()?;
+    
+    // 显式设置窗口大小，确保窗口大小精确为 64x64
+    // 这可以防止窗口有额外的边框或透明区域导致热区不匹配
+    if let Err(e) = icon_window.set_size(PhysicalSize::new(ICON_SIZE as u32, ICON_SIZE as u32)) {
+        eprintln!("Warning: Failed to set icon window size: {:?}", e);
+    }
     
     // 使用物理坐标设置正确的位置（避免 DPI 缩放问题）
     if let Err(e) = icon_window.set_position(PhysicalPosition::new(init_x, init_y)) {
@@ -986,11 +996,19 @@ async fn send_workflow_to_comfyui(
                 println!("[ArtHub] Workflow sent to ArtHub extension successfully!");
                 return Ok("extension".to_string());
             } else {
-                println!("[ArtHub] ArtHub extension API returned status: {}", response.status());
+                // 静默处理 404，这是正常的（扩展未安装时）
+                if response.status() != 404 {
+                    println!("[ArtHub] ArtHub extension API returned status: {}", response.status());
+                }
             }
         }
         Err(e) => {
-            println!("[ArtHub] ArtHub extension not installed or not reachable: {:?}", e);
+            // 静默处理连接错误，避免在控制台产生噪音
+            // 这些错误是正常的（ComfyUI 未运行或扩展未安装时）
+            let error_str = e.to_string();
+            if !error_str.contains("timeout") && !error_str.contains("connection") && !error_str.contains("Failed to resolve") {
+                println!("[ArtHub] ArtHub extension error: {:?}", e);
+            }
         }
     }
     
@@ -1009,11 +1027,18 @@ async fn send_workflow_to_comfyui(
                 println!("[ArtHub] Workflow saved via userdata API");
                 return Ok("userdata".to_string());
             } else {
-                println!("[ArtHub] userdata API failed with status: {}", response.status());
+                // 静默处理 404，这是正常的（API 不可用时）
+                if response.status() != 404 {
+                    println!("[ArtHub] userdata API failed with status: {}", response.status());
+                }
             }
         }
         Err(e) => {
-            println!("[ArtHub] userdata API request failed: {:?}", e);
+            // 静默处理连接错误，避免在控制台产生噪音
+            let error_str = e.to_string();
+            if !error_str.contains("timeout") && !error_str.contains("connection") && !error_str.contains("Failed to resolve") {
+                println!("[ArtHub] userdata API request failed: {:?}", e);
+            }
         }
     }
     
@@ -1229,11 +1254,21 @@ fn launch_app(app_path: String) -> Result<(), String> {
     #[cfg(target_os = "windows")]
     {
         use std::process::Command;
+        use std::os::windows::process::CommandExt;
         
-        // 使用 cmd /c start "" "path" 格式来启动应用
+        // Windows API: CREATE_NO_WINDOW = 0x08000000
+        // 这个标志可以隐藏 cmd 窗口，避免启动应用时窗口闪烁
+        const CREATE_NO_WINDOW: u32 = 0x08000000;
+        
+        // 使用 start /min "" "path" 格式，/min 参数可以最小化启动窗口（如果出现）
+        // 结合 CREATE_NO_WINDOW 标志，确保完全不显示 cmd 窗口
         // 这样可以正确处理 .exe、.lnk、.bat 等文件
         let result = Command::new("cmd")
-            .args(&["/c", "start", "", &app_path])
+            .args(&["/c", "start", "/min", "", &app_path])
+            .creation_flags(CREATE_NO_WINDOW)
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .stdin(std::process::Stdio::null())
             .spawn();
         
         match result {

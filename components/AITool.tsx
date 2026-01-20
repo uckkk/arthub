@@ -340,9 +340,16 @@ const AITool: React.FC = () => {
             }).then((result) => {
               if (result === 'extension') {
                 showToast('success', '工作流已自动加载!', 3000);
+              } else if (result === 'userdata') {
+                // userdata API 成功，但不显示提示（用户需要手动加载）
               }
+              // 其他情况（如剪贴板方案）静默处理，避免控制台噪音
             }).catch((err) => {
-              console.log('Backend API failed:', err);
+              // 静默处理错误，这些错误是正常的（ComfyUI 未运行或扩展未安装时）
+              // 只在开发模式下输出日志
+              if (process.env.NODE_ENV === 'development') {
+                console.debug('[AITool] ComfyUI API failed (this is normal if ComfyUI is not running):', err);
+              }
             });
           }
 

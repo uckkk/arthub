@@ -12,6 +12,7 @@
     "clean": "powershell -Command \"if (Test-Path dist) { Remove-Item -Recurse -Force dist }; if (Test-Path node_modules\\.vite) { Remove-Item -Recurse -Force node_modules\\.vite }; Write-Host '清理完成！' -ForegroundColor Green\"",
     "clean:build": "npm run clean && npm run build",
     "sync-version": "node scripts/sync-version.js",
+    "setup-auto-push": "powershell -ExecutionPolicy Bypass -File scripts/setup-auto-push.ps1",
     "tauri": "tauri",
     "tauri:dev": "npm run sync-version && tauri dev",
     "tauri:build": "npm run sync-version && tauri build",

@@ -11,47 +11,54 @@
       box-sizing: border-box;
     }
 
-    html, body {
+    html {
+      width: 64px;
+      height: 64px;
+      margin: 0;
+      padding: 0;
+      overflow: hidden;
+    }
+
+    body {
       width: 64px;
       height: 64px;
       margin: 0;
       padding: 0;
       background: transparent !important;
       background-color: transparent !important;
-      display: flex;
-      align-items: center;
-      justify-content: center;
       cursor: move;
       user-select: none;
       overflow: hidden;
-      /* 不使用 -webkit-app-region: drag，使用自定义拖拽逻辑 */
-    }
-
-    body {
-      background: transparent !important;
+      position: fixed;
+      top: 0;
+      left: 0;
+      /* 固定定位确保没有额外的空间，热区精确匹配窗口大小 */
     }
 
     #icon-container {
-      width: 64px;
-      height: 64px;
+      width: 100%;
+      height: 100%;
+      margin: 0;
+      padding: 0;
       border-radius: 12px;
       background: transparent;
-      display: flex;
-      align-items: center;
-      justify-content: center;
+      display: block;
       overflow: hidden;
-      /* 确保容器是圆角正方形 */
+      position: relative;
+      /* 确保容器完全填充窗口，无额外空间 */
     }
 
     #icon {
-      width: 64px;
-      height: 64px;
-      object-fit: contain;
+      width: 100%;
+      height: 100%;
+      margin: 0;
+      padding: 0;
+      object-fit: cover;
       pointer-events: none;
       border-radius: 12px;
       background: transparent;
-      /* 确保图标是圆角正方形 */
       display: block;
+      /* 使用 cover 确保图标完全填充容器，热区与图标显示区域一致 */
     }
   </style>
 </head>
