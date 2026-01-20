@@ -1,10 +1,25 @@
 # 推送成功通知脚本
+# 重要原则：此脚本仅在代码成功推送到 GitHub 后才会被调用
+# 如果推送失败，Git hook 不会调用此脚本，因此不会显示通知
+# 这样可以确保用户只在代码真正推送到 GitHub 后才收到通知
 # 在 Git post-commit hook 中调用
 
 param(
     [string]$Branch = "",
     [string]$ActionsUrl = ""
 )
+
+# 验证参数
+if ([string]::IsNullOrEmpty($Branch)) {
+    Write-Host "警告: 分支名未提供" -ForegroundColor Yellow
+    $Branch = "未知分支"
+}
+
+# 验证参数
+if ([string]::IsNullOrEmpty($Branch)) {
+    Write-Host "警告: 分支名未提供" -ForegroundColor Yellow
+    $Branch = "未知分支"
+}
 
 # 使用 Windows Toast 通知（Windows 10+）
 function Show-ToastNotification {
