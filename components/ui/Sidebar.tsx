@@ -58,7 +58,16 @@ export const Sidebar: React.FC<SidebarProps> = ({
       )}
 
       {/* 菜单内容 */}
-      <nav className="flex-1 overflow-y-auto py-4 px-3">
+      <nav 
+        className="flex-1 overflow-y-auto py-4 px-3"
+        onDragOver={(e) => {
+          // 允许在整个菜单区域内拖拽
+          if (onReorder && draggedItem) {
+            e.preventDefault();
+            e.stopPropagation();
+          }
+        }}
+      >
         {groups.map((group, groupIndex) => (
           <div key={groupIndex} className={groupIndex > 0 ? 'mt-6' : ''}>
             {/* 分组标题 */}
@@ -96,11 +105,20 @@ export const Sidebar: React.FC<SidebarProps> = ({
                       }
                     }}
                     onDragOver={(e) => {
-                      if (onReorder && draggedItem && draggedItem.groupIndex === groupIndex && isDraggable) {
-                        e.preventDefault();
-                        e.stopPropagation();
-                        e.dataTransfer.dropEffect = 'move';
-                        setDragOverIndex({ groupIndex, itemIndex });
+                      if (onReorder && draggedItem && draggedItem.groupIndex === groupIndex) {
+                        const draggedItemData = groups[draggedItem.groupIndex]?.items[draggedItem.itemIndex];
+                        const isDraggedItemDraggable = draggedItemData && (draggedItemData.draggable !== false);
+                        // 允许在同一分组内拖拽，且被拖拽项目和目标项目都可拖拽
+                        if (isDraggedItemDraggable && isDraggable) {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          e.dataTransfer.dropEffect = 'move';
+                          setDragOverIndex({ groupIndex, itemIndex });
+                        } else if (isDraggedItemDraggable) {
+                          // 即使目标不可拖拽，也要阻止默认行为以允许视觉反馈
+                          e.preventDefault();
+                          e.stopPropagation();
+                        }
                       }
                     }}
                     onDragLeave={() => {
@@ -111,10 +129,14 @@ export const Sidebar: React.FC<SidebarProps> = ({
                     onDrop={(e) => {
                       e.preventDefault();
                       e.stopPropagation();
-                      if (onReorder && draggedItem && draggedItem.groupIndex === groupIndex && isDraggable) {
-                        onReorder(groupIndex, draggedItem.itemIndex, itemIndex);
-                        setDraggedItem(null);
-                        setDragOverIndex(null);
+                      if (onReorder && draggedItem && draggedItem.groupIndex === groupIndex) {
+                        const draggedItemData = groups[draggedItem.groupIndex]?.items[draggedItem.itemIndex];
+                        const isDraggedItemDraggable = draggedItemData && (draggedItemData.draggable !== false);
+                        if (isDraggedItemDraggable && isDraggable) {
+                          onReorder(groupIndex, draggedItem.itemIndex, itemIndex);
+                          setDraggedItem(null);
+                          setDragOverIndex(null);
+                        }
                       }
                     }}
                     onDragEnd={() => {
