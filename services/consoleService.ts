@@ -329,6 +329,11 @@ class ConsoleService {
       return true;
     }
     
+    // GitHub API 的 403 rate limit 错误应该静默处理
+    if (status === 403 && url.includes('api.github.com')) {
+      return true;
+    }
+    
     // 可以添加更多预期的错误模式
     // 例如：检查更新的 API、健康检查端点等
     

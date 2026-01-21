@@ -265,14 +265,31 @@ const App: React.FC = () => {
   }, [currentPresetId]);
 
   useEffect(() => {
-    const savedUserInfo = getUserInfo();
-    if (savedUserInfo) {
-      setIsUserVerified(true);
-      setUserInfo(savedUserInfo);
-      // 用户验证通过后，开始预加载所有组件和数据
-      preloadComponents();
-      preloadAllData();
-    }
+    const loadData = async () => {
+      // 先尝试从文件导入数据（如果已启用文件存储）
+      try {
+        const { autoImportFromFile } = await import('./services/fileStorageService');
+        await autoImportFromFile();
+      } catch (error) {
+        // 静默处理导入错误
+        console.warn('启动时导入文件数据失败:', error);
+      }
+      
+      const savedUserInfo = getUserInfo();
+      if (savedUserInfo) {
+        setIsUserVerified(true);
+        setUserInfo(savedUserInfo);
+        // 用户验证通过后，开始预加载所有组件和数据
+        preloadComponents();
+        await preloadAllData();
+      } else {
+        // 即使没有用户信息，也预加载数据
+        preloadComponents();
+        await preloadAllData();
+      }
+    };
+    
+    loadData();
     initAutoSync();
   }, []);
 

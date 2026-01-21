@@ -48,6 +48,9 @@ function debouncedSync() {
 
 // 包装 localStorage.setItem，添加自动同步
 const originalSetItem = Storage.prototype.setItem;
+// 保存原始方法引用，供导入数据时使用
+(Storage.prototype as any).__originalSetItem = originalSetItem;
+
 Storage.prototype.setItem = function(key: string, value: string) {
   originalSetItem.call(this, key, value);
   

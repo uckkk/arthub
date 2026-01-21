@@ -236,21 +236,57 @@ export async function importAllDataFromFile(): Promise<void> {
     
     const allData = JSON.parse(text);
 
-    // 导入到 localStorage
+    // 导入到 localStorage（使用原始方法避免触发自动同步，避免循环）
+    // 获取真正的原始方法（绕过 autoSync 的包装）
+    const originalSetItem = (Storage.prototype as any).__originalSetItem || Storage.prototype.setItem;
+    
+    // 临时禁用自动同步标志
+    let importCount = 0;
     for (const [key, value] of Object.entries(allData)) {
       if (key.startsWith('arthub_')) {
-        if (typeof value === 'string') {
-          localStorage.setItem(key, value);
-        } else {
-          localStorage.setItem(key, JSON.stringify(value));
+        try {
+          if (typeof value === 'string') {
+            originalSetItem.call(localStorage, key, value);
+          } else {
+            originalSetItem.call(localStorage, key, JSON.stringify(value));
+          }
+          importCount++;
+        } catch (error) {
+          console.warn(`导入数据失败 ${key}:`, error);
         }
       }
     }
+    
+    console.log(`成功从文件导入 ${importCount} 条数据`);
   } catch (error: any) {
     if (error.message?.includes('未找到') || error.message?.includes('NotFound')) {
       throw new Error('未找到数据文件，请先导出数据');
     }
     throw error;
+  }
+}
+
+// 自动从文件导入数据（静默执行，不抛出错误）
+export async function autoImportFromFile(): Promise<boolean> {
+  if (!isTauriEnvironment()) {
+    return false;
+  }
+
+  const config = getStorageConfig();
+  if (!config.enabled) {
+    return false;
+  }
+
+  try {
+    await importAllDataFromFile();
+    return true;
+  } catch (error: any) {
+    // 静默处理错误（文件不存在等是正常情况）
+    if (error.message?.includes('未找到') || error.message?.includes('未选择')) {
+      return false;
+    }
+    console.warn('自动导入数据失败:', error);
+    return false;
   }
 }
 

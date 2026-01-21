@@ -140,6 +140,16 @@ export const checkForUpdates = async (): Promise<UpdateCheckResult> => {
           error: null,
         };
       }
+      // 403 是 rate limit 错误，静默处理（不显示警告）
+      if (response.status === 403) {
+        return {
+          hasUpdate: false,
+          currentVersion: CURRENT_VERSION,
+          latestVersion: null,
+          releaseInfo: null,
+          error: null,
+        };
+      }
       // 其他错误也静默处理
       return {
         hasUpdate: false,
