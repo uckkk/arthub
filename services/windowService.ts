@@ -210,17 +210,26 @@ export async function openUrl(url: string, target: string = '_blank', exactMatch
   // 检查是否是 Tauri 环境
   const isTauri = typeof window !== 'undefined' && (window as any).__TAURI__;
   
-  // 在 Tauri 环境中，对于 HTTP/HTTPS URL，优先使用 shell.open
+  // 在 Tauri 环境中，对于 HTTP/HTTPS URL，直接使用 shell.open 在系统浏览器中打开
+  // 不要使用 window.open，因为在 Tauri 中可能会创建空窗口
   if (isTauri && (url.startsWith('http://') || url.startsWith('https://'))) {
     try {
       const { open } = await import('@tauri-apps/api/shell');
       await open(url);
-      console.log(`[WindowService] 使用 Tauri shell.open 打开: ${url}`);
+      console.log(`[WindowService] 使用 Tauri shell.open 在系统浏览器中打开: ${url}`);
       openingUrls.delete(normalizedUrl);
       return null; // shell.open 无法返回窗口引用
     } catch (shellError) {
-      console.warn('[WindowService] shell.open 失败，回退到 window.open:', shellError);
-      // 继续使用 window.open
+      console.error('[WindowService] shell.open 失败:', shellError);
+      // shell.open 失败时，也不使用 window.open，而是复制到剪贴板
+      try {
+        await navigator.clipboard.writeText(url);
+        console.log(`[WindowService] shell.open 失败，已复制 URL 到剪贴板: ${url}`);
+      } catch (clipboardError) {
+        console.error('[WindowService] 复制到剪贴板也失败:', clipboardError);
+      }
+      openingUrls.delete(normalizedUrl);
+      return null;
     }
   }
 
@@ -294,6 +303,13 @@ export async function openUrl(url: string, target: string = '_blank', exactMatch
           return null;
         } catch (shellError) {
           console.error('[WindowService] shell.open 也失败:', shellError);
+          // 失败时复制到剪贴板
+          try {
+            await navigator.clipboard.writeText(url);
+            console.log(`[WindowService] 已复制 URL 到剪贴板: ${url}`);
+          } catch (clipboardError) {
+            console.error('[WindowService] 复制到剪贴板也失败:', clipboardError);
+          }
         }
       }
       
@@ -313,6 +329,13 @@ export async function openUrl(url: string, target: string = '_blank', exactMatch
         return null;
       } catch (shellError) {
         console.error('[WindowService] shell.open 也失败:', shellError);
+        // 失败时复制到剪贴板
+        try {
+          await navigator.clipboard.writeText(url);
+          console.log(`[WindowService] 已复制 URL 到剪贴板: ${url}`);
+        } catch (clipboardError) {
+          console.error('[WindowService] 复制到剪贴板也失败:', clipboardError);
+        }
       }
     }
     
