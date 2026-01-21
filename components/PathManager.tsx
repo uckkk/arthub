@@ -379,26 +379,6 @@ const PathManager: React.FC = () => {
     setIsDraggingOver(false);
 
     try {
-      const checkAndHandleAppFile = async (filePath: string): Promise<boolean> => {
-        if (!filePath) return false;
-        
-        let cleanPath = filePath.trim().replaceAll(S_L, B_L);
-        
-        if (isAppFile(cleanPath)) {
-          const appInfo = await handleDroppedAppFile(cleanPath);
-          if (appInfo) {
-            setDraggedPath({ 
-              path: appInfo.path, 
-              name: appInfo.name, 
-              type: 'app' 
-            });
-            setShowDragModal(true);
-            return true;
-          }
-        }
-        return false;
-      };
-
       const files = e.dataTransfer.files;
       if (files && files.length > 0) {
         const file = files[0];
@@ -406,17 +386,8 @@ const PathManager: React.FC = () => {
         const fileName = file.name;
         const lowerFileName = fileName.toLowerCase();
         
+        // 阻止添加应用文件，应用应在"常用应用"中添加
         if (lowerFileName.endsWith('.exe') || lowerFileName.endsWith('.lnk')) {
-          if (await checkAndHandleAppFile(filePath)) {
-            return;
-          }
-          const appName = extractAppName(filePath || fileName);
-          setDraggedPath({ 
-            path: filePath || fileName, 
-            name: appName, 
-            type: 'app' 
-          });
-          setShowDragModal(true);
           return;
         }
         
@@ -443,16 +414,8 @@ const PathManager: React.FC = () => {
           filePath = filePath.replaceAll(S_L, B_L);
           
           const lowerPath = filePath.toLowerCase();
+          // 阻止添加应用文件，应用应在"常用应用"中添加
           if (lowerPath.endsWith('.lnk') || lowerPath.endsWith('.exe')) {
-            if (await checkAndHandleAppFile(filePath)) {
-              return;
-            }
-            setDraggedPath({ 
-              path: filePath, 
-              name: extractAppName(filePath), 
-              type: 'app' 
-            });
-            setShowDragModal(true);
             return;
           }
           
@@ -467,10 +430,9 @@ const PathManager: React.FC = () => {
         
         if (textUriList.includes(B_L) || textUriList.includes(S_L)) {
           const lowerUri = textUriList.toLowerCase();
+          // 阻止添加应用文件，应用应在"常用应用"中添加
           if (lowerUri.endsWith('.lnk') || lowerUri.endsWith('.exe')) {
-            if (await checkAndHandleAppFile(textUriList)) {
-              return;
-            }
+            return;
           }
           await handleDroppedPath(textUriList, 'local');
           return;
@@ -479,10 +441,9 @@ const PathManager: React.FC = () => {
       
       if (text) {
         const lowerText = text.toLowerCase();
+        // 阻止添加应用文件，应用应在"常用应用"中添加
         if (lowerText.endsWith('.lnk') || lowerText.endsWith('.exe')) {
-          if (await checkAndHandleAppFile(text)) {
-            return;
-          }
+          return;
         }
 
         const winPathRegex = new RegExp('^[A-Za-z]:[' + B_L + B_L + B_L + S_L + ']');
@@ -1036,7 +997,7 @@ const PathManager: React.FC = () => {
 
   const TypeSelector = ({ value, onChange }: { value: PathType; onChange: (t: PathType) => void }) => (
     <div className="flex gap-2 flex-wrap">
-      {(['local', 'network', 'web', 'app'] as PathType[]).map((t, index) => (
+      {(['local', 'network', 'web'] as PathType[]).map((t, index) => (
         <button
           key={'type-' + index + '-' + t}
           onClick={() => onChange(t)}
@@ -1048,7 +1009,7 @@ const PathManager: React.FC = () => {
               : 'bg-[#1a1a1a] text-[#808080] border border-[#2a2a2a] hover:border-[#3a3a3a]'
           ].filter(Boolean).join(' ')}
         >
-          {t === 'local' ? '本地' : t === 'network' ? '局域网' : t === 'web' ? '网页' : '应用'}
+          {t === 'local' ? '本地' : t === 'network' ? '局域网' : t === 'web' ? '网页' : ''}
         </button>
       ))}
     </div>
@@ -1208,7 +1169,7 @@ const PathManager: React.FC = () => {
               <Folder size={28} className="text-[#333333]" />
             </div>
             <h3 className="text-lg font-medium text-white mb-2">暂无路径</h3>
-            <p className="text-[#666666] mb-6">点击"添加路径"开始管理你的目录，或直接拖入应用快捷方式（.lnk）或可执行文件（.exe）</p>
+            <p className="text-[#666666] mb-6">点击"添加路径"开始管理你的目录</p>
           </div>
         ) : (
           <div 
@@ -1343,7 +1304,7 @@ const PathManager: React.FC = () => {
                   value={newPath}
                   onChange={(e) => setNewPath(e.target.value)}
                   className="w-full px-4 py-2.5 rounded-lg font-mono bg-[#0f0f0f] border border-[#2a2a2a] text-white placeholder-[#666666] focus:outline-none focus:border-blue-500 transition-colors"
-                  placeholder={newType === 'web' ? "https://..." : newType === 'network' ? "\\\\192.168.1.100\\Share" : newType === 'app' ? "C:\\Program Files\\App\\app.exe" : "D:\\Projects\\..."}
+                  placeholder={newType === 'web' ? "https://..." : newType === 'network' ? "\\\\192.168.1.100\\Share" : "D:\\Projects\\..."}
                 />
                 {newType === 'network' && (
                   <p className="text-[11px] text-[#666666] mt-1.5">
@@ -1440,7 +1401,7 @@ const PathManager: React.FC = () => {
                   value={editPath}
                   onChange={(e) => setEditPath(e.target.value)}
                   className="w-full px-4 py-2.5 rounded-lg font-mono bg-[#0f0f0f] border border-[#2a2a2a] text-white placeholder-[#666666] focus:outline-none focus:border-blue-500 transition-colors"
-                  placeholder={editType === 'web' ? "https://..." : editType === 'network' ? "\\\\192.168.1.100\\Share" : editType === 'app' ? "C:\\Program Files\\App\\app.exe" : "D:\\Projects\\..."}
+                  placeholder={editType === 'web' ? "https://..." : editType === 'network' ? "\\\\192.168.1.100\\Share" : "D:\\Projects\\..."}
                 />
                 {editType === 'network' && (
                   <p className="text-[11px] text-[#666666] mt-1.5">
