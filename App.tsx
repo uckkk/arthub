@@ -97,7 +97,7 @@ const LoadingPlaceholder = () => (
 const createMenuGroups = (): MenuGroup[] => [
   {
     items: [
-      { id: 'home', label: '首页', icon: Home },
+      { id: 'home', label: '首页', icon: Home, draggable: false }, // 首页固定，不可拖动
     ],
   },
   {

@@ -7,6 +7,7 @@ export interface MenuItem {
   label: string;
   icon: LucideIcon;
   badge?: number;
+  draggable?: boolean; // 是否可拖动，默认 true
 }
 
 // 菜单分组类型
@@ -38,6 +39,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
 }) => {
   const [draggedItem, setDraggedItem] = useState<{ groupIndex: number; itemIndex: number } | null>(null);
   const [dragOverIndex, setDragOverIndex] = useState<{ groupIndex: number; itemIndex: number } | null>(null);
+  const [pressedItem, setPressedItem] = useState<{ groupIndex: number; itemIndex: number } | null>(null);
   return (
     <aside className={`
       flex flex-col h-full
@@ -77,20 +79,24 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 const isActive = activeId === item.id;
                 const isDragging = draggedItem?.groupIndex === groupIndex && draggedItem?.itemIndex === itemIndex;
                 const isDragOver = dragOverIndex?.groupIndex === groupIndex && dragOverIndex?.itemIndex === itemIndex;
+                const isPressed = pressedItem?.groupIndex === groupIndex && pressedItem?.itemIndex === itemIndex;
+                const isDraggable = onReorder !== undefined && (item.draggable !== false);
 
                 return (
                   <div
                     key={item.id}
-                    draggable={onReorder !== undefined}
+                    draggable={isDraggable}
                     onDragStart={(e) => {
-                      if (onReorder) {
+                      if (onReorder && isDraggable) {
                         setDraggedItem({ groupIndex, itemIndex });
                         e.dataTransfer.effectAllowed = 'move';
                         e.dataTransfer.setData('text/plain', item.id);
+                      } else {
+                        e.preventDefault();
                       }
                     }}
                     onDragOver={(e) => {
-                      if (onReorder && draggedItem && draggedItem.groupIndex === groupIndex) {
+                      if (onReorder && draggedItem && draggedItem.groupIndex === groupIndex && isDraggable) {
                         e.preventDefault();
                         e.stopPropagation();
                         e.dataTransfer.dropEffect = 'move';
@@ -105,7 +111,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                     onDrop={(e) => {
                       e.preventDefault();
                       e.stopPropagation();
-                      if (onReorder && draggedItem && draggedItem.groupIndex === groupIndex) {
+                      if (onReorder && draggedItem && draggedItem.groupIndex === groupIndex && isDraggable) {
                         onReorder(groupIndex, draggedItem.itemIndex, itemIndex);
                         setDraggedItem(null);
                         setDragOverIndex(null);
@@ -114,6 +120,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                     onDragEnd={() => {
                       setDraggedItem(null);
                       setDragOverIndex(null);
+                      setPressedItem(null);
                     }}
                     className={`
                       ${isDragging ? 'opacity-50' : ''}
@@ -122,6 +129,17 @@ export const Sidebar: React.FC<SidebarProps> = ({
                   >
                     <button
                       onClick={() => onSelect(item.id)}
+                      onMouseDown={(e) => {
+                        if (isDraggable && e.button === 0) {
+                          setPressedItem({ groupIndex, itemIndex });
+                        }
+                      }}
+                      onMouseUp={() => {
+                        setPressedItem(null);
+                      }}
+                      onMouseLeave={() => {
+                        setPressedItem(null);
+                      }}
                       className={`
                         w-full flex items-center gap-3 px-3 py-2.5 rounded-lg
                         text-[14px] font-medium
@@ -132,7 +150,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                         }
                       `}
                     >
-                      {onReorder && (
+                      {onReorder && isDraggable && isPressed && (
                         <GripVertical 
                           size={14} 
                           className="text-[#666666] cursor-move flex-shrink-0"
