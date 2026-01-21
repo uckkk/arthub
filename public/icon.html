@@ -39,7 +39,7 @@
       width: 100%;
       height: 100%;
       margin: 0;
-      padding: 6px;
+      padding: 4px;
       border-radius: 12px;
       background: transparent;
       display: flex;
@@ -48,7 +48,7 @@
       overflow: visible;
       position: relative;
       box-sizing: border-box;
-      /* 添加 6px padding 确保图标完整显示，右侧和下方不被裁剪 */
+      /* 窗口增大到 72px，4px padding 提供足够的边距确保图标完整显示 */
     }
 
     #icon {
@@ -65,7 +65,7 @@
       background: transparent;
       display: block;
       /* 使用 contain 确保图标完整显示，保持比例，居中显示 */
-      /* 6px padding 确保图标内容（包括右侧和下方）不被裁剪 */
+      /* 窗口增大到 72px，图标内容区域为 64px (72 - 8px padding)，确保完整显示 */
     }
   </style>
 </head>
