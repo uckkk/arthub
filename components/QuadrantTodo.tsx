@@ -160,6 +160,8 @@ const QuadrantTodo: React.FC = () => {
       const path = availablePaths.find(p => p.id === pathId);
       
       if (path) {
+        // 添加换行符，确保链接换行显示
+        parts.push(<br key={`br-${match.index}`} />);
         parts.push(
           <span
             key={match.index}
@@ -359,7 +361,7 @@ const QuadrantTodo: React.FC = () => {
     <div className="h-full flex flex-col overflow-hidden bg-[#0a0a0a]">
       {/* 顶部工具栏 */}
       <div className="flex items-center justify-between p-6 border-b border-[#1a1a1a] shrink-0">
-        <h1 className="text-xl font-semibold text-white">四象限TODO</h1>
+        <h1 className="text-xl font-semibold text-white">待办工作</h1>
         <button
           onClick={() => setShowAddModal(true)}
           className="flex items-center gap-2 px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-medium transition-colors"
