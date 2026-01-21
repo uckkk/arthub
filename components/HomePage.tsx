@@ -60,7 +60,7 @@ const HomePage: React.FC = () => {
   const handlePathJump = async (item: PathItem) => {
     try {
       if (item.type === 'web') {
-        openUrl(item.path, '_blank');
+        await openUrl(item.path, '_blank');
       } else if (item.type === 'local' || item.type === 'network') {
         try {
           const { open } = await import('@tauri-apps/api/shell');
@@ -105,10 +105,10 @@ const HomePage: React.FC = () => {
           await openUrlWithShell(workflow.url);
         } catch (error) {
           console.error('Tauri error:', error);
-          openUrl(workflow.url, '_blank');
+          await openUrl(workflow.url, '_blank');
         }
       } else {
-        openUrl(workflow.url, '_blank');
+        await openUrl(workflow.url, '_blank');
       }
     } catch (error) {
       console.error('Failed to open workflow:', error);

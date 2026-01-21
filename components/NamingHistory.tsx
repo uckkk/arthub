@@ -392,13 +392,13 @@ const NamingHistory: React.FC = () => {
               const text = e.clipboardData.getData('text/plain');
               document.execCommand('insertText', false, text);
             }}
-            onMouseDown={(e) => {
+            onMouseDown={async (e) => {
               const target = e.target as HTMLElement;
               if (target.tagName === 'A') {
                 e.preventDefault();
                 const url = (target as HTMLAnchorElement).href;
                 if (url) {
-                  openUrl(url, '_blank');
+                  await openUrl(url, '_blank');
                 }
               }
             }}

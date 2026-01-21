@@ -762,7 +762,7 @@ const PathManager: React.FC = () => {
       
       if (item.type === 'web') {
         if (item.path.startsWith('http://') || item.path.startsWith('https://')) {
-          openUrl(item.path, '_blank');
+          await openUrl(item.path, '_blank');
           return;
         }
       }
@@ -784,7 +784,7 @@ const PathManager: React.FC = () => {
       }
       
       if (item.path.startsWith('http://') || item.path.startsWith('https://')) {
-        openUrl(item.path, '_blank');
+        await openUrl(item.path, '_blank');
       } else {
         try {
           const { invoke } = await import('@tauri-apps/api/tauri');

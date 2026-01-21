@@ -357,7 +357,7 @@ const AITool: React.FC = () => {
           try {
             await openUrlWithShell(config.url);
           } catch {
-            openUrl(config.url, '_blank');
+            await openUrl(config.url, '_blank');
           }
 
           // 键盘模拟
@@ -372,10 +372,10 @@ const AITool: React.FC = () => {
           }
         } catch (error) {
           console.error('Tauri error:', error);
-          openUrl(config.url, '_blank');
+          await openUrl(config.url, '_blank');
         }
       } else {
-        openUrl(config.url, '_blank');
+        await openUrl(config.url, '_blank');
         
         if (config.jsonFile && config.jsonFile.startsWith('data:application/json;base64,')) {
           setTimeout(async () => {

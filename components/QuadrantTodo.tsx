@@ -106,7 +106,7 @@ const QuadrantTodo: React.FC = () => {
       
       if (path.type === 'web') {
         if (path.path.startsWith('http://') || path.path.startsWith('https://')) {
-          openUrl(path.path, '_blank');
+          await openUrl(path.path, '_blank');
           return;
         }
       }
@@ -126,7 +126,7 @@ const QuadrantTodo: React.FC = () => {
       
       // 默认处理：尝试打开URL或文件夹
       if (path.path.startsWith('http://') || path.path.startsWith('https://')) {
-        openUrl(path.path, '_blank');
+        await openUrl(path.path, '_blank');
       } else {
         try {
           const { invoke } = await import('@tauri-apps/api/tauri');

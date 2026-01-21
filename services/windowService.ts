@@ -132,9 +132,9 @@ function tryFocusWindow(windowRef: Window | null, url: string): boolean {
  * @param url 要打开的URL
  * @param target 窗口目标（默认为 '_blank'）
  * @param exactMatch 是否精确匹配URL（包括query和hash），默认false（只匹配基础URL）
- * @returns 窗口引用
+ * @returns 窗口引用（在 Tauri 环境中使用 shell.open 时返回 null）
  */
-export function openUrl(url: string, target: string = '_blank', exactMatch: boolean = false): Window | null {
+export async function openUrl(url: string, target: string = '_blank', exactMatch: boolean = false): Promise<Window | null> {
   // 立即输出明显的日志
   console.log('🔵 [WindowService] ========== openUrl 被调用 ==========');
   console.log('🔵 [WindowService] URL:', url);
@@ -207,6 +207,23 @@ export function openUrl(url: string, target: string = '_blank', exactMatch: bool
   // 标记为正在打开
   openingUrls.add(normalizedUrl);
 
+  // 检查是否是 Tauri 环境
+  const isTauri = typeof window !== 'undefined' && (window as any).__TAURI__;
+  
+  // 在 Tauri 环境中，对于 HTTP/HTTPS URL，优先使用 shell.open
+  if (isTauri && (url.startsWith('http://') || url.startsWith('https://'))) {
+    try {
+      const { open } = await import('@tauri-apps/api/shell');
+      await open(url);
+      console.log(`[WindowService] 使用 Tauri shell.open 打开: ${url}`);
+      openingUrls.delete(normalizedUrl);
+      return null; // shell.open 无法返回窗口引用
+    } catch (shellError) {
+      console.warn('[WindowService] shell.open 失败，回退到 window.open:', shellError);
+      // 继续使用 window.open
+    }
+  }
+
   // 使用窗口名称打开（如果窗口已存在，会复用该窗口）
   // 关键：使用相同的窗口名称，浏览器会自动复用已存在的窗口
   let newWindow: Window | null = null;
@@ -265,12 +282,40 @@ export function openUrl(url: string, target: string = '_blank', exactMatch: bool
         console.log(`🔵 [WindowService] 移除打开标记: ${normalizedUrl}`);
       }, 1000); // 增加到1秒
     } else {
-      console.warn('[WindowService] 无法打开窗口，可能被浏览器阻止');
+      console.warn('[WindowService] window.open 返回 null，可能被浏览器阻止');
+      
+      // 在 Tauri 环境中，如果 window.open 失败，尝试使用 shell.open
+      if (isTauri && (url.startsWith('http://') || url.startsWith('https://'))) {
+        try {
+          const { open } = await import('@tauri-apps/api/shell');
+          await open(url);
+          console.log(`[WindowService] 回退到 shell.open 成功: ${url}`);
+          openingUrls.delete(normalizedUrl);
+          return null;
+        } catch (shellError) {
+          console.error('[WindowService] shell.open 也失败:', shellError);
+        }
+      }
+      
       // 移除"正在打开"标记
       openingUrls.delete(normalizedUrl);
     }
   } catch (error) {
     console.error('[WindowService] 打开窗口时出错:', error);
+    
+    // 在 Tauri 环境中，如果出错，尝试使用 shell.open
+    if (isTauri && (url.startsWith('http://') || url.startsWith('https://'))) {
+      try {
+        const { open } = await import('@tauri-apps/api/shell');
+        await open(url);
+        console.log(`[WindowService] 错误后回退到 shell.open 成功: ${url}`);
+        openingUrls.delete(normalizedUrl);
+        return null;
+      } catch (shellError) {
+        console.error('[WindowService] shell.open 也失败:', shellError);
+      }
+    }
+    
     // 移除"正在打开"标记
     openingUrls.delete(normalizedUrl);
   }
@@ -349,7 +394,7 @@ export async function openUrlWithShell(url: string, exactMatch: boolean = false)
       // 如果需要更好的控制，可以考虑使用Tauri的Window API创建内嵌浏览器窗口
     } else {
       // 非Tauri环境，使用window.open
-      const newWindow = openUrl(url, '_blank', exactMatch);
+      const newWindow = await openUrl(url, '_blank', exactMatch);
       if (!newWindow) {
         console.warn('无法打开窗口');
       }
@@ -358,7 +403,7 @@ export async function openUrlWithShell(url: string, exactMatch: boolean = false)
     console.error('使用shell打开时出错:', error);
     // 回退到window.open
     try {
-      const newWindow = openUrl(url, '_blank', exactMatch);
+      const newWindow = await openUrl(url, '_blank', exactMatch);
       if (!newWindow) {
         console.warn('回退到window.open也失败');
       }
