@@ -1,53 +1,67 @@
 <!DOCTYPE html>
-<html lang="zh-CN">
+<html lang="zh-CN" style="width: 64px; height: 64px; margin: 0; padding: 0; overflow: hidden;">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
   <title>ArtHub Icon</title>
   <style>
-    /* 重置所有样式 */
+    /* 强制重置所有样式，使用 !important 确保优先级最高 */
     * {
-      margin: 0;
-      padding: 0;
-      box-sizing: border-box;
+      margin: 0 !important;
+      padding: 0 !important;
+      box-sizing: border-box !important;
     }
 
-    /* 窗口固定为 64x64 */
-    html, body {
-      width: 64px;
-      height: 64px;
-      margin: 0;
-      padding: 0;
-      overflow: hidden;
-      background: transparent;
+    html {
+      width: 64px !important;
+      height: 64px !important;
+      margin: 0 !important;
+      padding: 0 !important;
+      overflow: hidden !important;
+      background: transparent !important;
     }
 
     body {
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      cursor: move;
-      user-select: none;
+      width: 64px !important;
+      height: 64px !important;
+      margin: 0 !important;
+      padding: 0 !important;
+      overflow: hidden !important;
+      background: transparent !important;
+      display: flex !important;
+      align-items: center !important;
+      justify-content: center !important;
+      cursor: move !important;
+      user-select: none !important;
+      position: fixed !important;
+      top: 0 !important;
+      left: 0 !important;
     }
 
-    /* 图标容器：占满整个窗口 */
     #icon-container {
-      width: 100%;
-      height: 100%;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      overflow: hidden;
+      width: 64px !important;
+      height: 64px !important;
+      margin: 0 !important;
+      padding: 0 !important;
+      display: flex !important;
+      align-items: center !important;
+      justify-content: center !important;
+      overflow: visible !important;
+      background: transparent !important;
     }
 
-    /* 图标：自适应容器大小，使用 contain 确保完整显示不被裁剪 */
     #icon {
-      width: 100%;
-      height: 100%;
-      object-fit: contain;
-      object-position: center;
-      pointer-events: none;
-      display: block;
+      width: 56px !important;
+      height: 56px !important;
+      max-width: 56px !important;
+      max-height: 56px !important;
+      margin: 0 !important;
+      padding: 0 !important;
+      object-fit: contain !important;
+      object-position: center !important;
+      pointer-events: none !important;
+      display: block !important;
+      background: transparent !important;
     }
   </style>
 </head>
@@ -56,6 +70,22 @@
     <img id="icon" src="/icon.ico" alt="ArtHub" />
   </div>
   <script>
+    // 调试：检查实际尺寸
+    window.addEventListener('load', () => {
+      const icon = document.getElementById('icon');
+      const container = document.getElementById('icon-container');
+      const body = document.body;
+      const html = document.documentElement;
+      
+      console.log('=== Icon Window Debug ===');
+      console.log('HTML size:', html.offsetWidth, 'x', html.offsetHeight);
+      console.log('Body size:', body.offsetWidth, 'x', body.offsetHeight);
+      console.log('Container size:', container.offsetWidth, 'x', container.offsetHeight);
+      console.log('Icon size:', icon.offsetWidth, 'x', icon.offsetHeight);
+      console.log('Icon natural size:', icon.naturalWidth, 'x', icon.naturalHeight);
+      console.log('Window size:', window.innerWidth, 'x', window.innerHeight);
+    });
+    
     // Tauri API 调用
     let invoke;
     
@@ -77,7 +107,6 @@
     
     invoke = getInvoke();
     
-    // 延迟加载 Tauri API
     if (!invoke) {
       let retries = 0;
       const interval = setInterval(() => {
@@ -91,10 +120,8 @@
     let isDragging = false;
     let startMousePos = { x: 0, y: 0 };
     
-    // 禁用右键菜单
     document.addEventListener('contextmenu', e => e.preventDefault());
     
-    // 鼠标按下
     document.addEventListener('mousedown', async (e) => {
       if (e.button === 0) {
         isDragging = true;
@@ -113,7 +140,6 @@
       }
     });
     
-    // 鼠标移动
     document.addEventListener('mousemove', async (e) => {
       if (isDragging) {
         if (!invoke) invoke = getInvoke();
@@ -128,7 +154,6 @@
       }
     });
     
-    // 鼠标释放
     document.addEventListener('mouseup', async (e) => {
       if (e.button === 0 && isDragging) {
         const moved = Math.abs(e.screenX - startMousePos.x) > 3 || 
@@ -151,17 +176,9 @@
       }
     });
     
-    // 防止选中文本
     document.addEventListener('selectstart', e => e.preventDefault());
-    
-    // 全局鼠标释放
-    window.addEventListener('mouseup', () => {
-      isDragging = false;
-    });
-    
-    document.addEventListener('mouseleave', () => {
-      isDragging = false;
-    });
+    window.addEventListener('mouseup', () => { isDragging = false; });
+    document.addEventListener('mouseleave', () => { isDragging = false; });
   </script>
 </body>
 </html>
