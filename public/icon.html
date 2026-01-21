@@ -5,68 +5,49 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>ArtHub Icon</title>
   <style>
+    /* 重置所有样式 */
     * {
       margin: 0;
       padding: 0;
       box-sizing: border-box;
     }
 
-    html {
+    /* 窗口固定为 64x64 */
+    html, body {
       width: 64px;
       height: 64px;
       margin: 0;
       padding: 0;
       overflow: hidden;
+      background: transparent;
     }
 
     body {
-      width: 64px;
-      height: 64px;
-      margin: 0;
-      padding: 0;
-      background: transparent !important;
-      background-color: transparent !important;
+      display: flex;
+      align-items: center;
+      justify-content: center;
       cursor: move;
       user-select: none;
-      overflow: hidden;
-      position: fixed;
-      top: 0;
-      left: 0;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      /* 固定定位确保没有额外的空间，热区精确匹配窗口大小 */
     }
 
+    /* 图标容器：占满整个窗口 */
     #icon-container {
-      width: 100%;
-      height: 100%;
-      margin: 0;
-      padding: 0;
-      border-radius: 12px;
-      background: transparent;
+      width: 64px;
+      height: 64px;
       display: flex;
       align-items: center;
       justify-content: center;
-      overflow: visible;
-      position: relative;
-      box-sizing: border-box;
+      overflow: hidden;
     }
 
+    /* 图标：固定60px，自动缩放适应，绝对不会被裁剪 */
     #icon {
-      width: 56px;
-      height: 56px;
-      max-width: 56px;
-      max-height: 56px;
-      margin: 0;
-      padding: 0;
+      width: 60px;
+      height: 60px;
       object-fit: contain;
       object-position: center;
       pointer-events: none;
-      border-radius: 10px;
-      background: transparent;
       display: block;
-      /* 固定尺寸 56px，图标自动缩放适应，绝对不会被裁剪 */
     }
   </style>
 </head>
@@ -75,89 +56,52 @@
     <img id="icon" src="/icon.ico" alt="ArtHub" />
   </div>
   <script>
-    // 使用全局 Tauri API
+    // Tauri API 调用
     let invoke;
     
-    // 尝试获取 Tauri API
     function getInvoke() {
-      if (window.__TAURI_INTERNALS__ && window.__TAURI_INTERNALS__.invoke) {
-        const invokeObj = window.__TAURI_INTERNALS__.invoke;
-        if (typeof invokeObj === 'function') {
-          return invokeObj.bind(window.__TAURI_INTERNALS__);
-        }
-        if (typeof invokeObj === 'object' && invokeObj !== null) {
-          try {
-            const testCall = invokeObj('test', {});
-            if (testCall && typeof testCall.then === 'function') {
-              return async (cmd, args) => invokeObj(cmd, args);
-            }
-          } catch (e) {}
-          if (invokeObj.default && typeof invokeObj.default === 'function') {
-            return invokeObj.default.bind(invokeObj);
-          }
-        }
+      if (window.__TAURI_INTERNALS__?.invoke) {
+        const fn = window.__TAURI_INTERNALS__.invoke;
+        return typeof fn === 'function' ? fn.bind(window.__TAURI_INTERNALS__) : null;
       }
-      if (window.__TAURI_INTERNALS__ && window.__TAURI_INTERNALS__.core && window.__TAURI_INTERNALS__.core.invoke) {
-        const coreInvoke = window.__TAURI_INTERNALS__.core.invoke;
-        if (typeof coreInvoke === 'function') {
-          return coreInvoke.bind(window.__TAURI_INTERNALS__.core);
-        }
-        if (typeof coreInvoke === 'object' && coreInvoke !== null) {
-          return async (cmd, args) => coreInvoke(cmd, args);
-        }
+      if (window.__TAURI_INTERNALS__?.core?.invoke) {
+        const fn = window.__TAURI_INTERNALS__.core.invoke;
+        return typeof fn === 'function' ? fn.bind(window.__TAURI_INTERNALS__.core) : null;
       }
-      if (window.__TAURI__ && window.__TAURI__.invoke) {
-        const tauriInvoke = window.__TAURI__.invoke;
-        if (typeof tauriInvoke === 'function') {
-          return tauriInvoke.bind(window.__TAURI__);
-        }
-        if (typeof tauriInvoke === 'object' && tauriInvoke !== null) {
-          return async (cmd, args) => tauriInvoke(cmd, args);
-        }
+      if (window.__TAURI__?.invoke) {
+        const fn = window.__TAURI__.invoke;
+        return typeof fn === 'function' ? fn.bind(window.__TAURI__) : null;
       }
       return null;
     }
     
     invoke = getInvoke();
     
-    let isDragging = false;
-    let startMousePos = { x: 0, y: 0 };
-    let startWindowPos = { x: 0, y: 0 };
-    
-    // 如果 invoke 不可用，尝试延迟加载
-    if (!invoke || typeof invoke !== 'function') {
+    // 延迟加载 Tauri API
+    if (!invoke) {
       let retries = 0;
-      const maxRetries = 20;
-      const checkInterval = setInterval(() => {
+      const interval = setInterval(() => {
         invoke = getInvoke();
-        if (invoke && typeof invoke === 'function') {
-          clearInterval(checkInterval);
-        } else {
-          retries++;
-          if (retries >= maxRetries) {
-            clearInterval(checkInterval);
-          }
+        if (invoke || ++retries >= 20) {
+          clearInterval(interval);
         }
       }, 100);
     }
     
-    // 禁用右键菜单
-    document.addEventListener('contextmenu', (e) => {
-      e.preventDefault();
-      e.stopPropagation();
-    });
+    let isDragging = false;
+    let startMousePos = { x: 0, y: 0 };
     
-    // 鼠标按下（左键）
+    // 禁用右键菜单
+    document.addEventListener('contextmenu', e => e.preventDefault());
+    
+    // 鼠标按下
     document.addEventListener('mousedown', async (e) => {
       if (e.button === 0) {
         isDragging = true;
         startMousePos = { x: e.screenX, y: e.screenY };
         
-        if (!invoke || typeof invoke !== 'function') {
-          invoke = getInvoke();
-        }
-        
-        if (invoke && typeof invoke === 'function') {
+        if (!invoke) invoke = getInvoke();
+        if (invoke) {
           try {
             await invoke('icon_mouse_down', { x: e.screenX, y: e.screenY });
           } catch (err) {
@@ -166,18 +110,14 @@
         }
         
         e.preventDefault();
-        e.stopPropagation();
       }
     });
-
+    
     // 鼠标移动
     document.addEventListener('mousemove', async (e) => {
       if (isDragging) {
-        if (!invoke || typeof invoke !== 'function') {
-          invoke = getInvoke();
-        }
-        
-        if (invoke && typeof invoke === 'function') {
+        if (!invoke) invoke = getInvoke();
+        if (invoke) {
           try {
             await invoke('icon_mouse_move', { x: e.screenX, y: e.screenY });
           } catch (err) {
@@ -185,25 +125,20 @@
           }
         }
         e.preventDefault();
-        e.stopPropagation();
       }
     });
-
+    
     // 鼠标释放
     document.addEventListener('mouseup', async (e) => {
       if (e.button === 0 && isDragging) {
-        const moved = Math.abs(e.screenX - startMousePos.x) > 3 || Math.abs(e.screenY - startMousePos.y) > 3;
+        const moved = Math.abs(e.screenX - startMousePos.x) > 3 || 
+                      Math.abs(e.screenY - startMousePos.y) > 3;
         isDragging = false;
         
-        if (!invoke || typeof invoke !== 'function') {
-          invoke = getInvoke();
-        }
-        
-        if (invoke && typeof invoke === 'function') {
+        if (!invoke) invoke = getInvoke();
+        if (invoke) {
           try {
             await invoke('icon_mouse_up', { x: e.screenX, y: e.screenY });
-            
-            // 如果没有移动，认为是点击
             if (!moved) {
               await invoke('icon_click');
             }
@@ -213,27 +148,19 @@
         }
         
         e.preventDefault();
-        e.stopPropagation();
       }
     });
-
-    // 防止拖拽时选中文本
-    document.addEventListener('selectstart', (e) => {
-      e.preventDefault();
-    });
+    
+    // 防止选中文本
+    document.addEventListener('selectstart', e => e.preventDefault());
     
     // 全局鼠标释放
     window.addEventListener('mouseup', () => {
-      if (isDragging) {
-        isDragging = false;
-      }
+      isDragging = false;
     });
     
-    // 鼠标离开窗口时也释放
     document.addEventListener('mouseleave', () => {
-      if (isDragging) {
-        isDragging = false;
-      }
+      isDragging = false;
     });
   </script>
 </body>
