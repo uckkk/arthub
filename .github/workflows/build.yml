@@ -44,14 +44,13 @@ jobs:
             target: x86_64-pc-windows-msvc
             name: Windows
           
-          # macOS Intel 构建（macOS runner 成本较高，约 $0.08/分钟）
-          # 如果需要 macOS 构建，取消下面的注释
-          # - platform: macos-latest
-          #   target: x86_64-apple-darwin
-          #   name: macOS-Intel
+          # macOS Intel 构建（x64，macOS runner 成本较高，约 $0.08/分钟）
+          - platform: macos-latest
+            target: x86_64-apple-darwin
+            name: macOS-Intel
           
-          # macOS Apple Silicon 构建
-          # 如果需要 macOS 构建，取消下面的注释
+          # macOS Apple Silicon 构建（ARM64）
+          # 如果需要 ARM 版本，取消下面的注释
           # - platform: macos-latest
           #   target: aarch64-apple-darwin
           #   name: macOS-ARM
