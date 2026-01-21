@@ -50,7 +50,7 @@ struct AppState {
     main_window_visible: Mutex<bool>, // 主窗口是否真的可见（在前台，非最小化）
 }
 
-const ICON_SIZE: i32 = 64; // 固定窗口大小
+const ICON_SIZE: i32 = 80; // 增大窗口大小，确保图标完整显示
 const SNAP_THRESHOLD: i32 = 20;
 
 // 创建悬浮图标窗口
