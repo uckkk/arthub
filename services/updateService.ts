@@ -111,11 +111,15 @@ export const checkForUpdates = async (): Promise<UpdateCheckResult> => {
         },
         signal: controller.signal,
       }
-    ).catch(() => null);
+    ).catch((error) => {
+      // 静默处理网络错误和超时
+      return null;
+    });
     
     clearTimeout(timeoutId);
 
     if (!response) {
+      // 网络错误或超时，静默处理
       return {
         hasUpdate: false,
         currentVersion: CURRENT_VERSION,
@@ -126,6 +130,7 @@ export const checkForUpdates = async (): Promise<UpdateCheckResult> => {
     }
 
     if (!response.ok) {
+      // 404 是预期的（没有 release），静默处理
       if (response.status === 404) {
         return {
           hasUpdate: false,
@@ -135,6 +140,7 @@ export const checkForUpdates = async (): Promise<UpdateCheckResult> => {
           error: null,
         };
       }
+      // 其他错误也静默处理
       return {
         hasUpdate: false,
         currentVersion: CURRENT_VERSION,
