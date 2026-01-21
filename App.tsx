@@ -101,12 +101,11 @@ const createMenuGroups = (): MenuGroup[] => [
     ],
   },
   {
-    title: '常用工具',
     items: [
-      { id: 'api', label: 'AI盒子', icon: Code },
+      { id: 'api', label: 'AI工作流', icon: Code },
       { id: 'naming', label: '资产命名', icon: Type },
       { id: 'paths', label: '常用入口', icon: Menu },
-      { id: 'todo', label: 'ToDo', icon: CheckSquare },
+      { id: 'todo', label: '待办工作', icon: CheckSquare },
       { id: 'apps', label: '常用应用', icon: Grid3X3 },
     ],
   },
