@@ -117,10 +117,25 @@ fn create_icon_window(app: &tauri::AppHandle) -> Result<tauri::Window, Box<dyn s
     
     let icon_window = builder.build()?;
     
-    // 显式设置窗口大小，确保窗口大小精确为 64x64
-    // 这可以防止窗口有额外的边框或透明区域导致热区不匹配
-    if let Err(e) = icon_window.set_size(PhysicalSize::new(ICON_SIZE as u32, ICON_SIZE as u32)) {
+    // 获取窗口的缩放因子（DPI 缩放）
+    let scale_factor = icon_window.scale_factor().unwrap_or(1.0);
+    println!("Icon window scale factor: {}", scale_factor);
+    
+    // 计算实际需要的逻辑大小（考虑 DPI 缩放）
+    // 如果缩放因子是 1.5，那么逻辑大小应该是 64 / 1.5 = 42.67，但我们用物理大小
+    // 使用物理大小确保窗口实际渲染为 64x64 像素
+    let physical_size = PhysicalSize::new(ICON_SIZE as u32, ICON_SIZE as u32);
+    
+    // 显式设置窗口大小，确保窗口大小精确为 64x64（物理像素）
+    if let Err(e) = icon_window.set_size(physical_size) {
         eprintln!("Warning: Failed to set icon window size: {:?}", e);
+    }
+    
+    // 验证窗口大小
+    if let Ok(actual_size) = icon_window.inner_size() {
+        println!("Icon window actual size: {} x {} (logical)", actual_size.width, actual_size.height);
+        let actual_physical = icon_window.outer_size().unwrap_or(actual_size);
+        println!("Icon window actual size: {} x {} (physical)", actual_physical.width, actual_physical.height);
     }
     
     // 使用物理坐标设置正确的位置（避免 DPI 缩放问题）
