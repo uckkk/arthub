@@ -141,10 +141,18 @@ export async function autoSyncToFile(): Promise<boolean> {
         try {
           const value = localStorage.getItem(key);
           if (value) {
+            // 检查数据大小
+            if (value.length > 5 * 1024 * 1024) {
+              console.warn(`数据太大，跳过导出 ${key} (${(value.length / 1024 / 1024).toFixed(2)}MB)`);
+              continue;
+            }
+            
             // 尝试解析 JSON，如果失败则作为字符串存储
             try {
-              allData[key] = JSON.parse(value);
+              const parsed = JSON.parse(value);
+              allData[key] = parsed;
             } catch {
+              // 不是有效的 JSON，作为字符串存储
               allData[key] = value;
             }
           }
@@ -234,30 +242,68 @@ export async function importAllDataFromFile(): Promise<void> {
       }
     }
     
-    const allData = JSON.parse(text);
+    let allData: Record<string, any>;
+    try {
+      allData = JSON.parse(text);
+    } catch (parseError: any) {
+      console.error('解析数据文件失败:', parseError);
+      throw new Error(`数据文件格式错误: ${parseError.message}`);
+    }
 
     // 导入到 localStorage（使用原始方法避免触发自动同步，避免循环）
     // 获取真正的原始方法（绕过 autoSync 的包装）
     const originalSetItem = (Storage.prototype as any).__originalSetItem || Storage.prototype.setItem;
     
-    // 临时禁用自动同步标志
     let importCount = 0;
+    let skipCount = 0;
+    const errors: string[] = [];
+    
     for (const [key, value] of Object.entries(allData)) {
       if (key.startsWith('arthub_')) {
         try {
+          let valueToStore: string;
+          
           if (typeof value === 'string') {
-            originalSetItem.call(localStorage, key, value);
+            valueToStore = value;
           } else {
-            originalSetItem.call(localStorage, key, JSON.stringify(value));
+            // 尝试序列化，如果失败则跳过
+            try {
+              valueToStore = JSON.stringify(value);
+            } catch (stringifyError: any) {
+              console.warn(`序列化数据失败 ${key}:`, stringifyError);
+              errors.push(`${key}: 序列化失败 - ${stringifyError.message}`);
+              skipCount++;
+              continue;
+            }
           }
+          
+          // 检查数据大小（localStorage 通常限制为 5-10MB）
+          if (valueToStore.length > 5 * 1024 * 1024) {
+            console.warn(`数据太大，跳过 ${key} (${(valueToStore.length / 1024 / 1024).toFixed(2)}MB)`);
+            errors.push(`${key}: 数据太大 (${(valueToStore.length / 1024 / 1024).toFixed(2)}MB)`);
+            skipCount++;
+            continue;
+          }
+          
+          originalSetItem.call(localStorage, key, valueToStore);
           importCount++;
-        } catch (error) {
+        } catch (error: any) {
           console.warn(`导入数据失败 ${key}:`, error);
+          errors.push(`${key}: ${error.message || String(error)}`);
+          skipCount++;
         }
       }
     }
     
-    console.log(`成功从文件导入 ${importCount} 条数据`);
+    if (importCount > 0) {
+      console.log(`成功从文件导入 ${importCount} 条数据`);
+    }
+    if (skipCount > 0) {
+      console.warn(`跳过 ${skipCount} 条数据（错误或数据过大）`);
+      if (errors.length > 0) {
+        console.warn('导入错误详情:', errors);
+      }
+    }
   } catch (error: any) {
     if (error.message?.includes('未找到') || error.message?.includes('NotFound')) {
       throw new Error('未找到数据文件，请先导出数据');
