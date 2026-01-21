@@ -3,19 +3,46 @@
 import { autoSyncToFile, getStorageConfig } from '../services/fileStorageService';
 
 let syncTimer: NodeJS.Timeout | null = null;
-const SYNC_DELAY = 1000; // 1秒延迟，避免频繁同步
+let isSyncing = false; // 防止重复同步
+const SYNC_DELAY = 100; // 100ms 延迟，批量操作时避免频繁同步
 
-// 防抖同步函数
+// 立即同步函数（使用微任务队列确保立即执行）
+async function immediateSync() {
+  // 如果正在同步，跳过
+  if (isSyncing) {
+    return;
+  }
+
+  // 清除之前的延迟同步
+  if (syncTimer) {
+    clearTimeout(syncTimer);
+    syncTimer = null;
+  }
+
+  // 使用微任务队列立即执行同步
+  await Promise.resolve();
+  
+  const config = getStorageConfig();
+  if (config.enabled) {
+    isSyncing = true;
+    try {
+      await autoSyncToFile();
+    } catch (error) {
+      console.error('自动同步失败:', error);
+    } finally {
+      isSyncing = false;
+    }
+  }
+}
+
+// 防抖同步函数（用于批量操作）
 function debouncedSync() {
   if (syncTimer) {
     clearTimeout(syncTimer);
   }
   
   syncTimer = setTimeout(async () => {
-    const config = getStorageConfig();
-    if (config.enabled) {
-      await autoSyncToFile();
-    }
+    await immediateSync();
   }, SYNC_DELAY);
 }
 
@@ -24,9 +51,9 @@ const originalSetItem = Storage.prototype.setItem;
 Storage.prototype.setItem = function(key: string, value: string) {
   originalSetItem.call(this, key, value);
   
-  // 如果是 arthub_ 开头的键，触发自动同步
+  // 如果是 arthub_ 开头的键，立即触发自动同步
   if (key.startsWith('arthub_') && key !== 'arthub_file_storage_config') {
-    debouncedSync();
+    immediateSync();
   }
 };
 
@@ -35,10 +62,19 @@ const originalRemoveItem = Storage.prototype.removeItem;
 Storage.prototype.removeItem = function(key: string) {
   originalRemoveItem.call(this, key);
   
-  // 如果是 arthub_ 开头的键，触发自动同步
+  // 如果是 arthub_ 开头的键，立即触发自动同步
   if (key.startsWith('arthub_') && key !== 'arthub_file_storage_config') {
-    debouncedSync();
+    immediateSync();
   }
+};
+
+// 包装 localStorage.clear，添加自动同步
+const originalClear = Storage.prototype.clear;
+Storage.prototype.clear = function() {
+  originalClear.call(this);
+  
+  // clear 操作后立即同步
+  immediateSync();
 };
 
 // 初始化时执行一次同步（如果已启用）
@@ -46,9 +82,12 @@ export function initAutoSync() {
   const config = getStorageConfig();
   if (config.enabled) {
     // 延迟执行，确保页面加载完成
-    setTimeout(() => {
-      autoSyncToFile();
+    setTimeout(async () => {
+      await immediateSync();
     }, 2000);
   }
 }
+
+// 导出立即同步函数，供外部调用
+export { immediateSync as syncNow };
 
