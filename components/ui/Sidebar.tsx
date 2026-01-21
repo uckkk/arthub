@@ -1,5 +1,5 @@
-import React from 'react';
-import { LucideIcon } from 'lucide-react';
+import React, { useState } from 'react';
+import { LucideIcon, GripVertical } from 'lucide-react';
 
 // 菜单项类型
 export interface MenuItem {
@@ -21,6 +21,7 @@ interface SidebarProps {
   groups: MenuGroup[];
   activeId: string;
   onSelect: (id: string) => void;
+  onReorder?: (groupId: number, fromIndex: number, toIndex: number) => void;
   footer?: React.ReactNode;
   className?: string;
 }
@@ -31,9 +32,12 @@ export const Sidebar: React.FC<SidebarProps> = ({
   groups,
   activeId,
   onSelect,
+  onReorder,
   footer,
   className = '',
 }) => {
+  const [draggedItem, setDraggedItem] = useState<{ groupIndex: number; itemIndex: number } | null>(null);
+  const [dragOverIndex, setDragOverIndex] = useState<{ groupIndex: number; itemIndex: number } | null>(null);
   return (
     <aside className={`
       flex flex-col h-full
@@ -68,38 +72,90 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
             {/* 菜单项 */}
             <div className="space-y-1">
-              {group.items.map((item) => {
+              {group.items.map((item, itemIndex) => {
                 const Icon = item.icon;
                 const isActive = activeId === item.id;
+                const isDragging = draggedItem?.groupIndex === groupIndex && draggedItem?.itemIndex === itemIndex;
+                const isDragOver = dragOverIndex?.groupIndex === groupIndex && dragOverIndex?.itemIndex === itemIndex;
 
                 return (
-                  <button
+                  <div
                     key={item.id}
-                    onClick={() => onSelect(item.id)}
-                    className={`
-                      w-full flex items-center gap-3 px-3 py-2.5 rounded-lg
-                      text-[14px] font-medium
-                      transition-all duration-150
-                      ${isActive 
-                        ? 'bg-[#1a1a1a] text-white' 
-                        : 'text-[#808080] hover:bg-[#151515] hover:text-[#a0a0a0]'
+                    draggable={onReorder !== undefined}
+                    onDragStart={(e) => {
+                      if (onReorder) {
+                        setDraggedItem({ groupIndex, itemIndex });
+                        e.dataTransfer.effectAllowed = 'move';
+                        e.dataTransfer.setData('text/plain', item.id);
                       }
+                    }}
+                    onDragOver={(e) => {
+                      if (onReorder && draggedItem && draggedItem.groupIndex === groupIndex) {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        e.dataTransfer.dropEffect = 'move';
+                        setDragOverIndex({ groupIndex, itemIndex });
+                      }
+                    }}
+                    onDragLeave={() => {
+                      if (dragOverIndex?.groupIndex === groupIndex && dragOverIndex?.itemIndex === itemIndex) {
+                        setDragOverIndex(null);
+                      }
+                    }}
+                    onDrop={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      if (onReorder && draggedItem && draggedItem.groupIndex === groupIndex) {
+                        onReorder(groupIndex, draggedItem.itemIndex, itemIndex);
+                        setDraggedItem(null);
+                        setDragOverIndex(null);
+                      }
+                    }}
+                    onDragEnd={() => {
+                      setDraggedItem(null);
+                      setDragOverIndex(null);
+                    }}
+                    className={`
+                      ${isDragging ? 'opacity-50' : ''}
+                      ${isDragOver ? 'border-t-2 border-blue-500' : ''}
                     `}
                   >
-                    <Icon 
-                      size={18} 
-                      className={isActive ? 'text-blue-400' : ''} 
-                    />
-                    <span className="flex-1 text-left">{item.label}</span>
-                    {item.badge !== undefined && item.badge > 0 && (
-                      <span className="
-                        px-1.5 py-0.5 rounded text-[10px] font-medium
-                        bg-blue-500/20 text-blue-400
-                      ">
-                        {item.badge}
-                      </span>
-                    )}
-                  </button>
+                    <button
+                      onClick={() => onSelect(item.id)}
+                      className={`
+                        w-full flex items-center gap-3 px-3 py-2.5 rounded-lg
+                        text-[14px] font-medium
+                        transition-all duration-150
+                        ${isActive 
+                          ? 'bg-[#1a1a1a] text-white' 
+                          : 'text-[#808080] hover:bg-[#151515] hover:text-[#a0a0a0]'
+                        }
+                      `}
+                    >
+                      {onReorder && (
+                        <GripVertical 
+                          size={14} 
+                          className="text-[#666666] cursor-move flex-shrink-0"
+                          onMouseDown={(e) => {
+                            e.stopPropagation();
+                          }}
+                        />
+                      )}
+                      <Icon 
+                        size={18} 
+                        className={isActive ? 'text-blue-400' : ''} 
+                      />
+                      <span className="flex-1 text-left">{item.label}</span>
+                      {item.badge !== undefined && item.badge > 0 && (
+                        <span className="
+                          px-1.5 py-0.5 rounded text-[10px] font-medium
+                          bg-blue-500/20 text-blue-400
+                        ">
+                          {item.badge}
+                        </span>
+                      )}
+                    </button>
+                  </div>
                 );
               })}
             </div>

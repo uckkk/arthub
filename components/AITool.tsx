@@ -820,7 +820,11 @@ const AITool: React.FC = () => {
       {showAddModal && (
         <div 
           className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50"
-          onClick={handleCancel}
+          onClick={(e) => {
+            if (e.target === e.currentTarget) {
+              handleCancel();
+            }
+          }}
         >
           <div 
             className="

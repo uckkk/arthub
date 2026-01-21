@@ -1274,7 +1274,11 @@ const PathManager: React.FC = () => {
       {isModalOpen && (
         <div 
           className={'fixed inset-0 z-50 flex items-center justify-center ' + OPACITY_CLASSES.bgBlack70 + ' backdrop-blur-sm'}
-          onClick={handleCloseAddModal}
+          onClick={(e) => {
+            if (e.target === e.currentTarget) {
+              handleCloseAddModal();
+            }
+          }}
         >
           <div 
             className={'w-full max-w-md mx-4 bg-[#151515] border border-[#2a2a2a] rounded-xl shadow-2xl ' + OPACITY_CLASSES.shadowBlack50 + ' animate-scale-in'}

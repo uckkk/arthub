@@ -155,7 +155,64 @@ const App: React.FC = () => {
     };
   }, []);
 
-  const menuGroups = createMenuGroups();
+  // 菜单顺序管理
+  const [menuItemOrder, setMenuItemOrder] = useState<Record<number, string[]>>(() => {
+    const saved = localStorage.getItem('arthub_menu_item_order');
+    if (saved) {
+      try {
+        return JSON.parse(saved);
+      } catch (e) {
+        console.error('Failed to parse menu item order:', e);
+      }
+    }
+    return {};
+  });
+
+  // 应用菜单顺序
+  const applyMenuOrder = (groups: MenuGroup[]): MenuGroup[] => {
+    return groups.map((group, groupIndex) => {
+      const order = menuItemOrder[groupIndex];
+      if (!order || order.length === 0) {
+        return group;
+      }
+      
+      const orderedItems: MenuItem[] = [];
+      const itemMap = new Map(group.items.map(item => [item.id, item]));
+      
+      // 按顺序添加存在的项目
+      order.forEach(id => {
+        const item = itemMap.get(id);
+        if (item) {
+          orderedItems.push(item);
+          itemMap.delete(id);
+        }
+      });
+      
+      // 添加新项目（不在顺序中的）
+      itemMap.forEach(item => orderedItems.push(item));
+      
+      return { ...group, items: orderedItems };
+    });
+  };
+
+  const baseMenuGroups = createMenuGroups();
+  const menuGroups = applyMenuOrder(baseMenuGroups);
+
+  // 处理菜单项重新排序
+  const handleMenuReorder = (groupId: number, fromIndex: number, toIndex: number) => {
+    if (fromIndex === toIndex) return;
+    
+    const group = baseMenuGroups[groupId];
+    if (!group) return;
+    
+    const newOrder = [...(menuItemOrder[groupId] || group.items.map(item => item.id))];
+    const [removed] = newOrder.splice(fromIndex, 1);
+    newOrder.splice(toIndex, 0, removed);
+    
+    const updatedOrder = { ...menuItemOrder, [groupId]: newOrder };
+    setMenuItemOrder(updatedOrder);
+    localStorage.setItem('arthub_menu_item_order', JSON.stringify(updatedOrder));
+  };
 
   // 监听存储配置变化，更新同步时间
   useEffect(() => {
@@ -354,6 +411,7 @@ const App: React.FC = () => {
             groups={menuGroups}
             activeId={activeTab}
             onSelect={handleMenuSelect}
+            onReorder={handleMenuReorder}
             footer={
               <div className="space-y-2">
                 {/* 设置和更新按钮行 */}
