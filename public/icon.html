@@ -1,20 +1,19 @@
 <!DOCTYPE html>
-<html lang="zh-CN" style="width: 64px; height: 64px; margin: 0; padding: 0; overflow: hidden;">
+<html lang="zh-CN" style="margin: 0; padding: 0; overflow: hidden;">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
   <title>ArtHub Icon</title>
   <style>
-    /* 强制重置所有样式，使用 !important 确保优先级最高 */
     * {
       margin: 0 !important;
       padding: 0 !important;
       box-sizing: border-box !important;
     }
 
-    html {
-      width: 80px !important;
-      height: 80px !important;
+    html, body {
+      width: 100vw !important;
+      height: 100vh !important;
       margin: 0 !important;
       padding: 0 !important;
       overflow: hidden !important;
@@ -22,12 +21,6 @@
     }
 
     body {
-      width: 80px !important;
-      height: 80px !important;
-      margin: 0 !important;
-      padding: 0 !important;
-      overflow: hidden !important;
-      background: transparent !important;
       display: flex !important;
       align-items: center !important;
       justify-content: center !important;
@@ -39,8 +32,8 @@
     }
 
     #icon-container {
-      width: 80px !important;
-      height: 80px !important;
+      width: 100% !important;
+      height: 100% !important;
       margin: 0 !important;
       padding: 0 !important;
       display: flex !important;
@@ -51,12 +44,10 @@
     }
 
     #icon {
-      width: 100% !important;
-      height: 100% !important;
-      max-width: 100% !important;
-      max-height: 100% !important;
-      margin: 0 !important;
-      padding: 0 !important;
+      width: 90% !important;
+      height: 90% !important;
+      max-width: 90% !important;
+      max-height: 90% !important;
       object-fit: contain !important;
       object-position: center !important;
       pointer-events: none !important;
@@ -70,21 +61,41 @@
     <img id="icon" src="/icon.ico" alt="ArtHub" />
   </div>
   <script>
-    // 调试：检查实际尺寸
-    window.addEventListener('load', () => {
+    // 动态检测窗口实际大小并调整图标
+    function adjustIconSize() {
       const icon = document.getElementById('icon');
       const container = document.getElementById('icon-container');
       const body = document.body;
       const html = document.documentElement;
       
+      // 获取实际窗口大小
+      const windowWidth = window.innerWidth || html.clientWidth || body.clientWidth;
+      const windowHeight = window.innerHeight || html.clientHeight || body.clientHeight;
+      
+      // 计算图标大小：窗口大小的 90%，留出 10% 边距
+      const iconSize = Math.min(windowWidth, windowHeight) * 0.9;
+      
+      // 设置图标大小
+      icon.style.width = iconSize + 'px';
+      icon.style.height = iconSize + 'px';
+      icon.style.maxWidth = iconSize + 'px';
+      icon.style.maxHeight = iconSize + 'px';
+      
       console.log('=== Icon Window Debug ===');
-      console.log('HTML size:', html.offsetWidth, 'x', html.offsetHeight);
-      console.log('Body size:', body.offsetWidth, 'x', body.offsetHeight);
-      console.log('Container size:', container.offsetWidth, 'x', container.offsetHeight);
-      console.log('Icon size:', icon.offsetWidth, 'x', icon.offsetHeight);
+      console.log('Window size:', windowWidth, 'x', windowHeight);
+      console.log('Icon size:', iconSize, 'x', iconSize);
       console.log('Icon natural size:', icon.naturalWidth, 'x', icon.naturalHeight);
-      console.log('Window size:', window.innerWidth, 'x', window.innerHeight);
-    });
+      console.log('Icon actual size:', icon.offsetWidth, 'x', icon.offsetHeight);
+    }
+    
+    // 页面加载时调整
+    window.addEventListener('load', adjustIconSize);
+    
+    // 窗口大小变化时调整
+    window.addEventListener('resize', adjustIconSize);
+    
+    // 立即执行一次
+    setTimeout(adjustIconSize, 0);
     
     // Tauri API 调用
     let invoke;
