@@ -9,7 +9,7 @@ use std::sync::Mutex;
 use winapi::um::winuser::{
     MonitorFromPoint, GetMonitorInfoW, MONITOR_DEFAULTTONEAREST,
     EnumWindows, GetWindowTextW, SetForegroundWindow, ShowWindow, 
-    SW_RESTORE, IsWindowVisible, GetClassNameW
+    SW_RESTORE, SW_MINIMIZE, IsWindowVisible, IsIconic, GetClassNameW
 };
 #[cfg(target_os = "windows")]
 use winapi::shared::windef::{POINT, HWND};
@@ -369,6 +369,52 @@ fn icon_mouse_up(app: tauri::AppHandle, x: f64, y: f64) {
     }
 }
 
+// Windows: 查找主窗口的数据结构
+#[cfg(target_os = "windows")]
+struct EnumWindowsData {
+    target_title: String,
+    found_hwnd: Option<HWND>,
+}
+
+// Windows: 枚举窗口的回调函数（用于查找主窗口）
+#[cfg(target_os = "windows")]
+unsafe extern "system" fn enum_main_window_proc(hwnd: HWND, lparam: isize) -> BOOL {
+    let find_data = &mut *(lparam as *mut EnumWindowsData);
+    
+    // 获取窗口标题
+    let mut title: [u16; 512] = [0; 512];
+    let length = GetWindowTextW(hwnd, title.as_mut_ptr(), title.len() as i32);
+    
+    if length > 0 {
+        let window_title = OsString::from_wide(&title[..length as usize])
+            .to_string_lossy()
+            .to_string();
+        
+        if window_title == find_data.target_title {
+            find_data.found_hwnd = Some(hwnd);
+            return 0; // 找到窗口，停止枚举
+        }
+    }
+    
+    1 // 继续枚举
+}
+
+// 辅助函数：在 Windows 上查找主窗口句柄
+#[cfg(target_os = "windows")]
+fn find_main_window_hwnd() -> Option<HWND> {
+    let target_title = "ArtHub - 游戏美术工作台";
+    let mut find_data = EnumWindowsData {
+        target_title: target_title.to_string(),
+        found_hwnd: None,
+    };
+    
+    unsafe {
+        EnumWindows(Some(enum_main_window_proc), &mut find_data as *mut _ as isize);
+    }
+    
+    find_data.found_hwnd
+}
+
 // Tauri 命令：点击图标
 #[tauri::command]
 fn icon_click(app: tauri::AppHandle) {
@@ -377,40 +423,81 @@ fn icon_click(app: tauri::AppHandle) {
         let state = app.state::<AppState>();
         let mut window_visible = state.main_window_visible.lock().unwrap();
         
-        // 先检查窗口当前状态（在恢复之前）
-        let was_visible_before = main_window.is_visible().unwrap_or(false);
+        // 检查窗口当前状态
+        let is_visible_now = main_window.is_visible().unwrap_or(false);
         
-        // 总是先尝试显示和聚焦窗口（这会恢复最小化的窗口）
-        let show_result = main_window.show();
-        std::thread::sleep(std::time::Duration::from_millis(50));
-        let focus_result = main_window.set_focus();
+        // 在 Windows 上，尝试检查窗口是否最小化
+        #[cfg(target_os = "windows")]
+        let is_minimized = {
+            if let Some(hwnd) = find_main_window_hwnd() {
+                unsafe { IsIconic(hwnd) != 0 }
+            } else {
+                false
+            }
+        };
         
-        // 等待窗口响应
-        std::thread::sleep(std::time::Duration::from_millis(100));
+        #[cfg(not(target_os = "windows"))]
+        let is_minimized = false;
         
-        // 检查窗口是否真的可见
-        let is_visible_after = main_window.is_visible().unwrap_or(false);
-        let focus_success = focus_result.is_ok();
+        println!("Main window state - is_visible: {}, is_minimized: {}, tracked: {}", 
+                 is_visible_now, is_minimized, *window_visible);
         
-        println!("Main window state - was_visible: {}, is_visible_after: {}, focus_success: {}, tracked: {}", 
-                 was_visible_before, is_visible_after, focus_success, *window_visible);
-        
-        // 如果窗口之前就是可见的（且跟踪状态也是可见的），且现在聚焦成功，则切换为隐藏
-        // 这样可以避免刚恢复的窗口立即被隐藏
-        if *window_visible && was_visible_before && focus_success {
-            // 窗口之前就是可见的，且聚焦成功，则隐藏（切换行为）
-            println!("Main window was visible, hiding...");
-                let _ = main_window.hide();
+        // 如果窗口是可见的且不在最小化状态，则最小化
+        // 否则，显示/恢复并前置窗口
+        if is_visible_now && !is_minimized {
+            // 窗口当前可见且在前台，最小化它
+            println!("Main window is visible, minimizing...");
+            #[cfg(target_os = "windows")]
+            {
+                if let Some(hwnd) = find_main_window_hwnd() {
+                    unsafe {
+                        ShowWindow(hwnd, SW_MINIMIZE);
+                    }
+                } else {
+                    let _ = main_window.minimize();
+                }
+            }
+            #[cfg(not(target_os = "windows"))]
+            {
+                let _ = main_window.minimize();
+            }
             *window_visible = false;
         } else {
-            // 窗口之前不可见，或者需要恢复，则显示
+            // 窗口不可见或最小化，显示/恢复并前置
             println!("Main window needs to be shown/restored...");
-            // 确保窗口显示
-            if show_result.is_err() {
-                let _ = main_window.show();
+            
+            #[cfg(target_os = "windows")]
+            {
+                // 在 Windows 上，如果窗口最小化，先恢复它
+                if is_minimized {
+                    if let Some(hwnd) = find_main_window_hwnd() {
+                        unsafe {
+                            ShowWindow(hwnd, SW_RESTORE);
+                            SetForegroundWindow(hwnd);
+                        }
+                        std::thread::sleep(std::time::Duration::from_millis(100));
+                    }
+                }
             }
+            
+            // 先显示窗口（这会恢复最小化的窗口）
+            let _ = main_window.show();
             std::thread::sleep(std::time::Duration::from_millis(50));
+            
+            // 聚焦窗口以确保在前台
             let _ = main_window.set_focus();
+            
+            // 等待窗口响应
+            std::thread::sleep(std::time::Duration::from_millis(100));
+            
+            // 再次确保窗口显示和聚焦（以防第一次失败）
+            let is_visible_after = main_window.is_visible().unwrap_or(false);
+            if !is_visible_after {
+                let _ = main_window.show();
+                std::thread::sleep(std::time::Duration::from_millis(50));
+                let _ = main_window.set_focus();
+            }
+            
             *window_visible = true;
         }
     } else {
