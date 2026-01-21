@@ -40,10 +40,12 @@
       overflow: hidden;
     }
 
-    /* 图标：固定60px，自动缩放适应，绝对不会被裁剪 */
+    /* 图标：固定50px，留出足够边距，自动缩放适应，绝对不会被裁剪 */
     #icon {
-      width: 60px;
-      height: 60px;
+      width: 50px;
+      height: 50px;
+      max-width: 50px;
+      max-height: 50px;
       object-fit: contain;
       object-position: center;
       pointer-events: none;
