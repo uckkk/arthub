@@ -1,6 +1,8 @@
 // 统一的收藏服务
 // 管理所有类型的收藏项：路径、AI工作流等
 
+import { compressImage, needsCompression } from '../utils/imageCompress';
+
 export type FavoriteType = 'path' | 'ai_workflow';
 
 export interface FavoriteItem {
@@ -43,20 +45,31 @@ export function getAllFavorites(): FavoriteItem[] {
   return [];
 }
 
-// 优化收藏项：移除大的缩略图（base64 图片通常很大）
-function optimizeFavoriteItem(item: FavoriteItem): FavoriteItem {
+// 优化收藏项：压缩大的缩略图
+async function optimizeFavoriteItem(item: FavoriteItem): Promise<FavoriteItem> {
   const optimized = { ...item };
   
-  // 如果工作流有缩略图且是 base64 编码的，移除它（base64 图片通常很大）
+  // 如果工作流有缩略图且是 base64 编码的，检查是否需要压缩
   if (optimized.aiWorkflow?.thumbnail) {
     const thumbnail = optimized.aiWorkflow.thumbnail;
-    // 检查是否是 base64 编码的图片（通常以 data:image 开头）
-    if (thumbnail.startsWith('data:image') && thumbnail.length > 50000) {
-      // 如果 base64 图片超过 50KB，移除它
-      optimized.aiWorkflow = {
-        ...optimized.aiWorkflow,
-        thumbnail: undefined
-      };
+    // 检查是否需要压缩（超过 100KB）
+    if (needsCompression(thumbnail, 100)) {
+      try {
+        // 压缩图片：最大 800x800，质量 0.8，目标大小 100KB
+        const compressedThumbnail = await compressImage(thumbnail, {
+          maxWidth: 800,
+          maxHeight: 800,
+          quality: 0.8,
+          maxSizeKB: 100
+        });
+        optimized.aiWorkflow = {
+          ...optimized.aiWorkflow,
+          thumbnail: compressedThumbnail
+        };
+      } catch (error) {
+        console.warn('压缩缩略图失败，保留原图:', error);
+        // 压缩失败时保留原图
+      }
     }
   }
   
@@ -64,20 +77,79 @@ function optimizeFavoriteItem(item: FavoriteItem): FavoriteItem {
 }
 
 // 保存收藏列表
-function saveFavorites(favorites: FavoriteItem[]): void {
+async function saveFavoritesAsync(favorites: FavoriteItem[]): Promise<void> {
   try {
-    // 先优化所有收藏项（移除大的缩略图）
-    const optimizedFavorites = favorites.map(optimizeFavoriteItem);
+    // 先优化所有收藏项（压缩大的缩略图）
+    const optimizedFavorites = await Promise.all(
+      favorites.map(item => optimizeFavoriteItem(item))
+    );
+    
     let jsonString = JSON.stringify(optimizedFavorites);
     
     // 检查数据大小（localStorage 通常限制为 5-10MB）
-    const maxSize = 3 * 1024 * 1024; // 3MB 限制（更保守）
+    const maxSize = 4 * 1024 * 1024; // 4MB 限制
     
+    // 如果数据仍然太大，对所有缩略图进行更激进的压缩
     if (jsonString.length > maxSize) {
-      console.warn(`收藏数据太大 (${(jsonString.length / 1024 / 1024).toFixed(2)}MB)，尝试清理`);
+      console.warn(`收藏数据太大 (${(jsonString.length / 1024 / 1024).toFixed(2)}MB)，进行更激进的压缩`);
       
-      // 策略1：移除所有缩略图
-      const noThumbnailFavorites = optimizedFavorites.map(fav => {
+      // 对所有缩略图进行更激进的压缩（更小的尺寸和质量）
+      const aggressivelyCompressedFavorites = await Promise.all(
+        optimizedFavorites.map(async (fav) => {
+          if (fav.aiWorkflow?.thumbnail && needsCompression(fav.aiWorkflow.thumbnail, 50)) {
+            try {
+              const compressedThumbnail = await compressImage(fav.aiWorkflow.thumbnail, {
+                maxWidth: 400,
+                maxHeight: 400,
+                quality: 0.6,
+                maxSizeKB: 50
+              });
+              return {
+                ...fav,
+                aiWorkflow: {
+                  ...fav.aiWorkflow,
+                  thumbnail: compressedThumbnail
+                }
+              };
+            } catch (error) {
+              console.warn('激进压缩失败，保留原图:', error);
+              return fav;
+            }
+          }
+          return fav;
+        })
+      );
+      
+      jsonString = JSON.stringify(aggressivelyCompressedFavorites);
+      
+      // 如果还是太大，最后尝试：移除所有缩略图（但保留其他数据）
+      if (jsonString.length > maxSize) {
+        console.warn('数据仍然太大，移除所有缩略图');
+        const noThumbnailFavorites = aggressivelyCompressedFavorites.map(fav => {
+          if (fav.aiWorkflow) {
+            return {
+              ...fav,
+              aiWorkflow: {
+                ...fav.aiWorkflow,
+                thumbnail: undefined
+              }
+            };
+          }
+          return fav;
+        });
+        jsonString = JSON.stringify(noThumbnailFavorites);
+      }
+    }
+    
+    // 最终保存
+    localStorage.setItem(FAVORITES_STORAGE_KEY, jsonString);
+    window.dispatchEvent(new CustomEvent('favoritesUpdated'));
+  } catch (error: any) {
+    if (error.name === 'QuotaExceededError' || error.message?.includes('quota')) {
+      console.error('localStorage 配额超限，尝试移除所有缩略图');
+      
+      // 最后尝试：移除所有缩略图
+      const noThumbnailFavorites = favorites.map(fav => {
         if (fav.aiWorkflow) {
           return {
             ...fav,
@@ -90,106 +162,27 @@ function saveFavorites(favorites: FavoriteItem[]): void {
         return fav;
       });
       
-      jsonString = JSON.stringify(noThumbnailFavorites);
-      
-      // 策略2：如果仍然太大，清理旧数据
-      if (jsonString.length > maxSize) {
-        const sortedFavorites = [...noThumbnailFavorites].sort((a, b) => b.createdAt - a.createdAt);
-        
-        // 逐步减少保留数量，直到数据大小合适
-        let maxItems = 50;
-        let trimmedFavorites = sortedFavorites.slice(0, maxItems);
-        let trimmedJson = JSON.stringify(trimmedFavorites);
-        
-        while (trimmedJson.length > maxSize && maxItems > 10) {
-          maxItems = Math.max(10, Math.floor(maxItems * 0.8));
-          trimmedFavorites = sortedFavorites.slice(0, maxItems);
-          trimmedJson = JSON.stringify(trimmedFavorites);
-        }
-        
-        if (trimmedJson.length > maxSize) {
-          // 最后尝试：只保留基本信息，移除所有可选字段
-          trimmedFavorites = trimmedFavorites.map(fav => {
-            if (fav.type === 'ai_workflow' && fav.aiWorkflow) {
-              return {
-                ...fav,
-                aiWorkflow: {
-                  id: fav.aiWorkflow.id,
-                  name: fav.aiWorkflow.name,
-                  url: fav.aiWorkflow.url,
-                  // 移除 description, thumbnail, tags, category
-                }
-              };
-            }
-            return fav;
-          });
-          trimmedJson = JSON.stringify(trimmedFavorites);
-        }
-        
-        jsonString = trimmedJson;
-        console.warn(`已清理旧收藏项，仅保留最近的 ${trimmedFavorites.length} 个`);
-      } else {
-        console.warn('已移除所有缩略图以减小数据大小');
-      }
-    }
-    
-    // 最终保存
-    localStorage.setItem(FAVORITES_STORAGE_KEY, jsonString);
-    window.dispatchEvent(new CustomEvent('favoritesUpdated'));
-  } catch (error: any) {
-    if (error.name === 'QuotaExceededError' || error.message?.includes('quota')) {
-      console.error('localStorage 配额超限，尝试清理旧数据');
-      
-      // 更激进的清理策略
-      const sortedFavorites = [...favorites]
-        .map(optimizeFavoriteItem)
-        .map(fav => {
-          // 移除所有可选字段
-          if (fav.type === 'ai_workflow' && fav.aiWorkflow) {
-            return {
-              ...fav,
-              aiWorkflow: {
-                id: fav.aiWorkflow.id,
-                name: fav.aiWorkflow.name,
-                url: fav.aiWorkflow.url,
-              }
-            };
-          }
-          return fav;
-        })
-        .sort((a, b) => b.createdAt - a.createdAt);
-      
-      // 逐步减少数量
-      let maxItems = 30;
-      let success = false;
-      
-      while (maxItems >= 5 && !success) {
-        const trimmedFavorites = sortedFavorites.slice(0, maxItems);
-        try {
-          localStorage.setItem(FAVORITES_STORAGE_KEY, JSON.stringify(trimmedFavorites));
-          console.warn(`已清理旧收藏项，仅保留最近的 ${maxItems} 个`);
-          window.dispatchEvent(new CustomEvent('favoritesUpdated'));
-          success = true;
-        } catch (retryError) {
-          maxItems = Math.max(5, Math.floor(maxItems * 0.7));
-        }
-      }
-      
-      if (!success) {
-        console.error('清理后仍然无法保存，可能需要手动清理 localStorage');
-        // 尝试清空并重新开始
-        try {
-          localStorage.removeItem(FAVORITES_STORAGE_KEY);
-          console.warn('已清空收藏数据，请重新收藏');
-        } catch (clearError) {
-          console.error('无法清空收藏数据:', clearError);
-        }
+      try {
+        localStorage.setItem(FAVORITES_STORAGE_KEY, JSON.stringify(noThumbnailFavorites));
+        console.warn('已移除所有缩略图以保存收藏数据');
+        window.dispatchEvent(new CustomEvent('favoritesUpdated'));
+      } catch (retryError) {
+        console.error('移除缩略图后仍然无法保存:', retryError);
+        throw retryError;
       }
     } else {
       console.error('保存收藏失败:', error);
       throw error;
     }
   }
+}
+
+// 同步包装函数（内部使用异步）
+function saveFavorites(favorites: FavoriteItem[]): void {
+  // 使用 Promise.resolve().then() 确保异步执行，但不阻塞调用者
+  Promise.resolve().then(() => saveFavoritesAsync(favorites)).catch(error => {
+    console.error('异步保存收藏失败:', error);
+  });
 }
 
 // 添加收藏
