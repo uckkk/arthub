@@ -3,6 +3,7 @@
 import { getStorageConfig, getSavedStoragePath, autoSyncToFile } from './fileStorageService';
 import { readTextFile, writeTextFile, exists } from '@tauri-apps/api/fs';
 import { join } from '@tauri-apps/api/path';
+import { invoke } from '@tauri-apps/api/tauri';
 
 const NOTES_LOCAL_STORAGE_KEY = 'arthub_notes_content';
 
@@ -75,8 +76,24 @@ export async function saveNotesToFile(content: string, presetId?: string): Promi
       return false;
     }
 
-    await writeTextFile(filePath, content);
-    return true;
+    // 优先使用 Rust 命令写入文件，绕过文件系统作用域限制
+    try {
+      await invoke('write_file_with_path', {
+        filePath: filePath,
+        content: content
+      });
+      return true;
+    } catch (invokeError: any) {
+      // 如果 Rust 命令失败，尝试使用 Tauri FS API（可能受作用域限制）
+      console.warn('使用 Rust 命令写入失败，尝试使用 FS API:', invokeError);
+      try {
+        await writeTextFile(filePath, content);
+        return true;
+      } catch (fsError: any) {
+        console.error('FS API 写入也失败:', fsError);
+        throw fsError;
+      }
+    }
   } catch (error) {
     console.error('保存备注到文件失败:', error);
     return false;
@@ -101,13 +118,41 @@ export async function loadNotesFromFile(presetId?: string): Promise<string | nul
       return null;
     }
 
-    // 检查文件是否存在
-    const fileExists = await exists(filePath);
+    // 检查文件是否存在（优先使用 Rust 命令，绕过作用域限制）
+    let fileExists = false;
+    try {
+      fileExists = await invoke('file_exists_with_path', { filePath: filePath });
+    } catch (error) {
+      // 如果 Rust 命令失败，尝试使用 Tauri FS API
+      try {
+        fileExists = await exists(filePath);
+      } catch (fsError) {
+        console.error('检查文件存在性失败:', fsError);
+        return null;
+      }
+    }
+
     if (!fileExists) {
       return null;
     }
 
-    const text = await readTextFile(filePath);
+    // 读取文件内容（优先使用 Rust 命令）
+    let text: string;
+    try {
+      text = await invoke('read_file_with_path', { filePath: filePath });
+    } catch (error) {
+      // 如果 Rust 命令失败，尝试使用 Tauri FS API
+      try {
+        text = await readTextFile(filePath);
+      } catch (fsError: any) {
+        if (fsError.message?.includes('未找到') || fsError.message?.includes('NotFound')) {
+          return null; // 文件不存在
+        }
+        console.error('读取文件失败:', fsError);
+        return null;
+      }
+    }
+
     return text;
   } catch (error: any) {
     if (error.message?.includes('未找到') || error.message?.includes('NotFound')) {
