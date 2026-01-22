@@ -10,6 +10,7 @@ import {
   getSavedStoragePath,
   autoSyncToFile
 } from '../services/fileStorageService';
+import { Input } from './common';
 
 interface SettingsPanelProps {
   isOpen: boolean;
@@ -58,21 +59,36 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ isOpen, onClose, triggerR
     // 立即加载
     loadSettings();
     
-    // 监听localStorage变化，实时更新
-    const handleStorageChange = () => {
-      loadSettings();
+    // 监听localStorage变化（仅在其他标签页或窗口修改时触发）
+    const handleStorageChange = (e: StorageEvent) => {
+      // 只响应其他窗口/标签页的变化，避免覆盖用户正在输入的内容
+      if (e.key === 'arthub_gemini_key' || e.key === 'arthub_baidu_appid' || e.key === 'arthub_baidu_secret') {
+        // 只在输入框没有焦点时更新（避免覆盖用户正在输入的内容）
+        const activeElement = document.activeElement;
+        const isInputFocused = activeElement && (
+          activeElement.tagName === 'INPUT' || 
+          activeElement.tagName === 'TEXTAREA'
+        );
+        
+        if (!isInputFocused) {
+          loadSettings();
+        }
+      } else if (e.key === 'arthub_file_storage_config') {
+        // 存储配置变化时总是更新
+        const config = getStorageConfig();
+        setStorageEnabled(config.enabled);
+        setSelectedDirectory(config.directoryPath);
+        setLastSyncTime(config.lastSyncTime);
+      }
     };
     window.addEventListener('storage', handleStorageChange);
     
-    // 定期更新同步时间
+    // 定期更新同步时间（但不更新输入框状态，避免覆盖用户输入）
     const interval = setInterval(() => {
       const currentConfig = getStorageConfig();
       setLastSyncTime(currentConfig.lastSyncTime);
-      // 同时更新其他设置
-      setGeminiKey(localStorage.getItem('arthub_gemini_key') || '');
-      setBaiduAppId(localStorage.getItem('arthub_baidu_appid') || '');
-      setBaiduSecret(localStorage.getItem('arthub_baidu_secret') || '');
-    }, 1000); // 每秒更新一次，确保数据同步
+      // 注意：不再更新输入框状态，避免覆盖用户正在输入的内容
+    }, 1000); // 每秒更新一次同步时间
     
     return () => {
       clearInterval(interval);
@@ -248,18 +264,10 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ isOpen, onClose, triggerR
                     申请 Key <ExternalLink size={10} />
                   </a>
                 </div>
-                <input 
+                <Input
                   type="password"
                   value={geminiKey}
                   onChange={(e) => setGeminiKey(e.target.value)}
-                  className="
-                    w-full px-4 py-2.5 rounded-lg
-                    bg-[#0f0f0f] border border-[#2a2a2a]
-                    text-white placeholder-[#555555]
-                    text-sm
-                    focus:outline-none focus:border-blue-500
-                    transition-colors
-                  "
                   placeholder="AI Studio API Key"
                 />
               </div>
@@ -280,32 +288,16 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ isOpen, onClose, triggerR
                   </a>
                 </div>
                 <div className="space-y-2">
-                  <input 
+                  <Input
                     type="text"
                     value={baiduAppId}
                     onChange={(e) => setBaiduAppId(e.target.value)}
-                    className="
-                      w-full px-4 py-2.5 rounded-lg
-                      bg-[#0f0f0f] border border-[#2a2a2a]
-                      text-white placeholder-[#555555]
-                      text-sm
-                      focus:outline-none focus:border-blue-500
-                      transition-colors
-                    "
                     placeholder="APP ID"
                   />
-                  <input 
+                  <Input
                     type="password"
                     value={baiduSecret}
                     onChange={(e) => setBaiduSecret(e.target.value)}
-                    className="
-                      w-full px-4 py-2.5 rounded-lg
-                      bg-[#0f0f0f] border border-[#2a2a2a]
-                      text-white placeholder-[#555555]
-                      text-sm
-                      focus:outline-none focus:border-blue-500
-                      transition-colors
-                    "
                     placeholder="密钥 (Secret Key)"
                   />
                 </div>
