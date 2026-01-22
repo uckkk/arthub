@@ -8,23 +8,67 @@ const PRESET_URL_MAP: Record<string, string> = {
   'generic_rpg': 'https://raw.githubusercontent.com/uckkk/ArtAssetNamingConfig/main/0GameArtName.csv',
 };
 
-// 从GitHub获取CSV数据
-export async function fetchNamingData(presetId: string): Promise<string> {
+// 从GitHub获取CSV数据（带超时和重试机制）
+export async function fetchNamingData(presetId: string, retries = 2): Promise<string> {
   const url = PRESET_URL_MAP[presetId];
   if (!url) {
     throw new Error(`Unknown preset ID: ${presetId}`);
   }
   
-  try {
-    const response = await fetch(url);
-    if (!response.ok) {
-      throw new Error(`Failed to fetch naming data: ${response.statusText}`);
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    try {
+      // 创建 AbortController 用于超时控制
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 10000); // 10秒超时
+      
+      try {
+        const response = await fetch(url, {
+          signal: controller.signal,
+          cache: 'no-cache', // 禁用缓存，确保获取最新数据
+        });
+        
+        clearTimeout(timeoutId);
+        
+        if (!response.ok) {
+          throw new Error(`Failed to fetch naming data: ${response.status} ${response.statusText}`);
+        }
+        
+        const text = await response.text();
+        if (!text || text.trim().length === 0) {
+          throw new Error('返回的数据为空');
+        }
+        
+        return text;
+      } catch (fetchError: any) {
+        clearTimeout(timeoutId);
+        
+        // 如果是最后一次尝试，抛出错误
+        if (attempt === retries) {
+          if (fetchError.name === 'AbortError') {
+            throw new Error('请求超时，请检查网络连接');
+          }
+          throw fetchError;
+        }
+        
+        // 如果不是最后一次尝试，等待后重试
+        if (attempt < retries) {
+          await new Promise(resolve => setTimeout(resolve, 1000 * (attempt + 1))); // 递增延迟
+          continue;
+        }
+        
+        throw fetchError;
+      }
+    } catch (error: any) {
+      // 最后一次尝试失败，记录错误并抛出
+      if (attempt === retries) {
+        console.error(`Error fetching naming data for ${presetId} (attempt ${attempt + 1}/${retries + 1}):`, error);
+        throw error;
+      }
     }
-    return await response.text();
-  } catch (error) {
-    console.error(`Error fetching naming data for ${presetId}:`, error);
-    throw error;
   }
+  
+  // 理论上不会到达这里，但为了类型安全
+  throw new Error('Failed to fetch naming data after retries');
 }
 
 // 解析CSV数据为预设
