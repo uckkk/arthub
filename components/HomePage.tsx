@@ -158,101 +158,7 @@ const HomePage: React.FC = () => {
           </div>
         ) : (
           <div className="space-y-8">
-            {/* 快捷路径区域 - 紧凑标签式网格布局 */}
-            {pathsCount > 0 && (
-              <div>
-                <div className="flex items-center gap-2 mb-3">
-                  <Folder size={18} className="text-orange-400" />
-                  <h3 className="text-base font-semibold text-white">快捷路径</h3>
-                  <span className="px-2 py-0.5 rounded text-xs font-medium bg-[#1a1a1a] text-[#666666]">
-                    {pathsCount}
-                  </span>
-                </div>
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-2.5">
-                  {groupedFavorites.paths.map((fav) => {
-                    const path = fav.pathItem!;
-                    return (
-                      <div
-                        key={fav.id}
-                        onMouseEnter={() => setHoveredId(fav.id)}
-                        onMouseLeave={() => setHoveredId(null)}
-                        onClick={() => handlePathJump(path)}
-                        className="
-                          group relative
-                          bg-[#1a1a1a] rounded-lg
-                          border border-[#2a2a2a]
-                          transition-all duration-150
-                          hover:border-[#3a3a3a] hover:bg-[#1f1f1f]
-                          hover:shadow-md hover:shadow-black/20
-                          cursor-pointer
-                          px-3 py-2.5
-                          flex items-center gap-2.5
-                          min-h-[56px]
-                        "
-                      >
-                        {/* 图标 */}
-                        <div className="shrink-0">
-                          <div className="p-1.5 rounded-md bg-[#0f0f0f] group-hover:bg-[#151515] transition-colors">
-                            {getPathIcon(path.type)}
-                          </div>
-                        </div>
-
-                        {/* 内容区域 */}
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-1.5 mb-0.5">
-                            <h3 className="
-                              text-[13px] font-medium text-white
-                              truncate
-                              group-hover:text-blue-400
-                              transition-colors duration-150
-                            ">
-                              {path.name}
-                            </h3>
-                          </div>
-                          <div className="flex items-center gap-1.5 flex-wrap">
-                            {path.group && (
-                              <span className="
-                                px-1.5 py-0.5 rounded text-[10px] font-medium
-                                bg-blue-500/20 text-blue-400 border border-blue-500/30
-                                shrink-0
-                              ">
-                                {path.group}
-                              </span>
-                            )}
-                            <p className="
-                              text-[11px] text-[#666666] font-mono
-                              truncate flex-1 min-w-0
-                            " title={path.path}>
-                              {path.path}
-                            </p>
-                          </div>
-                        </div>
-
-                        {/* 删除按钮 */}
-                        {hoveredId === fav.id && (
-                          <button
-                            onClick={(e) => handleRemoveFavorite(fav, e)}
-                            className="
-                              shrink-0
-                              p-1 rounded-md
-                              bg-[#2a2a2a] hover:bg-red-500/20
-                              text-[#666666] hover:text-red-400
-                              transition-colors duration-150
-                              opacity-0 group-hover:opacity-100
-                            "
-                            title="取消收藏"
-                          >
-                            <X size={12} />
-                          </button>
-                        )}
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-            )}
-
-            {/* AI工作流区域 */}
+            {/* AI工作流区域 - 置顶显示 */}
             {workflowsCount > 0 && (
               <div>
                 <div className="flex items-center gap-2 mb-4">
@@ -402,6 +308,101 @@ const HomePage: React.FC = () => {
                 </div>
               </div>
             )}
+
+            {/* 快捷路径区域 - 紧凑标签式网格布局 */}
+            {pathsCount > 0 && (
+              <div>
+                <div className="flex items-center gap-2 mb-3">
+                  <Folder size={18} className="text-orange-400" />
+                  <h3 className="text-base font-semibold text-white">快捷路径</h3>
+                  <span className="px-2 py-0.5 rounded text-xs font-medium bg-[#1a1a1a] text-[#666666]">
+                    {pathsCount}
+                  </span>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-2.5">
+                  {groupedFavorites.paths.map((fav) => {
+                    const path = fav.pathItem!;
+                    return (
+                      <div
+                        key={fav.id}
+                        onMouseEnter={() => setHoveredId(fav.id)}
+                        onMouseLeave={() => setHoveredId(null)}
+                        onClick={() => handlePathJump(path)}
+                        className="
+                          group relative
+                          bg-[#1a1a1a] rounded-lg
+                          border border-[#2a2a2a]
+                          transition-all duration-150
+                          hover:border-[#3a3a3a] hover:bg-[#1f1f1f]
+                          hover:shadow-md hover:shadow-black/20
+                          cursor-pointer
+                          px-3 py-2.5
+                          flex items-center gap-2.5
+                          min-h-[56px]
+                        "
+                      >
+                        {/* 图标 */}
+                        <div className="shrink-0">
+                          <div className="p-1.5 rounded-md bg-[#0f0f0f] group-hover:bg-[#151515] transition-colors">
+                            {getPathIcon(path.type)}
+                          </div>
+                        </div>
+
+                        {/* 内容区域 */}
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-1.5 mb-0.5">
+                            <h3 className="
+                              text-[13px] font-medium text-white
+                              truncate
+                              group-hover:text-blue-400
+                              transition-colors duration-150
+                            ">
+                              {path.name}
+                            </h3>
+                          </div>
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            {path.group && (
+                              <span className="
+                                px-1.5 py-0.5 rounded text-[10px] font-medium
+                                bg-blue-500/20 text-blue-400 border border-blue-500/30
+                                shrink-0
+                              ">
+                                {path.group}
+                              </span>
+                            )}
+                            <p className="
+                              text-[11px] text-[#666666] font-mono
+                              truncate flex-1 min-w-0
+                            " title={path.path}>
+                              {path.path}
+                            </p>
+                          </div>
+                        </div>
+
+                        {/* 删除按钮 */}
+                        {hoveredId === fav.id && (
+                          <button
+                            onClick={(e) => handleRemoveFavorite(fav, e)}
+                            className="
+                              shrink-0
+                              p-1 rounded-md
+                              bg-[#2a2a2a] hover:bg-red-500/20
+                              text-[#666666] hover:text-red-400
+                              transition-colors duration-150
+                              opacity-0 group-hover:opacity-100
+                            "
+                            title="取消收藏"
+                          >
+                            <X size={12} />
+                          </button>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
           </div>
         )}
       </div>

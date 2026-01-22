@@ -45,8 +45,51 @@ export function getAllFavorites(): FavoriteItem[] {
 
 // 保存收藏列表
 function saveFavorites(favorites: FavoriteItem[]): void {
-  localStorage.setItem(FAVORITES_STORAGE_KEY, JSON.stringify(favorites));
-  window.dispatchEvent(new CustomEvent('favoritesUpdated'));
+  try {
+    const jsonString = JSON.stringify(favorites);
+    
+    // 检查数据大小（localStorage 通常限制为 5-10MB）
+    if (jsonString.length > 4 * 1024 * 1024) { // 4MB 限制
+      console.warn(`收藏数据太大 (${(jsonString.length / 1024 / 1024).toFixed(2)}MB)，无法保存到 localStorage`);
+      // 尝试清理旧数据或压缩数据
+      // 只保留最近的收藏项
+      const sortedFavorites = [...favorites].sort((a, b) => b.createdAt - a.createdAt);
+      const maxItems = 100; // 最多保留100个收藏项
+      const trimmedFavorites = sortedFavorites.slice(0, maxItems);
+      
+      const trimmedJson = JSON.stringify(trimmedFavorites);
+      if (trimmedJson.length > 4 * 1024 * 1024) {
+        console.error('即使清理后数据仍然太大，无法保存');
+        return;
+      }
+      
+      localStorage.setItem(FAVORITES_STORAGE_KEY, trimmedJson);
+      console.warn(`已清理旧收藏项，仅保留最近的 ${maxItems} 个`);
+    } else {
+      localStorage.setItem(FAVORITES_STORAGE_KEY, jsonString);
+    }
+    
+    window.dispatchEvent(new CustomEvent('favoritesUpdated'));
+  } catch (error: any) {
+    if (error.name === 'QuotaExceededError' || error.message?.includes('quota')) {
+      console.error('localStorage 配额超限，尝试清理旧数据');
+      // 尝试清理旧数据
+      const sortedFavorites = [...favorites].sort((a, b) => b.createdAt - a.createdAt);
+      const maxItems = 100;
+      const trimmedFavorites = sortedFavorites.slice(0, maxItems);
+      
+      try {
+        localStorage.setItem(FAVORITES_STORAGE_KEY, JSON.stringify(trimmedFavorites));
+        console.warn(`已清理旧收藏项，仅保留最近的 ${maxItems} 个`);
+        window.dispatchEvent(new CustomEvent('favoritesUpdated'));
+      } catch (retryError) {
+        console.error('清理后仍然无法保存:', retryError);
+      }
+    } else {
+      console.error('保存收藏失败:', error);
+      throw error;
+    }
+  }
 }
 
 // 添加收藏
