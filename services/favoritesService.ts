@@ -43,47 +43,147 @@ export function getAllFavorites(): FavoriteItem[] {
   return [];
 }
 
+// 优化收藏项：移除大的缩略图（base64 图片通常很大）
+function optimizeFavoriteItem(item: FavoriteItem): FavoriteItem {
+  const optimized = { ...item };
+  
+  // 如果工作流有缩略图且是 base64 编码的，移除它（base64 图片通常很大）
+  if (optimized.aiWorkflow?.thumbnail) {
+    const thumbnail = optimized.aiWorkflow.thumbnail;
+    // 检查是否是 base64 编码的图片（通常以 data:image 开头）
+    if (thumbnail.startsWith('data:image') && thumbnail.length > 50000) {
+      // 如果 base64 图片超过 50KB，移除它
+      optimized.aiWorkflow = {
+        ...optimized.aiWorkflow,
+        thumbnail: undefined
+      };
+    }
+  }
+  
+  return optimized;
+}
+
 // 保存收藏列表
 function saveFavorites(favorites: FavoriteItem[]): void {
   try {
-    const jsonString = JSON.stringify(favorites);
+    // 先优化所有收藏项（移除大的缩略图）
+    const optimizedFavorites = favorites.map(optimizeFavoriteItem);
+    let jsonString = JSON.stringify(optimizedFavorites);
     
     // 检查数据大小（localStorage 通常限制为 5-10MB）
-    if (jsonString.length > 4 * 1024 * 1024) { // 4MB 限制
-      console.warn(`收藏数据太大 (${(jsonString.length / 1024 / 1024).toFixed(2)}MB)，无法保存到 localStorage`);
-      // 尝试清理旧数据或压缩数据
-      // 只保留最近的收藏项
-      const sortedFavorites = [...favorites].sort((a, b) => b.createdAt - a.createdAt);
-      const maxItems = 100; // 最多保留100个收藏项
-      const trimmedFavorites = sortedFavorites.slice(0, maxItems);
+    const maxSize = 3 * 1024 * 1024; // 3MB 限制（更保守）
+    
+    if (jsonString.length > maxSize) {
+      console.warn(`收藏数据太大 (${(jsonString.length / 1024 / 1024).toFixed(2)}MB)，尝试清理`);
       
-      const trimmedJson = JSON.stringify(trimmedFavorites);
-      if (trimmedJson.length > 4 * 1024 * 1024) {
-        console.error('即使清理后数据仍然太大，无法保存');
-        return;
+      // 策略1：移除所有缩略图
+      const noThumbnailFavorites = optimizedFavorites.map(fav => {
+        if (fav.aiWorkflow) {
+          return {
+            ...fav,
+            aiWorkflow: {
+              ...fav.aiWorkflow,
+              thumbnail: undefined
+            }
+          };
+        }
+        return fav;
+      });
+      
+      jsonString = JSON.stringify(noThumbnailFavorites);
+      
+      // 策略2：如果仍然太大，清理旧数据
+      if (jsonString.length > maxSize) {
+        const sortedFavorites = [...noThumbnailFavorites].sort((a, b) => b.createdAt - a.createdAt);
+        
+        // 逐步减少保留数量，直到数据大小合适
+        let maxItems = 50;
+        let trimmedFavorites = sortedFavorites.slice(0, maxItems);
+        let trimmedJson = JSON.stringify(trimmedFavorites);
+        
+        while (trimmedJson.length > maxSize && maxItems > 10) {
+          maxItems = Math.max(10, Math.floor(maxItems * 0.8));
+          trimmedFavorites = sortedFavorites.slice(0, maxItems);
+          trimmedJson = JSON.stringify(trimmedFavorites);
+        }
+        
+        if (trimmedJson.length > maxSize) {
+          // 最后尝试：只保留基本信息，移除所有可选字段
+          trimmedFavorites = trimmedFavorites.map(fav => {
+            if (fav.type === 'ai_workflow' && fav.aiWorkflow) {
+              return {
+                ...fav,
+                aiWorkflow: {
+                  id: fav.aiWorkflow.id,
+                  name: fav.aiWorkflow.name,
+                  url: fav.aiWorkflow.url,
+                  // 移除 description, thumbnail, tags, category
+                }
+              };
+            }
+            return fav;
+          });
+          trimmedJson = JSON.stringify(trimmedFavorites);
+        }
+        
+        jsonString = trimmedJson;
+        console.warn(`已清理旧收藏项，仅保留最近的 ${trimmedFavorites.length} 个`);
+      } else {
+        console.warn('已移除所有缩略图以减小数据大小');
       }
-      
-      localStorage.setItem(FAVORITES_STORAGE_KEY, trimmedJson);
-      console.warn(`已清理旧收藏项，仅保留最近的 ${maxItems} 个`);
-    } else {
-      localStorage.setItem(FAVORITES_STORAGE_KEY, jsonString);
     }
     
+    // 最终保存
+    localStorage.setItem(FAVORITES_STORAGE_KEY, jsonString);
     window.dispatchEvent(new CustomEvent('favoritesUpdated'));
   } catch (error: any) {
     if (error.name === 'QuotaExceededError' || error.message?.includes('quota')) {
       console.error('localStorage 配额超限，尝试清理旧数据');
-      // 尝试清理旧数据
-      const sortedFavorites = [...favorites].sort((a, b) => b.createdAt - a.createdAt);
-      const maxItems = 100;
-      const trimmedFavorites = sortedFavorites.slice(0, maxItems);
       
-      try {
-        localStorage.setItem(FAVORITES_STORAGE_KEY, JSON.stringify(trimmedFavorites));
-        console.warn(`已清理旧收藏项，仅保留最近的 ${maxItems} 个`);
-        window.dispatchEvent(new CustomEvent('favoritesUpdated'));
-      } catch (retryError) {
-        console.error('清理后仍然无法保存:', retryError);
+      // 更激进的清理策略
+      const sortedFavorites = [...favorites]
+        .map(optimizeFavoriteItem)
+        .map(fav => {
+          // 移除所有可选字段
+          if (fav.type === 'ai_workflow' && fav.aiWorkflow) {
+            return {
+              ...fav,
+              aiWorkflow: {
+                id: fav.aiWorkflow.id,
+                name: fav.aiWorkflow.name,
+                url: fav.aiWorkflow.url,
+              }
+            };
+          }
+          return fav;
+        })
+        .sort((a, b) => b.createdAt - a.createdAt);
+      
+      // 逐步减少数量
+      let maxItems = 30;
+      let success = false;
+      
+      while (maxItems >= 5 && !success) {
+        const trimmedFavorites = sortedFavorites.slice(0, maxItems);
+        try {
+          localStorage.setItem(FAVORITES_STORAGE_KEY, JSON.stringify(trimmedFavorites));
+          console.warn(`已清理旧收藏项，仅保留最近的 ${maxItems} 个`);
+          window.dispatchEvent(new CustomEvent('favoritesUpdated'));
+          success = true;
+        } catch (retryError) {
+          maxItems = Math.max(5, Math.floor(maxItems * 0.7));
+        }
+      }
+      
+      if (!success) {
+        console.error('清理后仍然无法保存，可能需要手动清理 localStorage');
+        // 尝试清空并重新开始
+        try {
+          localStorage.removeItem(FAVORITES_STORAGE_KEY);
+          console.warn('已清空收藏数据，请重新收藏');
+        } catch (clearError) {
+          console.error('无法清空收藏数据:', clearError);
+        }
       }
     } else {
       console.error('保存收藏失败:', error);
