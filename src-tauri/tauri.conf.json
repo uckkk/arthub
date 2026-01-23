@@ -101,7 +101,26 @@
       "windows": {
         "certificateThumbprint": null,
         "digestAlgorithm": "sha256",
-        "timestampUrl": ""
+        "timestampUrl": "",
+        "nsis": {
+          "license": null,
+          "createDesktopShortcut": true,
+          "createStartMenuShortcut": true,
+          "allowDowngrades": false,
+          "oneClick": false,
+          "allowElevation": true,
+          "installerIcon": "icons/icon.ico",
+          "uninstallerIcon": "icons/icon.ico",
+          "installerHeaderIcon": "icons/icon.ico",
+          "deleteAppDataOnUninstall": false,
+          "displayLanguageSelector": false,
+          "multiLanguageInstaller": false,
+          "runAfterFinish": true,
+          "menuCategory": "ArtHub",
+          "warningsAsErrors": false,
+          "customTemplate": null,
+          "installerHooks": "windows/installer-hooks.nsi"
+        }
       }
     },
     "security": {
