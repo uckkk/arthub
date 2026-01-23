@@ -101,12 +101,7 @@
       "windows": {
         "certificateThumbprint": null,
         "digestAlgorithm": "sha256",
-        "timestampUrl": "",
-        "nsis": {
-          "createDesktopShortcut": true,
-          "createStartMenuShortcut": true,
-          "installerIcon": "icons/icon.ico"
-        }
+        "timestampUrl": ""
       }
     },
     "security": {
