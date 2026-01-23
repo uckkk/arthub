@@ -105,8 +105,7 @@
         "nsis": {
           "createDesktopShortcut": true,
           "createStartMenuShortcut": true,
-          "installerIcon": "icons/icon.ico",
-          "installerHooks": "windows/installer-hooks.nsi"
+          "installerIcon": "icons/icon.ico"
         }
       }
     },
