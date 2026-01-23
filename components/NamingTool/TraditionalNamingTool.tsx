@@ -69,13 +69,21 @@ const CategoryDropdown: React.FC<CategoryDropdownProps> = ({ options, value, onC
       </button>
 
       {isOpen && (
-        <div className="
-          absolute top-full left-0 mt-1 w-full
-          bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg
-          shadow-lg shadow-black/50
-          z-50 overflow-hidden
-          animate-scale-in
-        ">
+        <div 
+          className="
+            absolute top-full left-0 mt-1 w-full
+            bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg
+            shadow-lg shadow-black/50
+            z-50 overflow-hidden
+            animate-scale-in
+            max-h-[300px] overflow-y-auto
+          "
+          style={{ scrollbarWidth: 'thin', scrollbarColor: '#2a2a2a #1a1a1a' }}
+          onWheel={(e) => {
+            // 阻止滚动事件冒泡到父容器
+            e.stopPropagation();
+          }}
+        >
           {options.map((option) => (
             <button
               key={option.value}
