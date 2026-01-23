@@ -2,6 +2,9 @@
 ; 基于 NSIS Modern UI 2，应用深色主题样式
 ; 使用 Handlebars 模板语法，变量会被 Tauri 构建时替换
 
+; 压缩方式（必须在最前面，在任何其他操作之前）
+SetCompressor {{compression}}
+
 ; 使用 Modern UI 2
 !include "MUI2.nsh"
 
@@ -18,6 +21,15 @@
 ; 安装程序图标
 !define MUI_ICON "${NSISDIR}\Contrib\Graphics\Icons\modern-install.ico"
 !define MUI_UNICON "${NSISDIR}\Contrib\Graphics\Icons\modern-uninstall.ico"
+
+; 安装程序属性（必须在页面定义之前）
+Name "{{product_name}}"
+OutFile "{{output}}"
+InstallDir "$PROGRAMFILES\{{product_name}}"
+InstallDirRegKey HKLM "Software\Microsoft\Windows\CurrentVersion\App Paths\{{product_name}}.exe" ""
+RequestExecutionLevel admin
+ShowInstDetails show
+ShowUnInstDetails show
 
 ; 欢迎页面
 !insertmacro MUI_PAGE_WELCOME
@@ -47,18 +59,6 @@
 
 ; 语言文件
 !insertmacro MUI_LANGUAGE "SimpChinese"
-
-; 压缩方式（必须在其他设置之前）
-SetCompressor {{compression}}
-
-; 安装程序属性
-Name "{{product_name}}"
-OutFile "{{output}}"
-InstallDir "$PROGRAMFILES\{{product_name}}"
-InstallDirRegKey HKLM "Software\Microsoft\Windows\CurrentVersion\App Paths\{{product_name}}.exe" ""
-RequestExecutionLevel admin
-ShowInstDetails show
-ShowUnInstDetails show
 
 ; 安装程序部分
 Section "MainSection" SEC01
