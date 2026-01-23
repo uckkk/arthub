@@ -35,7 +35,10 @@ const PresetDropdown: React.FC<PresetDropdownProps> = ({
   isRefreshing,
 }) => {
   const [isOpen, setIsOpen] = useState(false);
+  const [maxHeight, setMaxHeight] = useState<number | undefined>(undefined);
   const dropdownRef = useRef<HTMLDivElement>(null);
+  const buttonRef = useRef<HTMLButtonElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -46,6 +49,27 @@ const PresetDropdown: React.FC<PresetDropdownProps> = ({
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
+
+  // 计算下拉菜单的最大高度
+  useEffect(() => {
+    if (isOpen && buttonRef.current) {
+      const buttonRect = buttonRef.current.getBoundingClientRect();
+      const viewportHeight = window.innerHeight;
+      const spaceBelow = viewportHeight - buttonRect.bottom - 4; // 4px 是 mt-1 的间距
+      
+      // 计算每个选项的高度（大约 42px，包括 padding）
+      const itemHeight = 42;
+      const contentHeight = options.length * itemHeight;
+      
+      // 如果内容高度小于可用空间，不限制高度；否则限制为可用空间
+      if (contentHeight <= spaceBelow) {
+        setMaxHeight(undefined);
+      } else {
+        // 至少显示一个选项，最多显示到视口底部
+        setMaxHeight(Math.max(itemHeight, Math.min(spaceBelow, contentHeight)));
+      }
+    }
+  }, [isOpen, options.length]);
 
   const selectedOption = options.find(opt => opt.value === value);
 
@@ -66,6 +90,7 @@ const PresetDropdown: React.FC<PresetDropdownProps> = ({
       )}
       <Settings2 size={14} className="text-[#555555]" />
       <button
+        ref={buttonRef}
         type="button"
         onClick={() => !disabled && setIsOpen(!isOpen)}
         disabled={disabled}
@@ -84,15 +109,19 @@ const PresetDropdown: React.FC<PresetDropdownProps> = ({
 
       {isOpen && (
         <div 
+          ref={menuRef}
           className="
             absolute top-full left-0 mt-1 w-full min-w-[180px]
             bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg
             shadow-lg shadow-black/50
             z-50 overflow-hidden
             animate-scale-in
-            max-h-[300px] overflow-y-auto
           "
-          style={{ scrollbarWidth: 'thin', scrollbarColor: '#2a2a2a #1a1a1a' }}
+          style={{ 
+            scrollbarWidth: 'thin', 
+            scrollbarColor: '#2a2a2a #1a1a1a',
+            ...(maxHeight !== undefined ? { maxHeight: `${maxHeight}px`, overflowY: 'auto' } : {})
+          }}
           onWheel={(e) => {
             // 阻止滚动事件冒泡到父容器
             e.stopPropagation();
