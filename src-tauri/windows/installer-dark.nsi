@@ -48,6 +48,9 @@
 ; 语言文件
 !insertmacro MUI_LANGUAGE "SimpChinese"
 
+; 压缩方式（必须在其他设置之前）
+SetCompressor {{compression}}
+
 ; 安装程序属性
 Name "{{product_name}}"
 OutFile "{{output}}"
@@ -56,9 +59,6 @@ InstallDirRegKey HKLM "Software\Microsoft\Windows\CurrentVersion\App Paths\{{pro
 RequestExecutionLevel admin
 ShowInstDetails show
 ShowUnInstDetails show
-
-; 压缩方式
-SetCompressor {{compression}}
 
 ; 安装程序部分
 Section "MainSection" SEC01
