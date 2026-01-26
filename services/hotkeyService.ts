@@ -1,11 +1,14 @@
 // 全局快捷键服务
 // 管理主窗口呼出/隐藏的全局快捷键
 
-import { register, unregister, isRegistered } from '@tauri-apps/api/globalShortcut';
+import { register, unregister, isRegistered as checkIsRegistered } from '@tauri-apps/api/globalShortcut';
 import { appWindow } from '@tauri-apps/api/window';
 
 const HOTKEY_STORAGE_KEY = 'arthub_main_window_hotkey';
 const DEFAULT_HOTKEY = 'Ctrl+Alt+H'; // 默认快捷键
+
+// 重新导出 isRegistered 供外部使用
+export const isRegistered = checkIsRegistered;
 
 // 获取保存的快捷键
 export function getSavedHotkey(): string {
@@ -52,7 +55,7 @@ export async function registerHotkey(hotkey: string): Promise<boolean> {
     const savedHotkey = getSavedHotkey();
     if (savedHotkey && savedHotkey !== hotkey) {
       try {
-        const wasRegistered = await isRegistered(savedHotkey);
+        const wasRegistered = await checkIsRegistered(savedHotkey);
         if (wasRegistered) {
           await unregister(savedHotkey);
         }
@@ -62,7 +65,7 @@ export async function registerHotkey(hotkey: string): Promise<boolean> {
     }
 
     // 检查新快捷键是否已被注册
-    const alreadyRegistered = await isRegistered(hotkey);
+    const alreadyRegistered = await checkIsRegistered(hotkey);
     if (alreadyRegistered) {
       console.warn(`快捷键 ${hotkey} 已被注册`);
       return false;
@@ -87,7 +90,7 @@ export async function unregisterHotkey(hotkey?: string): Promise<void> {
   try {
     const hotkeyToUnregister = hotkey || getSavedHotkey();
     if (hotkeyToUnregister) {
-      const wasRegistered = await isRegistered(hotkeyToUnregister);
+      const wasRegistered = await checkIsRegistered(hotkeyToUnregister);
       if (wasRegistered) {
         await unregister(hotkeyToUnregister);
       }
