@@ -7,6 +7,7 @@ import { getStorageConfig, formatSyncTime } from './services/fileStorageService'
 import { getUserInfo, clearUserInfo, UserInfo } from './services/userAuthService';
 import { initAutoSync } from './utils/autoSync';
 import { preloadAllData } from './services/preloadService';
+import { initHotkey } from './services/hotkeyService';
 import { ToastProvider } from './components/Toast';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { Sidebar, MenuGroup } from './components/ui';
@@ -291,6 +292,13 @@ const App: React.FC = () => {
     
     loadData();
     initAutoSync();
+    
+    // 初始化全局快捷键（仅在 Tauri 环境中）
+    if (typeof window !== 'undefined' && (window as any).__TAURI__) {
+      initHotkey().catch((error) => {
+        console.error('初始化快捷键失败:', error);
+      });
+    }
   }, []);
 
   // 监听打开设置事件（从命名工具的翻译提示触发）

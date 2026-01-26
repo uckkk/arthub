@@ -11,6 +11,7 @@ import {
   autoSyncToFile
 } from '../services/fileStorageService';
 import { Input } from './common';
+import { getSavedHotkey, registerHotkey, validateHotkey, isRegistered } from '../services/hotkeyService';
 
 interface SettingsPanelProps {
   isOpen: boolean;
@@ -19,7 +20,7 @@ interface SettingsPanelProps {
 }
 
 const SettingsPanel: React.FC<SettingsPanelProps> = ({ isOpen, onClose, triggerRef }) => {
-  const [activeGroup, setActiveGroup] = useState<'api' | 'storage'>('api');
+  const [activeGroup, setActiveGroup] = useState<'api' | 'storage' | 'hotkey'>('api');
   
   // API 配置状态
   const [geminiKey, setGeminiKey] = useState('');
@@ -30,6 +31,10 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ isOpen, onClose, triggerR
   const [storageEnabled, setStorageEnabled] = useState(false);
   const [selectedDirectory, setSelectedDirectory] = useState<string | null>(null);
   const [lastSyncTime, setLastSyncTime] = useState<number | null>(null);
+  
+  // 快捷键配置状态
+  const [hotkey, setHotkey] = useState('');
+  const [isRegisteringHotkey, setIsRegisteringHotkey] = useState(false);
   
   const [statusMsg, setStatusMsg] = useState<{type: 'success' | 'error' | 'info', text: string} | null>(null);
   const [isTesting, setIsTesting] = useState(false);
@@ -46,6 +51,9 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ isOpen, onClose, triggerR
       setStorageEnabled(config.enabled);
       setSelectedDirectory(config.directoryPath);
       setLastSyncTime(config.lastSyncTime);
+      
+      // 加载快捷键配置
+      setHotkey(getSavedHotkey());
       
       if (config.enabled) {
         getSavedStoragePath().then(path => {
@@ -244,6 +252,18 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ isOpen, onClose, triggerR
           >
             本地存储
           </button>
+          <button
+            onClick={() => setActiveGroup('hotkey')}
+            className={`
+              flex-1 px-4 py-2 rounded-lg text-sm font-medium transition-colors
+              ${activeGroup === 'hotkey'
+                ? 'bg-blue-500/20 text-blue-400 border border-blue-500/30'
+                : 'bg-[#1a1a1a] text-[#808080] border border-[#2a2a2a] hover:border-[#3a3a3a]'
+              }
+            `}
+          >
+            快捷键
+          </button>
         </div>
         
         {/* 内容区域 */}
@@ -427,6 +447,106 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ isOpen, onClose, triggerR
                   )}
                 </div>
               )}
+            </>
+          )}
+
+          {/* 组3：快捷键设置 */}
+          {activeGroup === 'hotkey' && (
+            <>
+              <div className="space-y-4">
+                <div className="space-y-2">
+                  <label className="text-sm font-medium text-[#a0a0a0]">主窗口呼出快捷键</label>
+                  <div className="flex gap-2">
+                    <Input
+                      type="text"
+                      value={hotkey}
+                      onChange={(e) => setHotkey(e.target.value)}
+                      placeholder="例如: Ctrl+Alt+H"
+                      onKeyDown={(e) => {
+                        // 阻止默认行为，捕获按键组合
+                        e.preventDefault();
+                        const parts: string[] = [];
+                        if (e.ctrlKey) parts.push('Ctrl');
+                        if (e.altKey) parts.push('Alt');
+                        if (e.shiftKey) parts.push('Shift');
+                        if (e.metaKey) parts.push('Meta');
+                        
+                        // 获取按键名称
+                        let key = e.key;
+                        if (key === ' ') key = 'Space';
+                        if (key.length === 1 && key.match(/[a-zA-Z0-9]/)) {
+                          key = key.toUpperCase();
+                        }
+                        
+                        if (key && !['Control', 'Alt', 'Shift', 'Meta'].includes(key)) {
+                          parts.push(key);
+                          const newHotkey = parts.join('+');
+                          setHotkey(newHotkey);
+                        }
+                      }}
+                    />
+                    <button
+                      onClick={async () => {
+                        setIsRegisteringHotkey(true);
+                        setStatusMsg(null);
+                        
+                        // 验证快捷键格式
+                        const validation = validateHotkey(hotkey);
+                        if (!validation.valid) {
+                          showStatus('error', validation.error || '快捷键格式不正确');
+                          setIsRegisteringHotkey(false);
+                          return;
+                        }
+
+                        try {
+                          // 检查快捷键是否已被注册
+                          const alreadyRegistered = await isRegistered(hotkey);
+                          if (alreadyRegistered) {
+                            showStatus('error', '该快捷键已被其他程序使用');
+                            setIsRegisteringHotkey(false);
+                            return;
+                          }
+
+                          // 注册快捷键
+                          const success = await registerHotkey(hotkey);
+                          if (success) {
+                            showStatus('success', `快捷键已设置: ${hotkey}`);
+                          } else {
+                            showStatus('error', '快捷键设置失败');
+                          }
+                        } catch (error: any) {
+                          showStatus('error', error.message || '快捷键设置失败');
+                        } finally {
+                          setIsRegisteringHotkey(false);
+                        }
+                      }}
+                      disabled={isRegisteringHotkey || !hotkey.trim()}
+                      className="
+                        px-4 py-2 rounded-lg
+                        bg-blue-600 hover:bg-blue-700 disabled:bg-[#2a2a2a] disabled:opacity-50
+                        text-white text-sm font-medium
+                        transition-colors
+                        whitespace-nowrap
+                      "
+                    >
+                      {isRegisteringHotkey ? '设置中...' : '保存'}
+                    </button>
+                  </div>
+                  <div className="text-xs text-[#666666]">
+                    在输入框中按下快捷键组合即可设置。例如：Ctrl+Alt+H
+                  </div>
+                </div>
+
+                <div className="
+                  p-3 rounded-lg
+                  bg-blue-500/10 border border-blue-500/20
+                  text-xs text-blue-300
+                ">
+                  <p>• 快捷键可以在应用隐藏时呼出主界面</p>
+                  <p>• 主界面显示时按快捷键可以隐藏窗口</p>
+                  <p>• 呼出时主界面会自动置顶</p>
+                </div>
+              </div>
             </>
           )}
         </div>
