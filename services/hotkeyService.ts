@@ -2,7 +2,7 @@
 // 管理主窗口呼出/隐藏的全局快捷键
 
 import { register, unregister, isRegistered } from '@tauri-apps/api/globalShortcut';
-import { getWindow } from '@tauri-apps/api/window';
+import { appWindow } from '@tauri-apps/api/window';
 
 const HOTKEY_STORAGE_KEY = 'arthub_main_window_hotkey';
 const DEFAULT_HOTKEY = 'Ctrl+Alt+H'; // 默认快捷键
@@ -20,27 +20,21 @@ export function saveHotkey(hotkey: string): void {
 // 切换主窗口显示/隐藏
 async function toggleMainWindow(): Promise<void> {
   try {
-    const mainWindow = getWindow('main');
-    if (!mainWindow) {
-      console.error('主窗口不存在');
-      return;
-    }
-
-    const isVisible = await mainWindow.isVisible();
+    const isVisible = await appWindow.isVisible();
     
     if (isVisible) {
       // 窗口可见，隐藏它
-      await mainWindow.hide();
+      await appWindow.hide();
     } else {
       // 窗口隐藏，显示并置顶
-      await mainWindow.show();
-      await mainWindow.setFocus();
-      await mainWindow.setAlwaysOnTop(true);
+      await appWindow.show();
+      await appWindow.setFocus();
+      await appWindow.setAlwaysOnTop(true);
       
       // 短暂置顶后取消，避免一直置顶
       setTimeout(async () => {
         try {
-          await mainWindow.setAlwaysOnTop(false);
+          await appWindow.setAlwaysOnTop(false);
         } catch (error) {
           console.error('取消置顶失败:', error);
         }
