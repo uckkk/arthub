@@ -423,12 +423,12 @@ fn icon_click(app: tauri::AppHandle) {
         let state = app.state::<AppState>();
         let mut window_visible = state.main_window_visible.lock().unwrap();
         
-        // 检查窗口当前状态
-        let is_visible_now = main_window.is_visible().unwrap_or(false);
+        // 检查窗口当前状态（多次检查以提高可靠性）
+        let mut is_visible_now = main_window.is_visible().unwrap_or(false);
         
         // 在 Windows 上，尝试检查窗口是否最小化
         #[cfg(target_os = "windows")]
-        let is_minimized = {
+        let mut is_minimized = {
             if let Some(hwnd) = find_main_window_hwnd() {
                 unsafe { IsIconic(hwnd) != 0 }
             } else {
@@ -437,7 +437,20 @@ fn icon_click(app: tauri::AppHandle) {
         };
         
         #[cfg(not(target_os = "windows"))]
-        let is_minimized = false;
+        let mut is_minimized = false;
+        
+        // 如果第一次检查失败，重试一次
+        if !is_visible_now {
+            std::thread::sleep(std::time::Duration::from_millis(50));
+            is_visible_now = main_window.is_visible().unwrap_or(false);
+            
+            #[cfg(target_os = "windows")]
+            {
+                if let Some(hwnd) = find_main_window_hwnd() {
+                    is_minimized = unsafe { IsIconic(hwnd) != 0 };
+                }
+            }
+        }
         
         println!("Main window state - is_visible: {}, is_minimized: {}, tracked: {}", 
                  is_visible_now, is_minimized, *window_visible);
@@ -475,33 +488,53 @@ fn icon_click(app: tauri::AppHandle) {
                             ShowWindow(hwnd, SW_RESTORE);
                             SetForegroundWindow(hwnd);
                         }
-                        std::thread::sleep(std::time::Duration::from_millis(100));
+                        std::thread::sleep(std::time::Duration::from_millis(150));
                     }
                 }
             }
             
             // 先显示窗口（这会恢复最小化的窗口）
-            let _ = main_window.show();
-            std::thread::sleep(std::time::Duration::from_millis(50));
-            
-            // 聚焦窗口以确保在前台
-            let _ = main_window.set_focus();
-            
-            // 等待窗口响应
+            let show_result = main_window.show();
+            if show_result.is_err() {
+                println!("Warning: First show() call failed, retrying...");
+            }
             std::thread::sleep(std::time::Duration::from_millis(100));
             
-            // 再次确保窗口显示和聚焦（以防第一次失败）
-            let is_visible_after = main_window.is_visible().unwrap_or(false);
-            if !is_visible_after {
-                let _ = main_window.show();
-                std::thread::sleep(std::time::Duration::from_millis(50));
-                let _ = main_window.set_focus();
+            // 聚焦窗口以确保在前台
+            let focus_result = main_window.set_focus();
+            if focus_result.is_err() {
+                println!("Warning: First set_focus() call failed, retrying...");
             }
             
-            *window_visible = true;
+            // 等待窗口响应
+            std::thread::sleep(std::time::Duration::from_millis(150));
+            
+            // 多次验证并重试，确保窗口显示
+            for attempt in 1..=3 {
+                let is_visible_after = main_window.is_visible().unwrap_or(false);
+                if is_visible_after {
+                    println!("Window is now visible after {} attempt(s)", attempt);
+                    break;
+                } else {
+                    println!("Window still not visible, retrying (attempt {})...", attempt);
+                    let _ = main_window.show();
+                    std::thread::sleep(std::time::Duration::from_millis(100));
+                    let _ = main_window.set_focus();
+                    std::thread::sleep(std::time::Duration::from_millis(100));
+                }
+            }
+            
+            // 最终验证
+            let final_visible = main_window.is_visible().unwrap_or(false);
+            if final_visible {
+                *window_visible = true;
+                println!("Window successfully shown and focused");
+            } else {
+                println!("ERROR: Failed to show window after all attempts");
+            }
         }
     } else {
-        println!("Main window not found!");
+        println!("ERROR: Main window not found!");
     }
 }
 

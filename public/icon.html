@@ -130,6 +130,10 @@
     
     let isDragging = false;
     let startMousePos = { x: 0, y: 0 };
+    let lastClickTime = 0;
+    let clickTimeout = null;
+    const DOUBLE_CLICK_DELAY = 300; // 双击间隔时间（毫秒）
+    const DRAG_THRESHOLD = 5; // 拖拽阈值（像素）
     
     document.addEventListener('contextmenu', e => e.preventDefault());
     
@@ -165,18 +169,54 @@
       }
     });
     
+    // 处理单击和双击
+    async function handleClick(isDoubleClick) {
+      if (!invoke) invoke = getInvoke();
+      if (invoke) {
+        try {
+          await invoke('icon_click');
+        } catch (err) {
+          console.error('Click error:', err);
+        }
+      }
+    }
+    
     document.addEventListener('mouseup', async (e) => {
       if (e.button === 0 && isDragging) {
-        const moved = Math.abs(e.screenX - startMousePos.x) > 3 || 
-                      Math.abs(e.screenY - startMousePos.y) > 3;
+        const moved = Math.abs(e.screenX - startMousePos.x) > DRAG_THRESHOLD || 
+                      Math.abs(e.screenY - startMousePos.y) > DRAG_THRESHOLD;
         isDragging = false;
         
         if (!invoke) invoke = getInvoke();
         if (invoke) {
           try {
             await invoke('icon_mouse_up', { x: e.screenX, y: e.screenY });
+            
+            // 只有在没有拖拽的情况下才处理点击
             if (!moved) {
-              await invoke('icon_click');
+              const currentTime = Date.now();
+              const timeSinceLastClick = currentTime - lastClickTime;
+              
+              // 清除之前的单击超时
+              if (clickTimeout) {
+                clearTimeout(clickTimeout);
+                clickTimeout = null;
+              }
+              
+              // 检查是否是双击（两次点击间隔小于 DOUBLE_CLICK_DELAY）
+              if (timeSinceLastClick < DOUBLE_CLICK_DELAY) {
+                // 双击：立即触发，不等待
+                lastClickTime = 0; // 重置，避免触发第三次点击
+                await handleClick(true);
+              } else {
+                // 单击：延迟触发，等待可能的第二次点击
+                lastClickTime = currentTime;
+                clickTimeout = setTimeout(async () => {
+                  await handleClick(false);
+                  clickTimeout = null;
+                  lastClickTime = 0;
+                }, DOUBLE_CLICK_DELAY);
+              }
             }
           } catch (err) {
             console.error('Mouse up error:', err);
@@ -187,9 +227,33 @@
       }
     });
     
+    // 添加真正的双击事件处理（作为备用）
+    document.addEventListener('dblclick', async (e) => {
+      e.preventDefault();
+      // 清除单击超时
+      if (clickTimeout) {
+        clearTimeout(clickTimeout);
+        clickTimeout = null;
+      }
+      lastClickTime = 0;
+      
+      if (!invoke) invoke = getInvoke();
+      if (invoke) {
+        try {
+          await invoke('icon_click');
+        } catch (err) {
+          console.error('Double click error:', err);
+        }
+      }
+    });
+    
     document.addEventListener('selectstart', e => e.preventDefault());
-    window.addEventListener('mouseup', () => { isDragging = false; });
-    document.addEventListener('mouseleave', () => { isDragging = false; });
+    window.addEventListener('mouseup', () => { 
+      isDragging = false; 
+    });
+    document.addEventListener('mouseleave', () => { 
+      isDragging = false; 
+    });
   </script>
 </body>
 </html>
