@@ -8,7 +8,7 @@ import { getUserInfo, clearUserInfo, UserInfo } from './services/userAuthService
 import { initAutoSync } from './utils/autoSync';
 import { preloadAllData } from './services/preloadService';
 import { initHotkey } from './services/hotkeyService';
-import { ToastProvider } from './components/Toast';
+import { ToastProvider, useToast } from './components/Toast';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { Sidebar, MenuGroup } from './components/ui';
 import { CURRENT_VERSION } from './services/updateService';
@@ -112,7 +112,8 @@ const createMenuGroups = (): MenuGroup[] => [
   },
 ];
 
-const App: React.FC = () => {
+const AppContent: React.FC = () => {
+  const { showToast } = useToast();
   // 默认显示首页
   const [activeTab, setActiveTab] = useState<string>('home');
   const [isUserVerified, setIsUserVerified] = useState(false);
@@ -265,15 +266,23 @@ const App: React.FC = () => {
     };
   }, [currentPresetId]);
 
+  // 应用启动时优先从本地存储导入数据
   useEffect(() => {
     const loadData = async () => {
       // 优先：先尝试从文件导入数据（如果已启用文件存储或找到本地文件）
       // 这必须在加载其他数据之前执行，确保翻译API等设置从文件恢复
       try {
         const { autoImportFromFile } = await import('./services/fileStorageService');
-        const imported = await autoImportFromFile();
-        if (imported) {
+        const result = await autoImportFromFile();
+        if (result.success && result.imported) {
           console.log('成功从本地文件导入数据，设置已恢复');
+          // 显示提示消息
+          if (result.message) {
+            // 延迟显示，确保 ToastProvider 已初始化
+            setTimeout(() => {
+              showToast('success', result.message || '本地信息已同步');
+            }, 500);
+          }
         }
       } catch (error) {
         // 静默处理导入错误
@@ -526,6 +535,14 @@ const App: React.FC = () => {
           {/* 错误通知 - 右下角自动弹出 */}
           <ErrorNotification maxHeight={400} />
         </div>
+  );
+};
+
+const App: React.FC = () => {
+  return (
+    <ErrorBoundary>
+      <ToastProvider>
+        <AppContent />
       </ToastProvider>
     </ErrorBoundary>
   );

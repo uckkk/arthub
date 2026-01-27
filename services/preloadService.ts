@@ -75,13 +75,8 @@ export const preloadSettingsData = () => {
 // 预加载所有数据
 export const preloadAllData = async () => {
   // 先尝试从文件导入数据（如果已启用文件存储）
-  try {
-    const { autoImportFromFile } = await import('./fileStorageService');
-    await autoImportFromFile();
-  } catch (error) {
-    // 静默处理导入错误
-    console.warn('预加载时导入文件数据失败:', error);
-  }
+  // 注意：这个导入已经在 App.tsx 中执行过了，这里不再重复导入
+  // 保留此代码以防其他地方调用 preloadAllData
   
   // 然后预加载 localStorage 数据（快速）
   preloadLocalStorageData();

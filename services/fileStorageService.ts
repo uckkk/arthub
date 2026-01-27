@@ -314,7 +314,14 @@ export async function importAllDataFromFile(): Promise<void> {
 
 // 自动从文件导入数据（静默执行，不抛出错误）
 // 如果本地文件夹存在但配置未启用，会自动启用配置
-export async function autoImportFromFile(): Promise<boolean> {
+// 返回导入结果详情
+export interface ImportResult {
+  success: boolean;
+  imported: boolean; // 是否实际导入了数据
+  message?: string; // 提示消息
+}
+
+export async function autoImportFromFile(): Promise<ImportResult> {
   if (!isTauriEnvironment()) {
     return false;
   }
@@ -395,19 +402,48 @@ export async function autoImportFromFile(): Promise<boolean> {
 
   // 如果配置已启用，尝试导入数据
   if (!config.enabled) {
-    return false;
+    return { success: true, imported: false };
   }
 
   try {
+    // 记录导入前的API配置状态
+    const beforeImport = {
+      geminiKey: localStorage.getItem('arthub_gemini_key') || '',
+      baiduAppId: localStorage.getItem('arthub_baidu_appid') || '',
+      baiduSecret: localStorage.getItem('arthub_baidu_secret') || '',
+    };
+    
     await importAllDataFromFile();
-    return true;
+    
+    // 检查导入后的API配置状态
+    const afterImport = {
+      geminiKey: localStorage.getItem('arthub_gemini_key') || '',
+      baiduAppId: localStorage.getItem('arthub_baidu_appid') || '',
+      baiduSecret: localStorage.getItem('arthub_baidu_secret') || '',
+    };
+    
+    // 判断是否有API配置被导入
+    const hasApiImported = 
+      (beforeImport.geminiKey !== afterImport.geminiKey && afterImport.geminiKey) ||
+      (beforeImport.baiduAppId !== afterImport.baiduAppId && afterImport.baiduAppId) ||
+      (beforeImport.baiduSecret !== afterImport.baiduSecret && afterImport.baiduSecret);
+    
+    if (hasApiImported) {
+      return { 
+        success: true, 
+        imported: true,
+        message: '本地信息已同步'
+      };
+    }
+    
+    return { success: true, imported: false };
   } catch (error: any) {
     // 静默处理错误（文件不存在等是正常情况）
     if (error.message?.includes('未找到') || error.message?.includes('未选择')) {
-      return false;
+      return { success: true, imported: false };
     }
     console.warn('自动导入数据失败:', error);
-    return false;
+    return { success: false, imported: false };
   }
 }
 
