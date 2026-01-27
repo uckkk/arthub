@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AppInstallerUX xmlns="http://schemas.microsoft.com/msix/appinstallerux"
+                xmlns:ux="http://schemas.microsoft.com/msix/appinstallerux"
+                xmlns:ux2="http://schemas.microsoft.com/msix/appinstallerux/2"
+                IgnorableNamespaces="ux ux2"
+                Version="1.0.0">
+  <UX AccentColor="#0078d4"
+      FontFamily="Segoe UI"
+      AllowUserInteraction="true"
+      BackgroundColor="#1a1a1a"
+      AppNameInTitle="true"
+      HyperLinkFontSize="12">
+    <!-- 应用图标：居中显示，顶部间距 60px -->
+    <Icon HorizontalAlignment="center"
+          Logo="icon.ico"
+          TopMargin="60"/>
+    
+    <!-- 按钮：居中显示，主按钮文字为"安装" -->
+    <Buttons HorizontalAlignment="center"
+             Text="安装"
+             IsSecondaryButtonAccent="false"/>
+    
+    <!-- 启动复选框：居中显示 -->
+    <LaunchWhenReady HorizontalAlignment="center"/>
+    
+    <!-- 应用信息：使用弹出式显示 -->
+    <AppInformation Mode="flyout"/>
+    
+    <!-- 超链接（可选）：可以添加服务条款等 -->
+    <!--
+    <HyperLinks TopMargin="30">
+      <HyperLink Text="服务条款"
+                 Url="https://example.com/terms"
+                 HorizontalAlignment="center"/>
+    </HyperLinks>
+    -->
+  </UX>
+</AppInstallerUX>

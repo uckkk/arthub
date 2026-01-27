@@ -82,8 +82,7 @@
     "bundle": {
       "active": true,
       "targets": [
-        "dmg",
-        "nsis"
+        "dmg"
       ],
       "identifier": "com.arthub.gameartist",
       "icon": [
