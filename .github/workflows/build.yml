@@ -198,17 +198,17 @@ jobs:
           # Windows 使用 --bundles none 跳过 NSIS 打包，由 Conveyor 处理
           # macOS 继续使用默认的 DMG 打包
 
-      # 7.5. Windows: 上传构建产物供 Conveyor 使用
-      - name: Upload Windows build artifacts for Conveyor
+      # 7.5. Windows: 上传构建产物（直接可运行的 EXE）
+      - name: Upload artifacts (Windows EXE)
         if: matrix.platform == 'windows-latest'
         uses: actions/upload-artifact@v4
         with:
-          name: windows-build-artifacts
+          name: ArtHub-${{ matrix.name }}-EXE
           path: |
             src-tauri/target/${{ matrix.target }}/release/ArtHub.exe
             src-tauri/target/${{ matrix.target }}/release/*.dll
-          if-no-files-found: error
-          retention-days: 1
+          if-no-files-found: ignore
+          retention-days: 30  # 保留 30 天
 
       # 8. 显示构建产物大小（优化监控）
       - name: Display build artifact sizes
@@ -232,51 +232,11 @@ jobs:
           if-no-files-found: ignore
           retention-days: 30  # 保留 30 天
 
-  # ========================================
-  # Windows MSIX 打包（使用 Conveyor）
-  # 可选：如果不需要 MSIX 安装包，可以跳过此 job
-  # ========================================
-  package-windows:
-    needs: build
-    runs-on: ubuntu-latest
-    if: contains(needs.build.result, 'success')
-    continue-on-error: true  # 允许失败，不影响整体构建
-    
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-      
-      - name: Download Windows build artifacts
-        uses: actions/download-artifact@v4
-        with:
-          name: windows-build-artifacts
-          path: ./windows-build
-      
-      - name: Build MSIX package with Conveyor
-        uses: hydraulic-software/conveyor/actions/build@v9.1
-        with:
-          command: make site
-          signing_key: ${{ secrets.CONVEYOR_SIGNING_KEY || '' }}
-          agree_to_license: 1
-        env:
-          # 开源项目许可证：设置 VCS URL
-          CONVEYOR_VCS_URL: "https://github.com/uckkk/arthub"
-      
-      - name: Upload Windows MSIX artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: ArtHub-Windows-MSIX
-          path: |
-            output/windows/*.msix
-            output/windows/*.exe
-          if-no-files-found: ignore
-          retention-days: 30
-
   # 可选：自动发布到 GitHub Releases
   release:
-    needs: [build, package-windows]
+    needs: build
     runs-on: ubuntu-latest
-    if: (startsWith(github.ref, 'refs/tags/v') || github.event.inputs.release == 'true') && (needs.build.result == 'success')
+    if: startsWith(github.ref, 'refs/tags/v') || github.event.inputs.release == 'true'
     
     steps:
       - name: Download all artifacts
@@ -292,8 +252,8 @@ jobs:
         with:
           draft: true
           files: |
-            artifacts/**/*.msix
             artifacts/**/*.exe
+            artifacts/**/*.dll
             artifacts/**/*.dmg
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
