@@ -538,7 +538,8 @@ fn icon_click(app: tauri::AppHandle) {
     }
 }
 
-// 窗口打开动画
+// 窗口打开动画（未使用，保留以备将来需要）
+#[allow(dead_code)]
 fn animate_window_open(_app: &tauri::AppHandle, main_window: tauri::Window) {
     println!("Opening main window...");
     

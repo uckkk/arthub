@@ -96,14 +96,8 @@ Function LaunchApp
   Exec "$INSTDIR\{{product_name}}.exe"
 FunctionEnd
 
-; 自定义 GUI 初始化函数 - 应用深色主题
-Function .onGUIInit
-  ; 使用 SetCtlColors 设置各个控件的颜色
-  ; 获取对话框句柄
-  FindWindow $R0 "#32770" "" $HWNDPARENT
-  ; 设置对话框背景色为深色
-  SetCtlColors $R0 "ffffff" "1a1a1a"
-FunctionEnd
+; 注意：.onGUIInit 函数由 Tauri 自动生成，不要在这里重复定义
+; 深色主题通过 MUI_BGCOLOR 和 MUI_TEXTCOLOR 定义来应用
 
 ; 卸载程序部分
 Section Uninstall
