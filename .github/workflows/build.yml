@@ -187,15 +187,15 @@ jobs:
           npm run build
           echo "前端构建完成！"
 
-      # 7. 构建 Tauri 应用（使用官方 tauri-action，优化构建）
+      # 7. 构建 Tauri 应用（使用官方 tauri-action，自动优化）
       - name: Build Tauri app
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          args: --target ${{ matrix.target }} -- --release
-          # 启用 Rust 优化编译
-          release: true
+          projectPath: ./src-tauri
+          args: --target ${{ matrix.target }}
+          # tauri-action 会自动使用 release 模式构建
 
       # 8. 显示构建产物大小（优化监控）
       - name: Display build artifact sizes
