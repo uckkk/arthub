@@ -285,6 +285,28 @@ export async function importAllDataFromFile(): Promise<void> {
             continue;
           }
           
+          // 关键修复：对于 API 配置等关键设置，如果 localStorage 中已有非空值，优先保留
+          // 这确保用户最新输入的值不会被文件中的旧值覆盖
+          const existingValue = localStorage.getItem(key);
+          const isApiConfig = key === 'arthub_gemini_key' || 
+                             key === 'arthub_baidu_appid' || 
+                             key === 'arthub_baidu_secret';
+          
+          if (isApiConfig && existingValue && existingValue.trim() !== '') {
+            // localStorage 中已有非空的 API 配置，优先保留用户的最新输入
+            // 只有当文件中的值明显不同且不是空字符串时，才考虑更新
+            // 但为了安全，我们完全保留 localStorage 中的值
+            console.log(`保留 localStorage 中的 ${key} 值，跳过文件导入（用户最新输入优先）`);
+            skipCount++;
+            continue;
+          }
+          
+          // 对于其他数据，如果 localStorage 中已有值且文件中的值相同，跳过（避免不必要的写入）
+          if (existingValue === valueToStore) {
+            skipCount++;
+            continue;
+          }
+          
           originalSetItem.call(localStorage, key, valueToStore);
           importCount++;
         } catch (error: any) {
@@ -406,12 +428,15 @@ export async function autoImportFromFile(): Promise<ImportResult> {
   }
 
   try {
-    // 记录导入前的API配置状态
+    // 记录导入前的API配置状态（用于判断是否有新数据导入）
     const beforeImport = {
       geminiKey: localStorage.getItem('arthub_gemini_key') || '',
       baiduAppId: localStorage.getItem('arthub_baidu_appid') || '',
       baiduSecret: localStorage.getItem('arthub_baidu_secret') || '',
     };
+    
+    // 检查导入前是否有API配置
+    const hadApiBeforeImport = !!(beforeImport.geminiKey || beforeImport.baiduAppId || beforeImport.baiduSecret);
     
     await importAllDataFromFile();
     
@@ -422,11 +447,10 @@ export async function autoImportFromFile(): Promise<ImportResult> {
       baiduSecret: localStorage.getItem('arthub_baidu_secret') || '',
     };
     
-    // 判断是否有API配置被导入
-    const hasApiImported = 
-      (beforeImport.geminiKey !== afterImport.geminiKey && afterImport.geminiKey) ||
-      (beforeImport.baiduAppId !== afterImport.baiduAppId && afterImport.baiduAppId) ||
-      (beforeImport.baiduSecret !== afterImport.baiduSecret && afterImport.baiduSecret);
+    // 判断是否有API配置被导入（只在新导入时显示提示）
+    // 如果导入前没有API配置，导入后有，说明是从文件恢复了
+    const hasApiImported = !hadApiBeforeImport && 
+      (!!afterImport.geminiKey || !!afterImport.baiduAppId || !!afterImport.baiduSecret);
     
     if (hasApiImported) {
       return { 
@@ -436,6 +460,8 @@ export async function autoImportFromFile(): Promise<ImportResult> {
       };
     }
     
+    // 如果导入前已有API配置，说明用户已经设置过，不显示同步提示
+    // 这样可以避免覆盖用户最新输入的值
     return { success: true, imported: false };
   } catch (error: any) {
     // 静默处理错误（文件不存在等是正常情况）

@@ -269,24 +269,36 @@ const AppContent: React.FC = () => {
   // 应用启动时优先从本地存储导入数据
   useEffect(() => {
     const loadData = async () => {
-      // 优先：先尝试从文件导入数据（如果已启用文件存储或找到本地文件）
-      // 这必须在加载其他数据之前执行，确保翻译API等设置从文件恢复
-      try {
-        const { autoImportFromFile } = await import('./services/fileStorageService');
-        const result = await autoImportFromFile();
-        if (result.success && result.imported) {
-          console.log('成功从本地文件导入数据，设置已恢复');
-          // 显示提示消息
-          if (result.message) {
-            // 延迟显示，确保 ToastProvider 已初始化
-            setTimeout(() => {
-              showToast('success', result.message || '本地信息已同步');
-            }, 500);
+      // 关键修复：检查 localStorage 中是否已有 API 配置
+      // 如果已有配置，说明用户已经设置过，优先保留用户的最新输入
+      const hasExistingApiConfig = !!(
+        localStorage.getItem('arthub_gemini_key') ||
+        localStorage.getItem('arthub_baidu_appid') ||
+        localStorage.getItem('arthub_baidu_secret')
+      );
+      
+      // 只有在没有现有 API 配置时，才从文件导入
+      // 这样可以确保用户最新输入的值不会被文件中的旧值覆盖
+      if (!hasExistingApiConfig) {
+        try {
+          const { autoImportFromFile } = await import('./services/fileStorageService');
+          const result = await autoImportFromFile();
+          if (result.success && result.imported) {
+            console.log('成功从本地文件导入数据，设置已恢复');
+            // 显示提示消息
+            if (result.message) {
+              // 延迟显示，确保 ToastProvider 已初始化
+              setTimeout(() => {
+                showToast('success', result.message || '本地信息已同步');
+              }, 500);
+            }
           }
+        } catch (error) {
+          // 静默处理导入错误
+          console.warn('启动时导入文件数据失败:', error);
         }
-      } catch (error) {
-        // 静默处理导入错误
-        console.warn('启动时导入文件数据失败:', error);
+      } else {
+        console.log('检测到已有 API 配置，保留用户最新输入，跳过文件导入');
       }
       
       // 等待导入完成后再加载其他数据

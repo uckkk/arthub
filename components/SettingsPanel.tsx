@@ -42,10 +42,17 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ isOpen, onClose, triggerR
   // 静默加载设置数据（即使面板未打开也加载）
   useEffect(() => {
     // 立即加载所有设置数据
+    // 关键：优先从 localStorage 读取，确保用户最新输入的值被保留
     const loadSettings = () => {
-      setGeminiKey(localStorage.getItem('arthub_gemini_key') || '');
-      setBaiduAppId(localStorage.getItem('arthub_baidu_appid') || '');
-      setBaiduSecret(localStorage.getItem('arthub_baidu_secret') || '');
+      // 直接从 localStorage 读取最新值（不依赖任何默认值或文件导入）
+      const geminiKey = localStorage.getItem('arthub_gemini_key');
+      const baiduAppId = localStorage.getItem('arthub_baidu_appid');
+      const baiduSecret = localStorage.getItem('arthub_baidu_secret');
+      
+      // 只设置非空值，空字符串表示未设置
+      setGeminiKey(geminiKey || '');
+      setBaiduAppId(baiduAppId || '');
+      setBaiduSecret(baiduSecret || '');
       
       const config = getStorageConfig();
       setStorageEnabled(config.enabled);
@@ -64,7 +71,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ isOpen, onClose, triggerR
       }
     };
     
-    // 立即加载
+    // 立即加载（确保使用 localStorage 中的最新值）
     loadSettings();
     
     // 监听localStorage变化（仅在其他标签页或窗口修改时触发）
