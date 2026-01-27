@@ -232,15 +232,6 @@ jobs:
           if-no-files-found: ignore
           retention-days: 30  # 保留 30 天
 
-      - name: Upload artifacts (macOS DMG)
-        if: startsWith(matrix.platform, 'macos')
-        uses: actions/upload-artifact@v4
-        with:
-          name: ArtHub-${{ matrix.name }}-DMG
-          path: src-tauri/target/${{ matrix.target }}/release/bundle/dmg/*.dmg
-          if-no-files-found: ignore
-          retention-days: 30  # 保留 30 天
-
   # ========================================
   # Windows MSIX 打包（使用 Conveyor）
   # ========================================
