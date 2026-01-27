@@ -5,6 +5,13 @@
 ; 压缩方式（必须在最前面）
 SetCompressor {{compression}}
 
+; 安装程序属性（OutFile 必须在 SetCompressor 之后，!include 之前）
+Name "{{product_name}}"
+OutFile "{{output}}"
+InstallDir "$PROGRAMFILES\{{product_name}}"
+InstallDirRegKey HKLM "Software\Microsoft\Windows\CurrentVersion\App Paths\{{product_name}}.exe" ""
+RequestExecutionLevel admin
+
 ; 使用 Modern UI 2
 !include "MUI2.nsh"
 
@@ -23,13 +30,6 @@ SetCompressor {{compression}}
 !define MUI_INSTFILESPAGE_COLORS "ffffff 0f0f0f"
 ; 按钮文字颜色
 !define MUI_BUTTONTEXTCOLOR "ffffff"
-
-; 安装程序属性
-Name "{{product_name}}"
-OutFile "{{output}}"
-InstallDir "$PROGRAMFILES\{{product_name}}"
-InstallDirRegKey HKLM "Software\Microsoft\Windows\CurrentVersion\App Paths\{{product_name}}.exe" ""
-RequestExecutionLevel admin
 
 ; 安装程序图标
 ; 注意：图标路径需要相对于 NSIS 脚本位置
