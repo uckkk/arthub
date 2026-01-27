@@ -94,7 +94,7 @@ fn create_icon_window(app: &tauri::AppHandle) -> Result<tauri::Window, Box<dyn s
     // 先创建窗口（使用临时位置）
     // 确保窗口大小与图标大小完全一致，热区与图标显示区域一致
     // 使用 inner_size 设置内容区域为 64x64，确保没有额外的边框或透明区域
-    let mut builder = WindowBuilder::new(
+    let builder = WindowBuilder::new(
         app,
         "icon",
         icon_url
@@ -437,7 +437,7 @@ fn icon_click(app: tauri::AppHandle) {
         };
         
         #[cfg(not(target_os = "windows"))]
-        let mut is_minimized = false;
+        let is_minimized = false;
         
         // 如果第一次检查失败，重试一次
         if !is_visible_now {

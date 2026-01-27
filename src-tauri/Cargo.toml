@@ -27,6 +27,7 @@ tauri = { version = "1.5", features = [
     "fs-copy-file",         # 复制文件
     "fs-rename-file",       # 重命名文件
     "path-all",             # 路径操作
+    "devtools",             # 开发者工具（用于打开 DevTools）
     "custom-protocol"       # 自定义协议（必需）
 ] }
 serde = { version = "1.0", features = ["derive"] }
