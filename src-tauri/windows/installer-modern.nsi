@@ -34,20 +34,24 @@ RequestExecutionLevel admin
 ; 安装程序图标
 ; 注意：图标路径需要相对于 NSIS 脚本位置
 ; Tauri 构建时会将图标复制到构建目录，但路径可能不同
-; 先尝试多个可能的路径
-!if /FileExists "${NSISDIR}\..\..\icons\icon.ico"
-  !define MUI_ICON "${NSISDIR}\..\..\icons\icon.ico"
-  !define MUI_UNICON "${NSISDIR}\..\..\icons\icon.ico"
-!else if /FileExists "..\..\icons\icon.ico"
-  !define MUI_ICON "..\..\icons\icon.ico"
-  !define MUI_UNICON "..\..\icons\icon.ico"
-!else if /FileExists "icons\icon.ico"
+; 先尝试多个可能的路径（NSIS 不支持 else if，使用嵌套）
+!if /FileExists "icons\icon.ico"
   !define MUI_ICON "icons\icon.ico"
   !define MUI_UNICON "icons\icon.ico"
 !else
-  ; 如果都找不到，使用默认图标（避免构建失败）
-  !define MUI_ICON "${NSISDIR}\Contrib\Graphics\Icons\modern-install.ico"
-  !define MUI_UNICON "${NSISDIR}\Contrib\Graphics\Icons\modern-uninstall.ico"
+  !if /FileExists "..\icons\icon.ico"
+    !define MUI_ICON "..\icons\icon.ico"
+    !define MUI_UNICON "..\icons\icon.ico"
+  !else
+    !if /FileExists "${NSISDIR}\..\..\icons\icon.ico"
+      !define MUI_ICON "${NSISDIR}\..\..\icons\icon.ico"
+      !define MUI_UNICON "${NSISDIR}\..\..\icons\icon.ico"
+    !else
+      ; 如果都找不到，使用默认图标（避免构建失败）
+      !define MUI_ICON "${NSISDIR}\Contrib\Graphics\Icons\modern-install.ico"
+      !define MUI_UNICON "${NSISDIR}\Contrib\Graphics\Icons\modern-uninstall.ico"
+    !endif
+  !endif
 !endif
 
 ; 一键安装模式：只显示安装进度页面（跳过欢迎页和目录选择）
