@@ -18,6 +18,8 @@
       padding: 0 !important;
       overflow: hidden !important;
       background: transparent !important;
+      /* macOS 需要明确设置背景为透明 */
+      -webkit-app-region: drag !important;
     }
 
     body {
@@ -29,6 +31,9 @@
       position: fixed !important;
       top: 0 !important;
       left: 0 !important;
+      background: transparent !important;
+      /* 移除 macOS 默认的白色背景 */
+      background-color: transparent !important;
     }
 
     #icon-container {
@@ -41,6 +46,9 @@
       justify-content: center !important;
       overflow: visible !important;
       background: transparent !important;
+      background-color: transparent !important;
+      /* macOS 圆角支持 */
+      border-radius: 0 !important;
     }
 
     #icon {

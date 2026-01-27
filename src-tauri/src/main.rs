@@ -112,7 +112,7 @@ fn create_icon_window(app: &tauri::AppHandle) -> Result<tauri::Window, Box<dyn s
     .title("");
     
     #[cfg(not(target_os = "windows"))]
-    let builder = WindowBuilder::new(
+    let mut builder = WindowBuilder::new(
         app,
         "icon",
         icon_url
@@ -127,8 +127,13 @@ fn create_icon_window(app: &tauri::AppHandle) -> Result<tauri::Window, Box<dyn s
     .max_inner_size(ICON_SIZE as f64, ICON_SIZE as f64)
     .title("");
     
-    // Windows 上启用透明背景
+    // 所有平台都启用透明背景
     #[cfg(target_os = "windows")]
+    {
+        builder = builder.transparent(true);
+    }
+    
+    #[cfg(target_os = "macos")]
     {
         builder = builder.transparent(true);
     }
