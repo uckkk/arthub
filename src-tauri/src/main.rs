@@ -143,40 +143,46 @@ fn create_icon_window(app: &tauri::AppHandle) -> Result<tauri::Window, Box<dyn s
     // macOS 上设置窗口透明背景和圆角
     #[cfg(target_os = "macos")]
     {
-        use tauri::WindowExt;
-        if let Some(ns_window) = icon_window.ns_window() {
-            unsafe {
-                use objc::{msg_send, sel, sel_impl, class};
-                use objc::runtime::Object;
-                
-                // 获取 NSColor 类
-                let ns_color_class = class!(NSColor);
-                
-                // 获取透明颜色
-                let clear_color: *mut Object = msg_send![ns_color_class, clearColor];
-                
-                // 设置窗口背景为透明
-                let _: () = msg_send![ns_window, setBackgroundColor: clear_color];
-                
-                // 设置窗口不透明为 false（允许透明背景）
-                let opaque: bool = false;
-                let _: () = msg_send![ns_window, setOpaque: opaque];
-                
-                // 启用窗口的 layer-backed 视图（必需才能设置圆角）
-                let wants_layer: bool = true;
-                let _: () = msg_send![ns_window, setWantsLayer: wants_layer];
-                
-                // 获取窗口的 layer
-                let layer: *mut Object = msg_send![ns_window, layer];
-                if !layer.is_null() {
-                    // 设置圆角半径
-                    let corner_radius: f64 = 16.0;
-                    let _: () = msg_send![layer, setCornerRadius: corner_radius];
+        use cocoa::base::id;
+        use objc::{msg_send, class};
+        use std::ffi::c_void;
+        
+        // 获取 NSWindow 指针（返回 Result<*mut c_void, Error>）
+        match icon_window.ns_window() {
+            Ok(ns_window_ptr) => {
+                unsafe {
+                    // 将指针转换为 NSWindow 对象
+                    let ns_window: id = ns_window_ptr as *mut c_void as id;
                     
-                    // 设置 masksToBounds 以应用圆角裁剪
-                    let masks_to_bounds: bool = true;
-                    let _: () = msg_send![layer, setMasksToBounds: masks_to_bounds];
+                    // 获取透明颜色
+                    let clear_color: id = msg_send![class!(NSColor), clearColor];
+                    
+                    // 设置窗口背景为透明
+                    let _: () = msg_send![ns_window, setBackgroundColor: clear_color];
+                    
+                    // 设置窗口不透明为 false（允许透明背景）
+                    let opaque: bool = false;
+                    let _: () = msg_send![ns_window, setOpaque: opaque];
+                    
+                    // 启用窗口的 layer-backed 视图（必需才能设置圆角）
+                    let wants_layer: bool = true;
+                    let _: () = msg_send![ns_window, setWantsLayer: wants_layer];
+                    
+                    // 获取窗口的 layer
+                    let layer: id = msg_send![ns_window, layer];
+                    if !layer.is_null() {
+                        // 设置圆角半径
+                        let corner_radius: f64 = 16.0;
+                        let _: () = msg_send![layer, setCornerRadius: corner_radius];
+                        
+                        // 设置 masksToBounds 以应用圆角裁剪
+                        let masks_to_bounds: bool = true;
+                        let _: () = msg_send![layer, setMasksToBounds: masks_to_bounds];
+                    }
                 }
+            }
+            Err(e) => {
+                eprintln!("Warning: Failed to get NSWindow: {:?}", e);
             }
         }
     }

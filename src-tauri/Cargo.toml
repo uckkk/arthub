@@ -43,6 +43,7 @@ windows-icons = "0.2"
 
 [target.'cfg(target_os = "macos")'.dependencies]
 objc = "0.2"
+cocoa = "0.25"
 
 [features]
 # 默认启用所有功能
