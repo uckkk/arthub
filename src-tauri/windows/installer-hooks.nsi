@@ -1,33 +1,35 @@
 ; ArtHub NSIS 安装程序自定义 Hooks
-; 用于美化安装界面，使用 Modern UI
+; 深色主题 Modern UI 配置
 
 ; 使用 Modern UI 2
 !include "MUI2.nsh"
 
+; ========================================
+; 深色主题颜色配置
+; ========================================
+; 背景色：深灰 #1a1a1a
+!define MUI_BGCOLOR "0x1a1a1a"
+; 文字色：白色
+!define MUI_TEXTCOLOR "0xffffff"
+; 头部背景：更深的灰 #0f0f0f
+!define MUI_HEADERBGCOLOR "0x0f0f0f"
+; 头部文字：白色
+!define MUI_HEADERTEXTCOLOR "0xffffff"
+; 安装页面颜色：深色背景和边框
+!define MUI_INSTFILESPAGE_COLORS "0x1a1a1a 0x2a2a2a"
+; 按钮颜色：深色主题按钮
+!define MUI_BUTTONTEXTCOLOR "0xffffff"
+
 ; 安装程序图标
 !define MUI_ICON "${NSISDIR}\Contrib\Graphics\Icons\modern-install.ico"
 !define MUI_UNICON "${NSISDIR}\Contrib\Graphics\Icons\modern-uninstall.ico"
-
-; 欢迎页面图片（可选，如果有的话）
-; !define MUI_WELCOMEFINISHPAGE_BITMAP "${NSISDIR}\Contrib\Graphics\Wizard\win.bmp"
-; !define MUI_UNWELCOMEFINISHPAGE_BITMAP "${NSISDIR}\Contrib\Graphics\Wizard\win.bmp"
-
-; 头部图片（可选）
-; !define MUI_HEADERIMAGE
-; !define MUI_HEADERIMAGE_BITMAP "${NSISDIR}\Contrib\Graphics\Header\nsis3-grey.bmp"
-; !define MUI_HEADERIMAGE_UNBITMAP "${NSISDIR}\Contrib\Graphics\Header\nsis3-grey.bmp"
 
 ; 安装完成页面
 !define MUI_FINISHPAGE_RUN
 !define MUI_FINISHPAGE_RUN_TEXT "启动 ArtHub"
 !define MUI_FINISHPAGE_RUN_FUNCTION "LaunchApp"
 
-; 安装完成页面显示复选框
-!define MUI_FINISHPAGE_SHOWREADME
-!define MUI_FINISHPAGE_SHOWREADME_TEXT "查看更新日志"
-!define MUI_FINISHPAGE_SHOWREADME_FUNCTION "ShowReadme"
-
-; 安装页面文本
+; 安装页面文本（深色主题友好）
 !define MUI_INSTFILESPAGE_TEXT_TOP "ArtHub 正在安装到您的计算机。"
 !define MUI_INSTFILESPAGE_TEXT_COMPONENTS_DESC "选择要安装的组件。"
 
