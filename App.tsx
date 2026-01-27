@@ -444,9 +444,7 @@ const AppContent: React.FC = () => {
   };
 
   return (
-    <ErrorBoundary>
-      <ToastProvider>
-        <div className="h-screen flex bg-[#0a0a0a] text-white overflow-hidden">
+    <div className="h-screen flex bg-[#0a0a0a] text-white overflow-hidden">
           {/* 左侧边栏 */}
           <Sidebar
             groups={menuGroups}
