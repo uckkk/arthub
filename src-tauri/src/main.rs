@@ -94,6 +94,24 @@ fn create_icon_window(app: &tauri::AppHandle) -> Result<tauri::Window, Box<dyn s
     // 先创建窗口（使用临时位置）
     // 确保窗口大小与图标大小完全一致，热区与图标显示区域一致
     // 使用 inner_size 设置内容区域为 64x64，确保没有额外的边框或透明区域
+    // Windows 上需要可变 builder（因为需要添加 transparent）
+    #[cfg(target_os = "windows")]
+    let mut builder = WindowBuilder::new(
+        app,
+        "icon",
+        icon_url
+    )
+    .decorations(false)
+    .always_on_top(true)
+    .skip_taskbar(true)
+    .resizable(false)
+    .visible(true)
+    .inner_size(ICON_SIZE as f64, ICON_SIZE as f64)
+    .min_inner_size(ICON_SIZE as f64, ICON_SIZE as f64)
+    .max_inner_size(ICON_SIZE as f64, ICON_SIZE as f64)
+    .title("");
+    
+    #[cfg(not(target_os = "windows"))]
     let builder = WindowBuilder::new(
         app,
         "icon",
