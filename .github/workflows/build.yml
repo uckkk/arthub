@@ -187,15 +187,33 @@ jobs:
           npm run build
           echo "前端构建完成！"
 
-      # 7. 构建 Tauri 应用
+      # 7. 构建 Tauri 应用（使用官方 tauri-action，优化构建）
       - name: Build Tauri app
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          args: --target ${{ matrix.target }}
+          args: --target ${{ matrix.target }} -- --release
+          # 启用 Rust 优化编译
+          release: true
 
-      # 8. 上传构建产物
+      # 8. 显示构建产物大小（优化监控）
+      - name: Display build artifact sizes
+        shell: bash
+        run: |
+          echo "=== 构建产物大小 ==="
+          if [ "${{ matrix.platform }}" == "windows-latest" ]; then
+            if [ -f "src-tauri/target/${{ matrix.target }}/release/bundle/nsis"/*.exe ]; then
+              ls -lh src-tauri/target/${{ matrix.target }}/release/bundle/nsis/*.exe | awk '{print "EXE 大小: " $5}'
+            fi
+          elif [[ "${{ matrix.platform }}" == macos* ]]; then
+            if [ -f "src-tauri/target/${{ matrix.target }}/release/bundle/dmg"/*.dmg ]; then
+              ls -lh src-tauri/target/${{ matrix.target }}/release/bundle/dmg/*.dmg | awk '{print "DMG 大小: " $5}'
+            fi
+          fi
+          echo "===================="
+
+      # 9. 上传构建产物
       - name: Upload artifacts (Windows EXE)
         if: matrix.platform == 'windows-latest'
         uses: actions/upload-artifact@v4
@@ -203,6 +221,7 @@ jobs:
           name: ArtHub-${{ matrix.name }}-EXE
           path: src-tauri/target/${{ matrix.target }}/release/bundle/nsis/*.exe
           if-no-files-found: ignore
+          retention-days: 30  # 保留 30 天
 
       - name: Upload artifacts (macOS DMG)
         if: startsWith(matrix.platform, 'macos')
@@ -211,6 +230,7 @@ jobs:
           name: ArtHub-${{ matrix.name }}-DMG
           path: src-tauri/target/${{ matrix.target }}/release/bundle/dmg/*.dmg
           if-no-files-found: ignore
+          retention-days: 30  # 保留 30 天
 
   # 可选：自动发布到 GitHub Releases
   release:

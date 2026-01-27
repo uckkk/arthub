@@ -49,26 +49,45 @@ export default defineConfig(({ mode }) => {
           include: [/node_modules/],
           transformMixedEsModules: true
         },
-        // 优化构建性能
+        // 优化构建性能 - 更激进的压缩
         minify: 'esbuild', // 使用 esbuild 压缩，速度更快
-        target: 'esnext', // 使用最新的 ES 特性
+        target: 'es2020', // 使用 ES2020（更好的兼容性和更小的体积）
         cssCodeSplit: true, // CSS 代码分割
-        sourcemap: false, // 生产环境不生成 sourcemap（提升性能）
+        sourcemap: false, // 生产环境不生成 sourcemap（减少体积）
+        cssMinify: 'esbuild', // CSS 也使用 esbuild 压缩
+        // 更激进的 tree-shaking
         rollupOptions: {
           output: {
-            // 手动代码分割
-            manualChunks: {
-              'react-vendor': ['react', 'react-dom'],
-              'ui-vendor': ['lucide-react'],
+            // 手动代码分割 - 优化加载性能
+            manualChunks: (id) => {
+              // node_modules 中的依赖
+              if (id.includes('node_modules')) {
+                if (id.includes('react') || id.includes('react-dom')) {
+                  return 'react-vendor';
+                }
+                if (id.includes('lucide-react')) {
+                  return 'ui-vendor';
+                }
+                // 其他第三方库
+                return 'vendor';
+              }
             },
-            // 优化 chunk 大小
-            chunkFileNames: 'assets/js/[name]-[hash].js',
-            entryFileNames: 'assets/js/[name]-[hash].js',
-            assetFileNames: 'assets/[ext]/[name]-[hash].[ext]',
+            // 优化 chunk 大小和命名
+            chunkFileNames: 'assets/js/[name]-[hash:8].js',
+            entryFileNames: 'assets/js/[name]-[hash:8].js',
+            assetFileNames: 'assets/[ext]/[name]-[hash:8].[ext]',
+            // 压缩输出
+            compact: true,
           },
+          // 外部化不需要打包的依赖（如果有）
+          external: [],
         },
         // 提高构建性能
-        chunkSizeWarningLimit: 1000,
+        chunkSizeWarningLimit: 500, // 降低警告阈值，更严格
+        // 启用压缩
+        reportCompressedSize: true,
+        // 减少不必要的输出
+        emptyOutDir: true,
       },
     };
 });

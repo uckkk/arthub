@@ -11,23 +11,23 @@ edition = "2021"
 tauri-build = { version = "1.5", features = [] }
 
 [dependencies]
-tauri = { version = "1.5", features = [ "dialog-ask", "dialog-message", "dialog-confirm",
-    "shell-open",
-    "window-all",
-    "dialog-open",
-    "dialog-save",
-    "dialog-message",
-    "fs-copy-file",
-    "fs-create-dir",
-    "fs-exists",
-    "fs-read-dir",
-    "fs-read-file",
-    "fs-remove-dir",
-    "fs-remove-file",
-    "fs-rename-file",
-    "fs-write-file",
-    "path-all",
-    "devtools"
+tauri = { version = "1.5", features = [
+    "shell-open",           # 打开外部链接
+    "window-all",           # 窗口管理
+    "dialog-open",          # 文件选择对话框
+    "dialog-save",          # 文件保存对话框
+    "dialog-message",       # 消息对话框
+    "fs-read-file",         # 读取文件
+    "fs-write-file",        # 写入文件
+    "fs-exists",            # 检查文件存在
+    "fs-read-dir",          # 读取目录
+    "fs-create-dir",        # 创建目录
+    "fs-remove-file",       # 删除文件
+    "fs-remove-dir",        # 删除目录
+    "fs-copy-file",         # 复制文件
+    "fs-rename-file",       # 重命名文件
+    "path-all",             # 路径操作
+    "custom-protocol"       # 自定义协议（必需）
 ] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
@@ -43,4 +43,15 @@ windows-icons = "0.2"
 # 默认启用所有功能
 default = ["custom-protocol"]
 custom-protocol = ["tauri/custom-protocol"]
+
+# 优化构建配置 - 减小二进制文件大小
+[profile.release]
+# 启用链接时优化（LTO）- 减小体积但增加编译时间
+lto = "thin"
+# 优化级别
+opt-level = "z"  # 优化大小而非速度（z = 最小体积）
+# 启用 strip 符号表（减小体积）
+strip = true
+# 减少 panic 信息大小
+panic = "abort"
 
