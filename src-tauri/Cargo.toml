@@ -28,7 +28,8 @@ tauri = { version = "1.5", features = [
     "fs-rename-file",       # 重命名文件
     "path-all",             # 路径操作
     "devtools",             # 开发者工具（用于打开 DevTools）
-    "custom-protocol"       # 自定义协议（必需）
+    "custom-protocol",      # 自定义协议（必需）
+    "macos-private-api"    # macOS 私有 API（用于设置窗口透明和圆角）
 ] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
@@ -39,6 +40,9 @@ reqwest = { version = "0.11", features = ["json"] }
 [target.'cfg(windows)'.dependencies]
 winapi = { version = "0.3", features = ["winuser", "windef", "synchapi", "handleapi", "errhandlingapi", "winnt"] }
 windows-icons = "0.2"
+
+[target.'cfg(target_os = "macos")'.dependencies]
+objc = "0.2"
 
 [features]
 # 默认启用所有功能
