@@ -269,17 +269,24 @@ const AppContent: React.FC = () => {
   // 应用启动时优先从本地存储导入数据
   useEffect(() => {
     const loadData = async () => {
-      // 关键修复：检查 localStorage 中是否已有 API 配置
-      // 如果已有配置，说明用户已经设置过，优先保留用户的最新输入
-      const hasExistingApiConfig = !!(
-        localStorage.getItem('arthub_gemini_key') ||
-        localStorage.getItem('arthub_baidu_appid') ||
-        localStorage.getItem('arthub_baidu_secret')
+      // 关键修复：检查 localStorage 中是否已有 API 配置（包括空字符串）
+      // 如果 localStorage 中存在这些键（即使值为空），说明用户已经操作过，优先保留 localStorage 的值
+      // 只有在 localStorage 中完全不存在这些键时，才从文件导入
+      const geminiKey = localStorage.getItem('arthub_gemini_key');
+      const baiduAppId = localStorage.getItem('arthub_baidu_appid');
+      const baiduSecret = localStorage.getItem('arthub_baidu_secret');
+      
+      // 检查 localStorage 中是否存在这些键（无论值是否为空）
+      // 如果键存在，说明用户已经操作过，不应该从文件导入覆盖
+      const hasApiKeysInStorage = (
+        geminiKey !== null ||
+        baiduAppId !== null ||
+        baiduSecret !== null
       );
       
-      // 只有在没有现有 API 配置时，才从文件导入
-      // 这样可以确保用户最新输入的值不会被文件中的旧值覆盖
-      if (!hasExistingApiConfig) {
+      // 只有在 localStorage 中完全不存在这些键时，才从文件导入
+      // 这样可以确保用户最新输入的值（包括清空操作）不会被文件中的旧值覆盖
+      if (!hasApiKeysInStorage) {
         try {
           const { autoImportFromFile } = await import('./services/fileStorageService');
           const result = await autoImportFromFile();
@@ -298,7 +305,12 @@ const AppContent: React.FC = () => {
           console.warn('启动时导入文件数据失败:', error);
         }
       } else {
-        console.log('检测到已有 API 配置，保留用户最新输入，跳过文件导入');
+        console.log('检测到 localStorage 中已有 API 配置键，保留用户最新输入，跳过文件导入');
+        console.log('当前 API 配置:', {
+          geminiKey: geminiKey ? `${geminiKey.substring(0, 10)}...` : '(空)',
+          baiduAppId: baiduAppId ? `${baiduAppId.substring(0, 10)}...` : '(空)',
+          baiduSecret: baiduSecret ? '(已设置)' : '(空)'
+        });
       }
       
       // 等待导入完成后再加载其他数据

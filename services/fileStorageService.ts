@@ -285,18 +285,21 @@ export async function importAllDataFromFile(): Promise<void> {
             continue;
           }
           
-          // 关键修复：对于 API 配置等关键设置，如果 localStorage 中已有非空值，优先保留
-          // 这确保用户最新输入的值不会被文件中的旧值覆盖
+          // 关键修复：对于 API 配置等关键设置，如果 localStorage 中已存在该键（无论值是否为空），优先保留
+          // 这确保用户最新输入的值（包括清空操作）不会被文件中的旧值覆盖
           const existingValue = localStorage.getItem(key);
           const isApiConfig = key === 'arthub_gemini_key' || 
                              key === 'arthub_baidu_appid' || 
                              key === 'arthub_baidu_secret';
           
-          if (isApiConfig && existingValue && existingValue.trim() !== '') {
-            // localStorage 中已有非空的 API 配置，优先保留用户的最新输入
-            // 只有当文件中的值明显不同且不是空字符串时，才考虑更新
-            // 但为了安全，我们完全保留 localStorage 中的值
-            console.log(`保留 localStorage 中的 ${key} 值，跳过文件导入（用户最新输入优先）`);
+          // 如果 localStorage 中已存在该键（包括空字符串），完全跳过文件导入
+          // 这样可以确保：
+          // 1. 用户最新输入的值不会被覆盖
+          // 2. 用户清空的值不会被文件中的旧值恢复
+          // 3. 刷新页面时，localStorage 中的值优先于文件中的值
+          if (isApiConfig && existingValue !== null) {
+            // localStorage 中已存在该键，优先保留（无论值是否为空）
+            console.log(`保留 localStorage 中的 ${key} 值（${existingValue ? '非空' : '空字符串'}），跳过文件导入（用户最新输入优先）`);
             skipCount++;
             continue;
           }
