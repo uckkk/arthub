@@ -112,7 +112,8 @@ const createMenuGroups = (): MenuGroup[] => [
   },
 ];
 
-const App: React.FC = () => {
+const AppContent: React.FC = () => {
+  const { showToast } = useToast();
   // 默认显示首页
   const [activeTab, setActiveTab] = useState<string>('home');
   const [isUserVerified, setIsUserVerified] = useState(false);
@@ -534,6 +535,14 @@ const App: React.FC = () => {
           {/* 错误通知 - 右下角自动弹出 */}
           <ErrorNotification maxHeight={400} />
         </div>
+  );
+};
+
+const App: React.FC = () => {
+  return (
+    <ErrorBoundary>
+      <ToastProvider>
+        <AppContent />
       </ToastProvider>
     </ErrorBoundary>
   );
