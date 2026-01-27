@@ -13,7 +13,8 @@ ManifestDPIAwareness PerMonitorV2
   SetCompressor /SOLID "{{compression}}"
 !endif
 
-; 使用 nsDialogs 创建完全自定义界面
+; 使用 MUI2 和 nsDialogs
+!include "MUI2.nsh"
 !include "nsDialogs.nsh"
 !include "LogicLib.nsh"
 !include "WinMessages.nsh"
@@ -47,7 +48,35 @@ BrandingText " "
 !define COLOR_TEXT_WHITE 0xffffff
 !define COLOR_TEXT_GRAY 0x999999
 !define COLOR_BUTTON_PRIMARY 0xff8c00
-!define COLOR_INPUT_BG 0x2a2a2a
+
+; ========================================
+; MUI2 深色主题配置
+; ========================================
+!define MUI_BGCOLOR "${COLOR_BG_DARK}"
+!define MUI_TEXTCOLOR "${COLOR_TEXT_WHITE}"
+!define MUI_HEADERBGCOLOR "${COLOR_BG_DARKER}"
+!define MUI_HEADERTEXTCOLOR "${COLOR_TEXT_WHITE}"
+!define MUI_INSTFILESPAGE_COLORS "${COLOR_TEXT_WHITE} ${COLOR_BG_DARK}"
+!define MUI_BUTTONTEXTCOLOR "${COLOR_TEXT_WHITE}"
+
+; 安装程序图标
+!if "{{installer_icon}}" != ""
+  !define MUI_ICON "{{installer_icon}}"
+  !define MUI_UNICON "{{installer_icon}}"
+!else
+  !if /FileExists "icons\icon.ico"
+    !define MUI_ICON "icons\icon.ico"
+    !define MUI_UNICON "icons\icon.ico"
+  !else
+    !if /FileExists "..\icons\icon.ico"
+      !define MUI_ICON "..\icons\icon.ico"
+      !define MUI_UNICON "..\icons\icon.ico"
+    !else
+      !define MUI_ICON "${NSISDIR}\Contrib\Graphics\Icons\modern-install.ico"
+      !define MUI_UNICON "${NSISDIR}\Contrib\Graphics\Icons\modern-uninstall.ico"
+    !endif
+  !endif
+!endif
 
 ; ========================================
 ; 自定义页面变量
@@ -56,23 +85,37 @@ Var hwnd
 Var hwndTitle
 Var hwndSubtitle
 Var hwndInstallButton
-Var hwndProgress
-Var hwndProgressText
 Var hwndMinimizeBtn
 Var hwndCloseBtn
-Var hwndFinishButton
-Var hwndFinishCheckbox
-Var IsInstalling
-Var IsFinished
 Var hFontTitle
 Var hFontSubtitle
 Var hFontButton
 Var ParentHWND
+Var ShouldInstall
 
 ; ========================================
-; 完全自定义安装页面
+; 页面定义
 ; ========================================
+; 自定义安装页面（在 INSTFILES 之前）
 Page custom ModernInstallPage ModernInstallPageLeave
+; 安装文件页面（执行 Section）
+!insertmacro MUI_PAGE_INSTFILES
+; 完成页面
+!define MUI_FINISHPAGE_RUN
+!define MUI_FINISHPAGE_RUN_TEXT "启动 ${PRODUCTNAME}"
+!define MUI_FINISHPAGE_RUN_FUNCTION "LaunchApp"
+!insertmacro MUI_PAGE_FINISH
+
+; ========================================
+; 卸载页面
+; ========================================
+!insertmacro MUI_UNPAGE_CONFIRM
+!insertmacro MUI_UNPAGE_INSTFILES
+
+; ========================================
+; 语言
+; ========================================
+!insertmacro MUI_LANGUAGE "SimpChinese"
 
 ; ========================================
 ; 自定义安装页面函数
@@ -139,21 +182,6 @@ Function ModernInstallPage
   SetCtlColors $hwndCloseBtn "${COLOR_TEXT_WHITE}" "${COLOR_BG_DARKER}"
   ${NSD_OnClick} $hwndCloseBtn OnCloseClick
   
-  ${If} $IsFinished == 1
-    ; 显示完成页面
-    Call ShowFinishUI
-  ${ElseIf} $IsInstalling == 1
-    ; 显示安装进度
-    Call ShowProgressUI
-  ${Else}
-    ; 显示初始安装页面
-    Call ShowInstallUI
-  ${EndIf}
-  
-  nsDialogs::Show
-FunctionEnd
-
-Function ShowInstallUI
   ; 产品名称（大标题，居中）
   ${NSD_CreateLabel} 0 100 580 70 "${PRODUCTNAME}"
   Pop $hwndTitle
@@ -175,110 +203,53 @@ Function ShowInstallUI
   SetCtlColors $hwndInstallButton "${COLOR_TEXT_WHITE}" "${COLOR_BUTTON_PRIMARY}"
   ${NSD_AddStyle} $hwndInstallButton ${BS_CENTER}|${BS_VCENTER}|${BS_PUSHBUTTON}
   ${NSD_OnClick} $hwndInstallButton OnInstallClick
-FunctionEnd
-
-Function ShowProgressUI
-  ; 产品名称（小一些）
-  ${NSD_CreateLabel} 0 100 580 50 "${PRODUCTNAME}"
-  Pop $hwndTitle
-  SendMessage $hwndTitle ${WM_SETFONT} $hFontTitle 1
-  SetCtlColors $hwndTitle "${COLOR_TEXT_WHITE}" "transparent"
-  ${NSD_AddStyle} $hwndTitle ${SS_CENTER}|${SS_CENTERIMAGE}
   
-  ; 进度条
-  ${NSD_CreateProgressBar} 40 220 500 28
-  Pop $hwndProgress
-  SendMessage $hwndProgress ${PBM_SETRANGE} 0 "0|100"
+  StrCpy $ShouldInstall 0
   
-  ; 进度文本
-  ${NSD_CreateLabel} 0 260 580 30 "正在准备安装..."
-  Pop $hwndProgressText
-  SetCtlColors $hwndProgressText "${COLOR_TEXT_WHITE}" "transparent"
-  ${NSD_AddStyle} $hwndProgressText ${SS_CENTER}|${SS_CENTERIMAGE}
-FunctionEnd
-
-Function ShowFinishUI
-  ; 完成标题
-  ${NSD_CreateLabel} 0 120 580 60 "${PRODUCTNAME} 安装完成"
-  Pop $hwndTitle
-  SendMessage $hwndTitle ${WM_SETFONT} $hFontTitle 1
-  SetCtlColors $hwndTitle "${COLOR_TEXT_WHITE}" "transparent"
-  ${NSD_AddStyle} $hwndTitle ${SS_CENTER}|${SS_CENTERIMAGE}
-  
-  ; 启动应用复选框
-  ${NSD_CreateCheckbox} 190 220 200 30 "启动 ${PRODUCTNAME}"
-  Pop $hwndFinishCheckbox
-  SendMessage $hwndFinishCheckbox ${BM_SETCHECK} ${BST_CHECKED} 0
-  SetCtlColors $hwndFinishCheckbox "${COLOR_TEXT_WHITE}" "transparent"
-  
-  ; 完成按钮
-  ${NSD_CreateButton} 240 280 100 50 "完成"
-  Pop $hwndFinishButton
-  SendMessage $hwndFinishButton ${WM_SETFONT} $hFontButton 1
-  SetCtlColors $hwndFinishButton "${COLOR_TEXT_WHITE}" "${COLOR_BUTTON_PRIMARY}"
-  ${NSD_OnClick} $hwndFinishButton OnFinishClick
+  nsDialogs::Show
 FunctionEnd
 
 Function ModernInstallPageLeave
-  ${If} $IsFinished == 1
-    ; 完成页面，允许离开并退出
-    Quit
-  ${ElseIf} $IsInstalling == 0
-    ; 未开始安装，询问是否取消
+  ${If} $ShouldInstall == 0
+    ; 用户没有点击安装，询问是否取消
     MessageBox MB_YESNO|MB_ICONQUESTION "确定要取消安装吗？" IDYES +2
     Abort
-  ${Else}
-    ; 正在安装中，不允许离开
-    Abort
   ${EndIf}
+  ; 用户点击了安装，允许继续到 INSTFILES 页面
 FunctionEnd
 
 Function OnInstallClick
-  ${If} $IsInstalling == 1
-    Return
-  ${EndIf}
-  
-  StrCpy $IsInstalling 1
-  
-  ; 隐藏安装按钮，显示进度
-  ShowWindow $hwndInstallButton ${SW_HIDE}
-  ShowWindow $hwndSubtitle ${SW_HIDE}
-  
-  ; 创建进度UI
-  Call ShowProgressUI
-  
-  ; 强制刷新界面
-  System::Call "user32::InvalidateRect(i $hwnd, i 0, i 1)"
-  System::Call "user32::UpdateWindow(i $hwnd)"
-  
-  ; 开始安装（直接执行，不使用 Section）
-  Call DoInstallation
-  
-  ; 安装完成
-  StrCpy $IsFinished 1
-  StrCpy $IsInstalling 0
-  
-  ; 隐藏进度，显示完成页面
-  ShowWindow $hwndProgress ${SW_HIDE}
-  ShowWindow $hwndProgressText ${SW_HIDE}
-  Call ShowFinishUI
-  
-  ; 强制刷新界面
-  System::Call "user32::InvalidateRect(i $hwnd, i 0, i 1)"
-  System::Call "user32::UpdateWindow(i $hwnd)"
+  StrCpy $ShouldInstall 1
+  ; 允许页面离开，继续到安装页面
+  SendMessage $ParentHWND ${WM_COMMAND} 1 0
 FunctionEnd
 
-Function DoInstallation
+Function OnMinimizeClick
+  System::Call "user32::ShowWindow(i $ParentHWND, i ${SW_MINIMIZE})"
+FunctionEnd
+
+Function OnCloseClick
+  MessageBox MB_YESNO|MB_ICONQUESTION "确定要取消安装吗？" IDYES +2
+  Return
+  System::Call "user32::PostMessage(i $ParentHWND, i ${WM_CLOSE}, i 0, i 0)"
+FunctionEnd
+
+; ========================================
+; 自定义安装页面文本
+; ========================================
+!define MUI_INSTFILESPAGE_TEXT_TOP "正在安装 ${PRODUCTNAME}..."
+!define MUI_INSTFILESPAGE_TEXT_COMPONENTS_DESC ""
+
+; ========================================
+; 安装程序部分
+; ========================================
+Section "MainSection" SEC01
   SetOutPath "$INSTDIR"
   
-  ; 更新进度：10%
-  SendMessage $hwndProgress ${PBM_SETPOS} 10 0
-  ${NSD_SetText} $hwndProgressText "正在安装主程序..."
+  ; 安装主程序
   File "${MAINBINARYSRCPATH}"
   
-  ; 更新进度：30%
-  SendMessage $hwndProgress ${PBM_SETPOS} 30 0
-  ${NSD_SetText} $hwndProgressText "正在安装资源文件..."
+  ; 安装资源文件
   {{#each resources_dirs}}
     CreateDirectory "$INSTDIR\\{{this}}"
   {{/each}}
@@ -286,23 +257,17 @@ Function DoInstallation
     File /a "/oname={{this.[1]}}" "{{no-escape @key}}"
   {{/each}}
   
-  ; 更新进度：60%
-  SendMessage $hwndProgress ${PBM_SETPOS} 60 0
-  ${NSD_SetText} $hwndProgressText "正在安装组件..."
+  ; 安装外部二进制文件
   {{#each binaries}}
     File /a "/oname={{this}}" "{{no-escape @key}}"
   {{/each}}
   
-  ; 更新进度：80%
-  SendMessage $hwndProgress ${PBM_SETPOS} 80 0
-  ${NSD_SetText} $hwndProgressText "正在创建快捷方式..."
+  ; 创建快捷方式
   CreateDirectory "$SMPROGRAMS\${PRODUCTNAME}"
   CreateShortCut "$SMPROGRAMS\${PRODUCTNAME}\${PRODUCTNAME}.lnk" "$INSTDIR\${MAINBINARYNAME}.exe"
   CreateShortCut "$DESKTOP\${PRODUCTNAME}.lnk" "$INSTDIR\${MAINBINARYNAME}.exe"
   
-  ; 更新进度：90%
-  SendMessage $hwndProgress ${PBM_SETPOS} 90 0
-  ${NSD_SetText} $hwndProgressText "正在写入注册表..."
+  ; 写入注册表
   WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\App Paths\${PRODUCTNAME}.exe" "" "$INSTDIR\${MAINBINARYNAME}.exe"
   WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\${PRODUCTNAME}" "DisplayName" "${PRODUCTNAME}"
   WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\${PRODUCTNAME}" "UninstallString" "$INSTDIR\uninstall.exe"
@@ -317,75 +282,14 @@ Function DoInstallation
   
   ; 创建卸载程序
   WriteUninstaller "$INSTDIR\uninstall.exe"
-  
-  ; 完成：100%
-  SendMessage $hwndProgress ${PBM_SETPOS} 100 0
-  ${NSD_SetText} $hwndProgressText "安装完成！"
-  
-  Sleep 800
-FunctionEnd
-
-Function OnFinishClick
-  ${NSD_GetState} $hwndFinishCheckbox $0
-  ${If} $0 == ${BST_CHECKED}
-    Exec "$INSTDIR\${MAINBINARYNAME}.exe"
-  ${EndIf}
-  Quit
-FunctionEnd
-
-Function OnMinimizeClick
-  System::Call "user32::GetParent(i $hwnd) i .r0"
-  Pop $ParentHWND
-  System::Call "user32::ShowWindow(i $ParentHWND, i ${SW_MINIMIZE})"
-FunctionEnd
-
-Function OnCloseClick
-  ${If} $IsInstalling == 1
-    MessageBox MB_YESNO|MB_ICONQUESTION "安装正在进行中，确定要取消吗？" IDYES +2
-    Return
-  ${EndIf}
-  System::Call "user32::GetParent(i $hwnd) i .r0"
-  Pop $ParentHWND
-  System::Call "user32::PostMessage(i $ParentHWND, i ${WM_CLOSE}, i 0, i 0)"
-FunctionEnd
-
-; ========================================
-; 安装程序部分（保留用于静默安装）
-; ========================================
-Section "MainSection" SEC01
-  SetOutPath "$INSTDIR"
-  
-  File "${MAINBINARYSRCPATH}"
-  
-  {{#each resources_dirs}}
-    CreateDirectory "$INSTDIR\\{{this}}"
-  {{/each}}
-  {{#each resources}}
-    File /a "/oname={{this.[1]}}" "{{no-escape @key}}"
-  {{/each}}
-  
-  {{#each binaries}}
-    File /a "/oname={{this}}" "{{no-escape @key}}"
-  {{/each}}
-  
-  CreateDirectory "$SMPROGRAMS\${PRODUCTNAME}"
-  CreateShortCut "$SMPROGRAMS\${PRODUCTNAME}\${PRODUCTNAME}.lnk" "$INSTDIR\${MAINBINARYNAME}.exe"
-  CreateShortCut "$DESKTOP\${PRODUCTNAME}.lnk" "$INSTDIR\${MAINBINARYNAME}.exe"
-  
-  WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\App Paths\${PRODUCTNAME}.exe" "" "$INSTDIR\${MAINBINARYNAME}.exe"
-  WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\${PRODUCTNAME}" "DisplayName" "${PRODUCTNAME}"
-  WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\${PRODUCTNAME}" "UninstallString" "$INSTDIR\uninstall.exe"
-  WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\${PRODUCTNAME}" "DisplayIcon" "$INSTDIR\${MAINBINARYNAME}.exe"
-  WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\${PRODUCTNAME}" "DisplayVersion" "${VERSION}"
-  {{#if homepage}}
-  WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\${PRODUCTNAME}" "URLInfoAbout" "{{homepage}}"
-  {{/if}}
-  {{#if publisher}}
-  WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\${PRODUCTNAME}" "Publisher" "{{publisher}}"
-  {{/if}}
-  
-  WriteUninstaller "$INSTDIR\uninstall.exe"
 SectionEnd
+
+; ========================================
+; 启动应用函数
+; ========================================
+Function LaunchApp
+  Exec "$INSTDIR\${MAINBINARYNAME}.exe"
+FunctionEnd
 
 ; ========================================
 ; 卸载程序部分
