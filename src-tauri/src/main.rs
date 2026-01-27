@@ -433,15 +433,15 @@ fn find_main_window_hwnd() -> Option<HWND> {
     find_data.found_hwnd
 }
 
-// Tauri 命令：点击图标
+// Tauri 命令：双击图标（全局唯一：双击呼出/隐藏主界面）
 #[tauri::command]
 fn icon_click(app: tauri::AppHandle) {
-    println!("Icon clicked!");
+    println!("Icon double-clicked!");
     if let Some(main_window) = app.get_window("main") {
         let state = app.state::<AppState>();
         let mut window_visible = state.main_window_visible.lock().unwrap();
         
-        // 检查窗口当前状态（多次检查以提高可靠性）
+        // 检查窗口当前状态
         let mut is_visible_now = main_window.is_visible().unwrap_or(false);
         
         // 在 Windows 上，尝试检查窗口是否最小化
@@ -473,26 +473,13 @@ fn icon_click(app: tauri::AppHandle) {
         println!("Main window state - is_visible: {}, is_minimized: {}, tracked: {}", 
                  is_visible_now, is_minimized, *window_visible);
         
-        // 如果窗口是可见的且不在最小化状态，则最小化
-        // 否则，显示/恢复并前置窗口
+        // 双击切换逻辑：如果窗口可见且不在最小化状态，则隐藏；否则显示
         if is_visible_now && !is_minimized {
-            // 窗口当前可见且在前台，最小化它
-            println!("Main window is visible, minimizing...");
-            #[cfg(target_os = "windows")]
-            {
-                if let Some(hwnd) = find_main_window_hwnd() {
-                    unsafe {
-                        ShowWindow(hwnd, SW_MINIMIZE);
-                    }
-                } else {
-                    let _ = main_window.minimize();
-                }
-            }
-            #[cfg(not(target_os = "windows"))]
-            {
-                let _ = main_window.minimize();
-            }
+            // 窗口当前可见且在前台，隐藏它
+            println!("Main window is visible, hiding...");
+            let _ = main_window.hide();
             *window_visible = false;
+            println!("Main window hidden");
         } else {
             // 窗口不可见或最小化，显示/恢复并前置
             println!("Main window needs to be shown/restored...");
@@ -515,7 +502,6 @@ fn icon_click(app: tauri::AppHandle) {
             let show_result = main_window.show();
             if show_result.is_err() {
                 println!("Warning: First show() call failed, retrying...");
-                // 如果第一次失败，等待后重试
                 std::thread::sleep(std::time::Duration::from_millis(100));
                 let _ = main_window.show();
             }
@@ -566,7 +552,6 @@ fn icon_click(app: tauri::AppHandle) {
                 println!("Window successfully shown and focused");
             } else {
                 println!("ERROR: Failed to show window after all attempts");
-                // 即使失败，也更新状态，避免下次点击时重复尝试
                 *window_visible = false;
             }
         }

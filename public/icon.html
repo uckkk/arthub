@@ -169,18 +169,7 @@
       }
     });
     
-    // 处理单击和双击
-    async function handleClick(isDoubleClick) {
-      if (!invoke) invoke = getInvoke();
-      if (invoke) {
-        try {
-          await invoke('icon_click');
-        } catch (err) {
-          console.error('Click error:', err);
-        }
-      }
-    }
-    
+    // 处理双击（全局唯一：双击呼出/隐藏主界面）
     document.addEventListener('mouseup', async (e) => {
       if (e.button === 0 && isDragging) {
         const moved = Math.abs(e.screenX - startMousePos.x) > DRAG_THRESHOLD || 
@@ -192,12 +181,12 @@
           try {
             await invoke('icon_mouse_up', { x: e.screenX, y: e.screenY });
             
-            // 只有在没有拖拽的情况下才处理点击
+            // 只有在没有拖拽的情况下才处理双击检测
             if (!moved) {
               const currentTime = Date.now();
               const timeSinceLastClick = currentTime - lastClickTime;
               
-              // 清除之前的单击超时
+              // 清除之前的单击超时（不再处理单击）
               if (clickTimeout) {
                 clearTimeout(clickTimeout);
                 clickTimeout = null;
@@ -205,17 +194,20 @@
               
               // 检查是否是双击（两次点击间隔小于 DOUBLE_CLICK_DELAY）
               if (timeSinceLastClick < DOUBLE_CLICK_DELAY) {
-                // 双击：立即触发，不等待
+                // 双击：立即触发呼出/隐藏主界面
                 lastClickTime = 0; // 重置，避免触发第三次点击
-                await handleClick(true);
+                if (!invoke) invoke = getInvoke();
+                if (invoke) {
+                  try {
+                    await invoke('icon_click');
+                  } catch (err) {
+                    console.error('Double click error:', err);
+                  }
+                }
               } else {
-                // 单击：延迟触发，等待可能的第二次点击
+                // 第一次点击，记录时间，等待可能的第二次点击
                 lastClickTime = currentTime;
-                clickTimeout = setTimeout(async () => {
-                  await handleClick(false);
-                  clickTimeout = null;
-                  lastClickTime = 0;
-                }, DOUBLE_CLICK_DELAY);
+                // 不设置超时，只等待双击
               }
             }
           } catch (err) {
@@ -227,7 +219,7 @@
       }
     });
     
-    // 添加真正的双击事件处理（作为备用）
+    // 添加真正的双击事件处理（作为备用，确保双击能触发）
     document.addEventListener('dblclick', async (e) => {
       e.preventDefault();
       // 清除单击超时
