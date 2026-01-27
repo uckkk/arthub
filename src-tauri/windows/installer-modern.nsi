@@ -35,8 +35,7 @@ InstallDir "$PROGRAMFILES\{{product_name}}"
 InstallDirRegKey HKLM "Software\Microsoft\Windows\CurrentVersion\App Paths\{{product_name}}.exe" ""
 RequestExecutionLevel admin
 
-; 一键安装模式：只显示安装进度页面
-!define MUI_PAGE_CUSTOMFUNCTION_SHOW "ShowInstFiles"
+; 一键安装模式：只显示安装进度页面（跳过欢迎页和目录选择）
 !insertmacro MUI_PAGE_INSTFILES
 
 ; 完成页面（可选启动应用）
@@ -88,17 +87,9 @@ Function LaunchApp
   Exec "$INSTDIR\{{product_name}}.exe"
 FunctionEnd
 
-; 自定义安装页面显示函数
-Function ShowInstFiles
-  ; 隐藏详细信息按钮
-  GetDlgItem $0 $HWNDPARENT 3
-  ShowWindow $0 ${SW_HIDE}
-  
-  ; 设置安装页面文本
-  FindWindow $0 "#32770" "" $HWNDPARENT
-  GetDlgItem $1 $0 1006
-  SendMessage $1 ${WM_SETTEXT} 0 "STR:正在安装 {{product_name}}..."
-FunctionEnd
+; 自定义安装页面文本
+!define MUI_INSTFILESPAGE_TEXT_TOP "正在安装 {{product_name}}..."
+!define MUI_INSTFILESPAGE_TEXT_COMPONENTS_DESC ""
 
 ; 卸载程序部分
 Section Uninstall
