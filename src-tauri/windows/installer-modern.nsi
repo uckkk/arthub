@@ -56,7 +56,6 @@ BrandingText " "
 ; 自定义页面变量
 ; ========================================
 Var hwnd
-Var hwndParent
 Var hwndTitle
 Var hwndSubtitle
 Var hwndInstallButton
@@ -72,6 +71,7 @@ Var hFontTitle
 Var hFontSubtitle
 Var hFontButton
 Var InstallProgress
+Var ParentHWND
 
 ; ========================================
 ; 完全自定义安装页面（无 MUI2）
@@ -96,16 +96,16 @@ Function ModernInstallPage
   
   ; 获取父窗口句柄
   System::Call "user32::GetParent(i $hwnd) i .r0"
-  Pop $hwndParent
+  Pop $ParentHWND
   
   ; 移除窗口边框和标题栏
-  System::Call "user32::GetWindowLong(i r0, i ${GWL_STYLE}) i .r1"
+  System::Call "user32::GetWindowLong(i $ParentHWND, i ${GWL_STYLE}) i .r1"
   IntOp $1 $1 & ~${WS_CAPTION}
   IntOp $1 $1 & ~${WS_THICKFRAME}
   IntOp $1 $1 & ~${WS_SYSMENU}
   IntOp $1 $1 & ~${WS_MINIMIZEBOX}
   IntOp $1 $1 & ~${WS_MAXIMIZEBOX}
-  System::Call "user32::SetWindowLong(i r0, i ${GWL_STYLE}, i r1)"
+  System::Call "user32::SetWindowLong(i $ParentHWND, i ${GWL_STYLE}, i r1)"
   
   ; 设置窗口大小（600x450）并居中
   System::Call "user32::GetSystemMetrics(i ${SM_CXSCREEN}) i .r1"
@@ -114,7 +114,7 @@ Function ModernInstallPage
   IntOp $1 $1 / 2
   IntOp $2 $2 - 450
   IntOp $2 $2 / 2
-  System::Call "user32::SetWindowPos(i r0, i 0, i r1, i r2, i 600, i 450, i ${SWP_NOZORDER}|${SWP_FRAMECHANGED})"
+  System::Call "user32::SetWindowPos(i $ParentHWND, i 0, i r1, i r2, i 600, i 450, i ${SWP_NOZORDER}|${SWP_FRAMECHANGED})"
   
   ; 设置窗口背景色
   SetCtlColors $hwnd "${COLOR_TEXT_WHITE}" "${COLOR_BG_DARK}"
@@ -342,7 +342,9 @@ Function OnBrowseClick
 FunctionEnd
 
 Function OnMinimizeClick
-  System::Call "user32::ShowWindow(i $hwndParent, i ${SW_MINIMIZE})"
+  System::Call "user32::GetParent(i $hwnd) i .r0"
+  Pop $ParentHWND
+  System::Call "user32::ShowWindow(i $ParentHWND, i ${SW_MINIMIZE})"
 FunctionEnd
 
 Function OnCloseClick
@@ -350,7 +352,9 @@ Function OnCloseClick
     MessageBox MB_YESNO|MB_ICONQUESTION "安装正在进行中，确定要取消吗？" IDYES +2
     Return
   ${EndIf}
-  System::Call "user32::PostMessage(i $hwndParent, i ${WM_CLOSE}, i 0, i 0)"
+  System::Call "user32::GetParent(i $hwnd) i .r0"
+  Pop $ParentHWND
+  System::Call "user32::PostMessage(i $ParentHWND, i ${WM_CLOSE}, i 0, i 0)"
 FunctionEnd
 
 ; ========================================
