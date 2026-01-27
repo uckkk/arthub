@@ -124,6 +124,26 @@ Page custom ModernInstallPage ModernInstallPageLeave
 !insertmacro MUI_LANGUAGE "SimpChinese"
 
 ; ========================================
+; 完全移除标题栏和边框
+; ========================================
+Function .onGUIInit
+  ; 获取主窗口句柄
+  System::Call "user32::GetWindowLong(i $HWNDPARENT, i ${GWL_STYLE}) i .r1"
+  ; 移除所有标题栏和边框样式
+  IntOp $1 $1 & ~${WS_CAPTION}
+  IntOp $1 $1 & ~${WS_THICKFRAME}
+  IntOp $1 $1 & ~${WS_SYSMENU}
+  IntOp $1 $1 & ~${WS_MINIMIZEBOX}
+  IntOp $1 $1 & ~${WS_MAXIMIZEBOX}
+  IntOp $1 $1 & ~${WS_DLGFRAME}
+  System::Call "user32::SetWindowLong(i $HWNDPARENT, i ${GWL_STYLE}, i r1)"
+  
+  ; 强制重绘窗口
+  ShowWindow $HWNDPARENT ${SW_HIDE}
+  ShowWindow $HWNDPARENT ${SW_SHOW}
+FunctionEnd
+
+; ========================================
 ; 自定义安装页面函数
 ; ========================================
 Function ModernInstallPage
@@ -139,7 +159,7 @@ Function ModernInstallPage
   System::Call "user32::GetParent(i $hwnd) i .r0"
   Pop $ParentHWND
   
-  ; 获取对话框句柄（用于隐藏默认按钮）
+  ; 获取对话框句柄（用于隐藏默认按钮和底部空白）
   FindWindow $DialogHWND "#32770" "" $ParentHWND
   
   ; 隐藏默认的"安装"和"取消"按钮
@@ -148,33 +168,34 @@ Function ModernInstallPage
   GetDlgItem $0 $DialogHWND 2
   ShowWindow $0 ${SW_HIDE}
   
-  ; 移除窗口边框和标题栏
+  ; 移除窗口边框和标题栏（再次确保）
   System::Call "user32::GetWindowLong(i $ParentHWND, i ${GWL_STYLE}) i .r1"
   IntOp $1 $1 & ~${WS_CAPTION}
   IntOp $1 $1 & ~${WS_THICKFRAME}
   IntOp $1 $1 & ~${WS_SYSMENU}
   IntOp $1 $1 & ~${WS_MINIMIZEBOX}
   IntOp $1 $1 & ~${WS_MAXIMIZEBOX}
+  IntOp $1 $1 & ~${WS_DLGFRAME}
   System::Call "user32::SetWindowLong(i $ParentHWND, i ${GWL_STYLE}, i r1)"
   
-  ; 设置窗口大小（600x500）并居中
+  ; 设置窗口大小（600x480，更紧凑，移除底部空白）并居中
   System::Call "user32::GetSystemMetrics(i ${SM_CXSCREEN}) i .r1"
   System::Call "user32::GetSystemMetrics(i ${SM_CYSCREEN}) i .r2"
   IntOp $1 $1 - 600
   IntOp $1 $1 / 2
-  IntOp $2 $2 - 500
+  IntOp $2 $2 - 480
   IntOp $2 $2 / 2
-  System::Call "user32::SetWindowPos(i $ParentHWND, i 0, i r1, i r2, i 600, i 500, i ${SWP_NOZORDER}|${SWP_FRAMECHANGED})"
+  System::Call "user32::SetWindowPos(i $ParentHWND, i 0, i r1, i r2, i 600, i 480, i ${SWP_NOZORDER}|${SWP_FRAMECHANGED})"
   
   ; 设置窗口背景色
   SetCtlColors $hwnd "${COLOR_TEXT_WHITE}" "${COLOR_BG_DARK}"
   
   ; 创建字体
-  CreateFont $hFontTitle "Microsoft YaHei UI" "48" "700"
-  CreateFont $hFontSubtitle "Microsoft YaHei UI" "15" "400"
-  CreateFont $hFontButton "Microsoft YaHei UI" "18" "600"
+  CreateFont $hFontTitle "Microsoft YaHei UI" "52" "700"
+  CreateFont $hFontSubtitle "Microsoft YaHei UI" "16" "400"
+  CreateFont $hFontButton "Microsoft YaHei UI" "20" "600"
   
-  ; 自定义标题栏（顶部深色条）
+  ; 自定义标题栏（顶部深色条，参考阶跃AI）
   ${NSD_CreateLabel} 0 0 600 50 ""
   Pop $hwndTitle
   SetCtlColors $hwndTitle "${COLOR_TEXT_WHITE}" "${COLOR_BG_DARKER}"
@@ -192,46 +213,45 @@ Function ModernInstallPage
   ${NSD_OnClick} $hwndMinimizeBtn OnMinimizeClick
   
   ; 关闭按钮
-  Pop $hwndCloseBtn
   ${NSD_CreateButton} 565 10 30 30 "×"
   Pop $hwndCloseBtn
   SetCtlColors $hwndCloseBtn "${COLOR_TEXT_WHITE}" "${COLOR_BG_DARKER}"
   ${NSD_OnClick} $hwndCloseBtn OnCloseClick
   
-  ; 产品名称（大标题，居中，参考阶跃AI）
-  ${NSD_CreateLabel} 0 120 600 80 "${PRODUCTNAME}"
+  ; 产品名称（大标题，居中，参考阶跃AI的排版）
+  ${NSD_CreateLabel} 0 90 600 90 "${PRODUCTNAME}"
   Pop $hwndTitle
   SendMessage $hwndTitle ${WM_SETFONT} $hFontTitle 1
   SetCtlColors $hwndTitle "${COLOR_TEXT_WHITE}" "transparent"
   ${NSD_AddStyle} $hwndTitle ${SS_CENTER}|${SS_CENTERIMAGE}
   
-  ; 副标题（参考阶跃AI）
-  ${NSD_CreateLabel} 0 200 600 30 "游戏美术工作台"
+  ; 副标题（参考阶跃AI，调整间距）
+  ${NSD_CreateLabel} 0 180 600 35 "游戏美术工作台"
   Pop $hwndSubtitle
   SendMessage $hwndSubtitle ${WM_SETFONT} $hFontSubtitle 1
   SetCtlColors $hwndSubtitle "${COLOR_TEXT_GRAY}" "transparent"
   ${NSD_AddStyle} $hwndSubtitle ${SS_CENTER}|${SS_CENTERIMAGE}
   
-  ; 一键安装按钮（大型，居中，橙色，参考阶跃AI）
-  ${NSD_CreateButton} 200 280 200 70 "一键安装"
+  ; 一键安装按钮（大型，居中，橙色，参考阶跃AI的排版和大小）
+  ${NSD_CreateButton} 200 250 200 75 "一键安装"
   Pop $hwndInstallButton
   SendMessage $hwndInstallButton ${WM_SETFONT} $hFontButton 1
   SetCtlColors $hwndInstallButton "${COLOR_TEXT_WHITE}" "${COLOR_BUTTON_PRIMARY}"
   ${NSD_AddStyle} $hwndInstallButton ${BS_CENTER}|${BS_VCENTER}|${BS_PUSHBUTTON}
   ${NSD_OnClick} $hwndInstallButton OnInstallClick
   
-  ; 目标文件夹标签（参考阶跃AI）
-  ${NSD_CreateLabel} 50 380 100 20 "目标文件夹:"
+  ; 目标文件夹标签（参考阶跃AI，调整位置）
+  ${NSD_CreateLabel} 50 360 100 20 "目标文件夹:"
   Pop $hwndPathLabel
   SetCtlColors $hwndPathLabel "${COLOR_TEXT_GRAY}" "transparent"
   
   ; 安装路径输入框（参考阶跃AI）
-  ${NSD_CreateText} 50 405 400 35 "$INSTDIR"
+  ${NSD_CreateText} 50 385 400 35 "$INSTDIR"
   Pop $hwndPathInput
   SetCtlColors $hwndPathInput "${COLOR_TEXT_WHITE}" "${COLOR_INPUT_BG}"
   
   ; 浏览按钮（参考阶跃AI）
-  ${NSD_CreateButton} 460 405 90 35 "浏览..."
+  ${NSD_CreateButton} 460 385 90 35 "浏览..."
   Pop $hwndBrowseButton
   SetCtlColors $hwndBrowseButton "${COLOR_TEXT_WHITE}" "${COLOR_INPUT_BG}"
   ${NSD_OnClick} $hwndBrowseButton OnBrowseClick
@@ -256,8 +276,8 @@ Function OnInstallClick
   StrCpy $INSTDIR $0
   
   StrCpy $ShouldInstall 1
-  ; 触发页面离开
-  SendMessage $ParentHWND ${WM_COMMAND} 1 0
+  ; 使用正确的方式触发页面离开 - 发送 IDOK 消息
+  SendMessage $ParentHWND ${WM_COMMAND} ${IDOK} 0
 FunctionEnd
 
 Function OnBrowseClick
