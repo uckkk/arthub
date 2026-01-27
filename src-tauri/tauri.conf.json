@@ -107,12 +107,7 @@
         "timestampUrl": "",
         "nsis": {
           "template": "windows/installer-modern.nsi",
-          "oneClick": true,
-          "allowElevation": true,
-          "allowDowngrades": false,
-          "createDesktopShortcut": true,
-          "createStartMenuShortcut": true,
-          "runAfterFinish": true
+          "installerIcon": "icons/icon.ico"
         }
       }
     },

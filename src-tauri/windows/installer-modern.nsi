@@ -24,16 +24,17 @@ SetCompressor {{compression}}
 ; 按钮文字颜色
 !define MUI_BUTTONTEXTCOLOR "ffffff"
 
-; 安装程序图标
-!define MUI_ICON "${NSISDIR}\Contrib\Graphics\Icons\modern-install.ico"
-!define MUI_UNICON "${NSISDIR}\Contrib\Graphics\Icons\modern-uninstall.ico"
-
 ; 安装程序属性
 Name "{{product_name}}"
 OutFile "{{output}}"
 InstallDir "$PROGRAMFILES\{{product_name}}"
 InstallDirRegKey HKLM "Software\Microsoft\Windows\CurrentVersion\App Paths\{{product_name}}.exe" ""
 RequestExecutionLevel admin
+
+; 安装程序图标（图标会在构建时由 Tauri 处理，这里使用相对路径）
+; Tauri 会将图标文件复制到构建目录，路径相对于 NSIS 脚本位置
+!define MUI_ICON "icons\icon.ico"
+!define MUI_UNICON "icons\icon.ico"
 
 ; 一键安装模式：只显示安装进度页面（跳过欢迎页和目录选择）
 !insertmacro MUI_PAGE_INSTFILES
