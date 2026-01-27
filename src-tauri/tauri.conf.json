@@ -106,8 +106,7 @@
         "digestAlgorithm": "sha256",
         "timestampUrl": "",
         "nsis": {
-          "template": "windows/installer-modern.nsi",
-          "installerIcon": "icons/icon.ico"
+          "template": "windows/installer-modern.nsi"
         }
       }
     },

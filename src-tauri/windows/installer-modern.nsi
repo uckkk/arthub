@@ -31,8 +31,8 @@ InstallDir "$PROGRAMFILES\{{product_name}}"
 InstallDirRegKey HKLM "Software\Microsoft\Windows\CurrentVersion\App Paths\{{product_name}}.exe" ""
 RequestExecutionLevel admin
 
-; 安装程序图标（图标会在构建时由 Tauri 处理，这里使用相对路径）
-; Tauri 会将图标文件复制到构建目录，路径相对于 NSIS 脚本位置
+; 安装程序图标（使用应用图标）
+; 注意：图标路径相对于 NSIS 脚本位置，Tauri 构建时会复制图标文件
 !define MUI_ICON "icons\icon.ico"
 !define MUI_UNICON "icons\icon.ico"
 
