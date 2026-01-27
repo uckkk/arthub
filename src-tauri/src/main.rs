@@ -1961,17 +1961,22 @@ fn main() {
                 let _ = main_window.set_title("ArtHub - 游戏美术工作台");
                 println!("Main window title set");
                 
-                // 监听窗口关闭事件，更新状态
+                // 监听窗口关闭事件，阻止默认关闭行为，改为隐藏窗口
                 let app_handle = app.handle().clone();
+                let main_window_clone = main_window.clone();
                 main_window.on_window_event(move |event| {
                     match event {
-                        tauri::WindowEvent::CloseRequested { .. } => {
-                            println!("Main window close requested");
-                            // 窗口关闭时，更新状态为不可见
+                        tauri::WindowEvent::CloseRequested { api, .. } => {
+                            println!("Main window close requested - preventing close and hiding instead");
+                            // 阻止默认关闭行为
+                            api.prevent_close();
+                            // 隐藏窗口而不是关闭
+                            let _ = main_window_clone.hide();
+                            // 更新状态为不可见
                             let state = app_handle.state::<AppState>();
                             let mut window_visible = state.main_window_visible.lock().unwrap();
                             *window_visible = false;
-                            println!("Main window visibility state updated to false");
+                            println!("Main window hidden (not closed), can be shown again by double-clicking icon");
                         }
                         _ => {}
                     }
