@@ -17,7 +17,6 @@ ManifestDPIAwareness PerMonitorV2
 !include "nsDialogs.nsh"
 !include "LogicLib.nsh"
 !include "WinMessages.nsh"
-!include "WinVer.nsh"
 
 ; ========================================
 ; 定义变量（必须在 OutFile 之前）
@@ -46,11 +45,9 @@ BrandingText " "
 !define COLOR_BG_DARK 0x1a1a1a
 !define COLOR_BG_DARKER 0x0f0f0f
 !define COLOR_TEXT_WHITE 0xffffff
-!define COLOR_TEXT_GRAY 0xaaaaaa
+!define COLOR_TEXT_GRAY 0x999999
 !define COLOR_BUTTON_PRIMARY 0xff8c00
-!define COLOR_BUTTON_HOVER 0xffa500
 !define COLOR_INPUT_BG 0x2a2a2a
-!define COLOR_BORDER 0x3a3a3a
 
 ; ========================================
 ; 自定义页面变量
@@ -59,34 +56,29 @@ Var hwnd
 Var hwndTitle
 Var hwndSubtitle
 Var hwndInstallButton
-Var hwndPathLabel
-Var hwndPathInput
-Var hwndBrowseButton
 Var hwndProgress
 Var hwndProgressText
 Var hwndMinimizeBtn
 Var hwndCloseBtn
+Var hwndFinishButton
+Var hwndFinishCheckbox
 Var IsInstalling
+Var IsFinished
 Var hFontTitle
 Var hFontSubtitle
 Var hFontButton
-Var InstallProgress
 Var ParentHWND
 
 ; ========================================
-; 完全自定义安装页面（无 MUI2）
+; 完全自定义安装页面
 ; ========================================
 Page custom ModernInstallPage ModernInstallPageLeave
-
-; ========================================
-; 语言（简化处理）
-; ========================================
 
 ; ========================================
 ; 自定义安装页面函数
 ; ========================================
 Function ModernInstallPage
-  ; 创建完全自定义对话框（1044 = 无标题栏的完成页面样式）
+  ; 创建完全自定义对话框（1044 = 无标题栏样式）
   nsDialogs::Create 1044
   Pop $hwnd
   
@@ -107,108 +99,135 @@ Function ModernInstallPage
   IntOp $1 $1 & ~${WS_MAXIMIZEBOX}
   System::Call "user32::SetWindowLong(i $ParentHWND, i ${GWL_STYLE}, i r1)"
   
-  ; 设置窗口大小（600x450）并居中
+  ; 设置窗口大小（580x420）并居中
   System::Call "user32::GetSystemMetrics(i ${SM_CXSCREEN}) i .r1"
   System::Call "user32::GetSystemMetrics(i ${SM_CYSCREEN}) i .r2"
-  IntOp $1 $1 - 600
+  IntOp $1 $1 - 580
   IntOp $1 $1 / 2
-  IntOp $2 $2 - 450
+  IntOp $2 $2 - 420
   IntOp $2 $2 / 2
-  System::Call "user32::SetWindowPos(i $ParentHWND, i 0, i r1, i r2, i 600, i 450, i ${SWP_NOZORDER}|${SWP_FRAMECHANGED})"
+  System::Call "user32::SetWindowPos(i $ParentHWND, i 0, i r1, i r2, i 580, i 420, i ${SWP_NOZORDER}|${SWP_FRAMECHANGED})"
   
   ; 设置窗口背景色
   SetCtlColors $hwnd "${COLOR_TEXT_WHITE}" "${COLOR_BG_DARK}"
   
   ; 创建字体
-  CreateFont $hFontTitle "Microsoft YaHei UI" "36" "700"
-  CreateFont $hFontSubtitle "Microsoft YaHei UI" "16" "400"
-  CreateFont $hFontButton "Microsoft YaHei UI" "18" "600"
+  CreateFont $hFontTitle "Microsoft YaHei UI" "42" "700"
+  CreateFont $hFontSubtitle "Microsoft YaHei UI" "14" "400"
+  CreateFont $hFontButton "Microsoft YaHei UI" "16" "600"
   
   ; 自定义标题栏（顶部深色条）
-  ${NSD_CreateLabel} 0 0 600 50 ""
+  ${NSD_CreateLabel} 0 0 580 45 ""
   Pop $hwndTitle
   SetCtlColors $hwndTitle "${COLOR_TEXT_WHITE}" "${COLOR_BG_DARKER}"
   
   ; 标题文字
-  ${NSD_CreateLabel} 20 10 400 30 "${PRODUCTNAME} 安装向导"
+  ${NSD_CreateLabel} 25 12 400 25 "${PRODUCTNAME} 安装向导"
   Pop $hwndTitle
   SendMessage $hwndTitle ${WM_SETFONT} $hFontSubtitle 1
   SetCtlColors $hwndTitle "${COLOR_TEXT_WHITE}" "${COLOR_BG_DARKER}"
   
   ; 最小化按钮
-  ${NSD_CreateButton} 520 5 30 30 "−"
+  ${NSD_CreateButton} 510 8 28 28 "−"
   Pop $hwndMinimizeBtn
   SetCtlColors $hwndMinimizeBtn "${COLOR_TEXT_WHITE}" "${COLOR_BG_DARKER}"
   ${NSD_OnClick} $hwndMinimizeBtn OnMinimizeClick
   
   ; 关闭按钮
-  ${NSD_CreateButton} 560 5 30 30 "×"
+  ${NSD_CreateButton} 545 8 28 28 "×"
   Pop $hwndCloseBtn
   SetCtlColors $hwndCloseBtn "${COLOR_TEXT_WHITE}" "${COLOR_BG_DARKER}"
   ${NSD_OnClick} $hwndCloseBtn OnCloseClick
   
+  ${If} $IsFinished == 1
+    ; 显示完成页面
+    Call ShowFinishUI
+  ${ElseIf} $IsInstalling == 1
+    ; 显示安装进度
+    Call ShowProgressUI
+  ${Else}
+    ; 显示初始安装页面
+    Call ShowInstallUI
+  ${EndIf}
+  
+  nsDialogs::Show
+FunctionEnd
+
+Function ShowInstallUI
   ; 产品名称（大标题，居中）
-  ${NSD_CreateLabel} 0 100 600 60 "${PRODUCTNAME}"
+  ${NSD_CreateLabel} 0 100 580 70 "${PRODUCTNAME}"
   Pop $hwndTitle
   SendMessage $hwndTitle ${WM_SETFONT} $hFontTitle 1
   SetCtlColors $hwndTitle "${COLOR_TEXT_WHITE}" "transparent"
   ${NSD_AddStyle} $hwndTitle ${SS_CENTER}|${SS_CENTERIMAGE}
   
   ; 副标题
-  ${NSD_CreateLabel} 0 160 600 30 "游戏美术工作台"
+  ${NSD_CreateLabel} 0 170 580 25 "游戏美术工作台"
   Pop $hwndSubtitle
   SendMessage $hwndSubtitle ${WM_SETFONT} $hFontSubtitle 1
   SetCtlColors $hwndSubtitle "${COLOR_TEXT_GRAY}" "transparent"
   ${NSD_AddStyle} $hwndSubtitle ${SS_CENTER}|${SS_CENTERIMAGE}
   
   ; 一键安装按钮（大型，居中，橙色）
-  ${NSD_CreateButton} 200 240 200 70 "一键安装"
+  ${NSD_CreateButton} 190 250 200 65 "一键安装"
   Pop $hwndInstallButton
   SendMessage $hwndInstallButton ${WM_SETFONT} $hFontButton 1
   SetCtlColors $hwndInstallButton "${COLOR_TEXT_WHITE}" "${COLOR_BUTTON_PRIMARY}"
   ${NSD_AddStyle} $hwndInstallButton ${BS_CENTER}|${BS_VCENTER}|${BS_PUSHBUTTON}
   ${NSD_OnClick} $hwndInstallButton OnInstallClick
+FunctionEnd
+
+Function ShowProgressUI
+  ; 产品名称（小一些）
+  ${NSD_CreateLabel} 0 100 580 50 "${PRODUCTNAME}"
+  Pop $hwndTitle
+  SendMessage $hwndTitle ${WM_SETFONT} $hFontTitle 1
+  SetCtlColors $hwndTitle "${COLOR_TEXT_WHITE}" "transparent"
+  ${NSD_AddStyle} $hwndTitle ${SS_CENTER}|${SS_CENTERIMAGE}
   
-  ; 安装路径标签（可选，默认隐藏）
-  ${NSD_CreateLabel} 50 330 100 20 "目标文件夹:"
-  Pop $hwndPathLabel
-  SetCtlColors $hwndPathLabel "${COLOR_TEXT_GRAY}" "transparent"
-  ShowWindow $hwndPathLabel ${SW_HIDE}
-  
-  ; 安装路径输入框（可选，默认隐藏）
-  ${NSD_CreateText} 50 355 400 30 "$INSTDIR"
-  Pop $hwndPathInput
-  SetCtlColors $hwndPathInput "${COLOR_TEXT_WHITE}" "${COLOR_INPUT_BG}"
-  ShowWindow $hwndPathInput ${SW_HIDE}
-  
-  ; 浏览按钮（可选，默认隐藏）
-  ${NSD_CreateButton} 460 355 80 30 "浏览..."
-  Pop $hwndBrowseButton
-  SetCtlColors $hwndBrowseButton "${COLOR_TEXT_WHITE}" "${COLOR_INPUT_BG}"
-  ${NSD_OnClick} $hwndBrowseButton OnBrowseClick
-  ShowWindow $hwndBrowseButton ${SW_HIDE}
-  
-  ; 进度条（初始隐藏）
-  ${NSD_CreateProgressBar} 50 350 500 25
+  ; 进度条
+  ${NSD_CreateProgressBar} 40 220 500 28
   Pop $hwndProgress
-  ShowWindow $hwndProgress ${SW_HIDE}
+  SendMessage $hwndProgress ${PBM_SETRANGE} 0 "0|100"
   
-  ; 进度文本（初始隐藏）
-  ${NSD_CreateLabel} 0 385 600 30 ""
+  ; 进度文本
+  ${NSD_CreateLabel} 0 260 580 30 "正在准备安装..."
   Pop $hwndProgressText
   SetCtlColors $hwndProgressText "${COLOR_TEXT_WHITE}" "transparent"
   ${NSD_AddStyle} $hwndProgressText ${SS_CENTER}|${SS_CENTERIMAGE}
-  ShowWindow $hwndProgressText ${SW_HIDE}
+FunctionEnd
+
+Function ShowFinishUI
+  ; 完成标题
+  ${NSD_CreateLabel} 0 120 580 60 "${PRODUCTNAME} 安装完成"
+  Pop $hwndTitle
+  SendMessage $hwndTitle ${WM_SETFONT} $hFontTitle 1
+  SetCtlColors $hwndTitle "${COLOR_TEXT_WHITE}" "transparent"
+  ${NSD_AddStyle} $hwndTitle ${SS_CENTER}|${SS_CENTERIMAGE}
   
-  StrCpy $IsInstalling 0
-  StrCpy $InstallProgress 0
+  ; 启动应用复选框
+  ${NSD_CreateCheckbox} 190 220 200 30 "启动 ${PRODUCTNAME}"
+  Pop $hwndFinishCheckbox
+  SendMessage $hwndFinishCheckbox ${BM_SETCHECK} ${BST_CHECKED} 0
+  SetCtlColors $hwndFinishCheckbox "${COLOR_TEXT_WHITE}" "transparent"
   
-  nsDialogs::Show
+  ; 完成按钮
+  ${NSD_CreateButton} 240 280 100 50 "完成"
+  Pop $hwndFinishButton
+  SendMessage $hwndFinishButton ${WM_SETFONT} $hFontButton 1
+  SetCtlColors $hwndFinishButton "${COLOR_TEXT_WHITE}" "${COLOR_BUTTON_PRIMARY}"
+  ${NSD_OnClick} $hwndFinishButton OnFinishClick
 FunctionEnd
 
 Function ModernInstallPageLeave
-  ${If} $IsInstalling == 0
+  ${If} $IsFinished == 1
+    ; 完成页面，允许离开
+  ${ElseIf} $IsInstalling == 0
+    ; 未开始安装，询问是否取消
     MessageBox MB_YESNO|MB_ICONQUESTION "确定要取消安装吗？" IDYES +2
+    Abort
+  ${Else}
+    ; 正在安装中，不允许离开
     Abort
   ${EndIf}
 FunctionEnd
@@ -220,25 +239,18 @@ Function OnInstallClick
   
   StrCpy $IsInstalling 1
   
-  ; 隐藏安装按钮
-  ShowWindow $hwndInstallButton ${SW_HIDE}
+  ; 重新创建界面显示进度
+  Call ShowProgressUI
   
-  ; 显示进度条和文本
-  ShowWindow $hwndProgress ${SW_SHOW}
-  ShowWindow $hwndProgressText ${SW_SHOW}
-  
-  ; 设置进度条范围
-  SendMessage $hwndProgress ${PBM_SETRANGE} 0 "0|100"
-  SendMessage $hwndProgress ${PBM_SETPOS} 0 0
-  
-  ; 更新进度文本
-  ${NSD_SetText} $hwndProgressText "正在准备安装..."
-  
-  ; 开始安装
+  ; 开始安装（调用 Section）
   Call DoInstallation
   
-  ; 安装完成后显示完成页面
-  Call ShowFinishPage
+  ; 安装完成
+  StrCpy $IsFinished 1
+  StrCpy $IsInstalling 0
+  
+  ; 重新创建界面显示完成页面
+  Call ShowFinishUI
 FunctionEnd
 
 Function DoInstallation
@@ -295,50 +307,15 @@ Function DoInstallation
   SendMessage $hwndProgress ${PBM_SETPOS} 100 0
   ${NSD_SetText} $hwndProgressText "安装完成！"
   
-  Sleep 1000
-FunctionEnd
-
-Function ShowFinishPage
-  ; 隐藏进度条
-  ShowWindow $hwndProgress ${SW_HIDE}
-  ShowWindow $hwndProgressText ${SW_HIDE}
-  
-  ; 显示完成信息
-  ${NSD_CreateLabel} 0 200 600 50 "${PRODUCTNAME} 安装完成"
-  Pop $hwndTitle
-  SendMessage $hwndTitle ${WM_SETFONT} $hFontTitle 1
-  SetCtlColors $hwndTitle "${COLOR_TEXT_WHITE}" "transparent"
-  ${NSD_AddStyle} $hwndTitle ${SS_CENTER}|${SS_CENTERIMAGE}
-  
-  ; 启动应用复选框
-  ${NSD_CreateCheckbox} 200 280 200 30 "启动 ${PRODUCTNAME}"
-  Pop $hwndTitle
-  SendMessage $hwndTitle ${BM_SETCHECK} ${BST_CHECKED} 0
-  SetCtlColors $hwndTitle "${COLOR_TEXT_WHITE}" "transparent"
-  
-  ; 完成按钮
-  ${NSD_CreateButton} 250 340 100 50 "完成"
-  Pop $hwndInstallButton
-  SendMessage $hwndInstallButton ${WM_SETFONT} $hFontButton 1
-  SetCtlColors $hwndInstallButton "${COLOR_TEXT_WHITE}" "${COLOR_BUTTON_PRIMARY}"
-  ${NSD_OnClick} $hwndInstallButton OnFinishClick
+  Sleep 800
 FunctionEnd
 
 Function OnFinishClick
-  ${NSD_GetState} $hwndTitle $0
+  ${NSD_GetState} $hwndFinishCheckbox $0
   ${If} $0 == ${BST_CHECKED}
     Exec "$INSTDIR\${MAINBINARYNAME}.exe"
   ${EndIf}
   Quit
-FunctionEnd
-
-Function OnBrowseClick
-  nsDialogs::SelectFolderDialog "选择安装目录" "$INSTDIR"
-  Pop $0
-  ${If} $0 != error
-    StrCpy $INSTDIR $0
-    ${NSD_SetText} $hwndPathInput $INSTDIR
-  ${EndIf}
 FunctionEnd
 
 Function OnMinimizeClick
