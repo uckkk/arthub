@@ -234,11 +234,13 @@ jobs:
 
   # ========================================
   # Windows MSIX 打包（使用 Conveyor）
+  # 可选：如果不需要 MSIX 安装包，可以跳过此 job
   # ========================================
   package-windows:
     needs: build
     runs-on: ubuntu-latest
     if: contains(needs.build.result, 'success')
+    continue-on-error: true  # 允许失败，不影响整体构建
     
     steps:
       - name: Checkout
@@ -274,7 +276,7 @@ jobs:
   release:
     needs: [build, package-windows]
     runs-on: ubuntu-latest
-    if: startsWith(github.ref, 'refs/tags/v') || github.event.inputs.release == 'true'
+    if: (startsWith(github.ref, 'refs/tags/v') || github.event.inputs.release == 'true') && (needs.build.result == 'success')
     
     steps:
       - name: Download all artifacts
