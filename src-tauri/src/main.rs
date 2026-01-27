@@ -112,7 +112,7 @@ fn create_icon_window(app: &tauri::AppHandle) -> Result<tauri::Window, Box<dyn s
     .title("");
     
     #[cfg(not(target_os = "windows"))]
-    let mut builder = WindowBuilder::new(
+    let builder = WindowBuilder::new(
         app,
         "icon",
         icon_url
@@ -127,17 +127,17 @@ fn create_icon_window(app: &tauri::AppHandle) -> Result<tauri::Window, Box<dyn s
     .max_inner_size(ICON_SIZE as f64, ICON_SIZE as f64)
     .title("");
     
-    // 所有平台都启用透明背景
+    // Windows 上启用透明背景
     #[cfg(target_os = "windows")]
-    {
-        builder = builder.transparent(true);
-    }
+    let mut builder = builder.transparent(true);
     
-    #[cfg(target_os = "macos")]
-    {
-        builder = builder.transparent(true);
-    }
+    // macOS 上，decorations(false) 已经足够，透明背景通过 CSS 实现
+    // Tauri v1 的 WindowBuilder 在 macOS 上不支持 transparent 方法
     
+    #[cfg(target_os = "windows")]
+    let icon_window = builder.build()?;
+    
+    #[cfg(not(target_os = "windows"))]
     let icon_window = builder.build()?;
     
     // 获取窗口的缩放因子（DPI 缩放）
