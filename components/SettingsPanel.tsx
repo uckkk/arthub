@@ -460,12 +460,24 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ isOpen, onClose, triggerR
                     <Input
                       type="text"
                       value={hotkey}
-                      onChange={(e) => setHotkey(e.target.value)}
+                      onChange={(e) => {
+                        // 允许手动输入，但不自动更新
+                        // setHotkey(e.target.value);
+                      }}
+                      onFocus={(e) => {
+                        // 聚焦时清空，准备捕获新快捷键
+                        e.target.select();
+                      }}
                       placeholder="例如: Ctrl+Alt+H"
+                      readOnly
                       onKeyDown={(e) => {
                         // 阻止默认行为，捕获按键组合
                         e.preventDefault();
+                        e.stopPropagation();
+                        
                         const parts: string[] = [];
+                        
+                        // 检测修饰键
                         if (e.ctrlKey) parts.push('Ctrl');
                         if (e.altKey) parts.push('Alt');
                         if (e.shiftKey) parts.push('Shift');
@@ -473,16 +485,59 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ isOpen, onClose, triggerR
                         
                         // 获取按键名称
                         let key = e.key;
-                        if (key === ' ') key = 'Space';
-                        if (key.length === 1 && key.match(/[a-zA-Z0-9]/)) {
+                        
+                        // 处理特殊键
+                        const keyMap: Record<string, string> = {
+                          ' ': 'Space',
+                          'ArrowUp': 'Up',
+                          'ArrowDown': 'Down',
+                          'ArrowLeft': 'Left',
+                          'ArrowRight': 'Right',
+                          'Escape': 'Esc',
+                          'Enter': 'Enter',
+                          'Tab': 'Tab',
+                          'Backspace': 'Backspace',
+                          'Delete': 'Delete',
+                          'Insert': 'Insert',
+                          'Home': 'Home',
+                          'End': 'End',
+                          'PageUp': 'PageUp',
+                          'PageDown': 'PageDown',
+                        };
+                        
+                        // 映射特殊键
+                        if (keyMap[key]) {
+                          key = keyMap[key];
+                        } else if (key.startsWith('F') && key.length <= 3) {
+                          // F1-F12 键
                           key = key.toUpperCase();
+                        } else if (key.length === 1) {
+                          // 单个字符键（字母、数字）
+                          if (key.match(/[a-zA-Z0-9]/)) {
+                            key = key.toUpperCase();
+                          }
                         }
                         
-                        if (key && !['Control', 'Alt', 'Shift', 'Meta'].includes(key)) {
+                        // 忽略单独的修饰键按下
+                        const modifierKeys = ['Control', 'Alt', 'Shift', 'Meta', 'OS'];
+                        if (modifierKeys.includes(key)) {
+                          return;
+                        }
+                        
+                        // 必须有至少一个修饰键和一个普通键
+                        if (parts.length > 0 && key && !modifierKeys.includes(key)) {
                           parts.push(key);
                           const newHotkey = parts.join('+');
                           setHotkey(newHotkey);
+                        } else if (parts.length === 0) {
+                          // 如果没有修饰键，显示提示
+                          console.log('快捷键必须包含至少一个修饰键（Ctrl、Alt、Shift等）');
                         }
+                      }}
+                      onKeyUp={(e) => {
+                        // 阻止默认行为
+                        e.preventDefault();
+                        e.stopPropagation();
                       }}
                     />
                     <button
