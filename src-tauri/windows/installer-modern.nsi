@@ -31,10 +31,16 @@ InstallDir "$PROGRAMFILES\{{product_name}}"
 InstallDirRegKey HKLM "Software\Microsoft\Windows\CurrentVersion\App Paths\{{product_name}}.exe" ""
 RequestExecutionLevel admin
 
-; 安装程序图标（使用应用图标）
-; 注意：图标路径相对于 NSIS 脚本位置，Tauri 构建时会复制图标文件
-!define MUI_ICON "icons\icon.ico"
-!define MUI_UNICON "icons\icon.ico"
+; 安装程序图标（条件设置：如果图标文件存在则使用，否则使用默认图标）
+; 注意：图标路径需要相对于 NSIS 脚本位置
+!if /FileExists "icons\icon.ico"
+  !define MUI_ICON "icons\icon.ico"
+  !define MUI_UNICON "icons\icon.ico"
+!else
+  ; 如果图标不存在，使用默认图标
+  !define MUI_ICON "${NSISDIR}\Contrib\Graphics\Icons\modern-install.ico"
+  !define MUI_UNICON "${NSISDIR}\Contrib\Graphics\Icons\modern-uninstall.ico"
+!endif
 
 ; 一键安装模式：只显示安装进度页面（跳过欢迎页和目录选择）
 !insertmacro MUI_PAGE_INSTFILES
