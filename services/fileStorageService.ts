@@ -313,12 +313,87 @@ export async function importAllDataFromFile(): Promise<void> {
 }
 
 // 自动从文件导入数据（静默执行，不抛出错误）
+// 如果本地文件夹存在但配置未启用，会自动启用配置
 export async function autoImportFromFile(): Promise<boolean> {
   if (!isTauriEnvironment()) {
     return false;
   }
 
-  const config = getStorageConfig();
+  let config = getStorageConfig();
+  
+  // 如果配置未启用，先检查是否有已保存的路径
+  if (!config.enabled && config.directoryPath) {
+    // 检查数据文件是否存在
+    try {
+      const dataFilePath = await getDataFilePath();
+      if (dataFilePath) {
+        // 检查文件是否存在
+        let fileExists = false;
+        try {
+          const { invoke } = await import('@tauri-apps/api/tauri');
+          fileExists = await invoke('file_exists_with_path', { filePath: dataFilePath });
+        } catch (error) {
+          try {
+            fileExists = await exists(dataFilePath);
+          } catch (fsError) {
+            console.warn('检查文件存在性失败:', fsError);
+          }
+        }
+        
+        // 如果文件存在，自动启用配置
+        if (fileExists) {
+          console.log('检测到本地数据文件，自动启用文件存储');
+          saveStorageConfig({ enabled: true });
+          config = getStorageConfig();
+        }
+      }
+    } catch (error) {
+      console.warn('检查本地数据文件失败:', error);
+    }
+  }
+
+  // 如果配置仍未启用，尝试从常见位置查找数据文件
+  if (!config.enabled) {
+    // 尝试从应用数据目录查找
+    try {
+      const { appDataDir } = await import('@tauri-apps/api/path');
+      const appDataPath = await appDataDir();
+      const possiblePaths = [
+        await join(appDataPath, 'arthub_data.json'),
+        await join(appDataPath, '..', 'arthub_data.json'),
+      ];
+      
+      for (const possiblePath of possiblePaths) {
+        try {
+          let fileExists = false;
+          try {
+            const { invoke } = await import('@tauri-apps/api/tauri');
+            fileExists = await invoke('file_exists_with_path', { filePath: possiblePath });
+          } catch {
+            fileExists = await exists(possiblePath);
+          }
+          
+          if (fileExists) {
+            // 找到数据文件，自动启用配置并设置路径
+            const directoryPath = possiblePath.substring(0, possiblePath.lastIndexOf('/') || possiblePath.lastIndexOf('\\'));
+            console.log('在应用数据目录找到数据文件，自动启用文件存储:', directoryPath);
+            saveStorageConfig({ 
+              enabled: true, 
+              directoryPath: directoryPath 
+            });
+            config = getStorageConfig();
+            break;
+          }
+        } catch (error) {
+          // 忽略单个路径检查错误
+        }
+      }
+    } catch (error) {
+      // 忽略自动查找错误
+    }
+  }
+
+  // 如果配置已启用，尝试导入数据
   if (!config.enabled) {
     return false;
   }

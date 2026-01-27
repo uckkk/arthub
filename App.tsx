@@ -267,14 +267,21 @@ const App: React.FC = () => {
 
   useEffect(() => {
     const loadData = async () => {
-      // 先尝试从文件导入数据（如果已启用文件存储）
+      // 优先：先尝试从文件导入数据（如果已启用文件存储或找到本地文件）
+      // 这必须在加载其他数据之前执行，确保翻译API等设置从文件恢复
       try {
         const { autoImportFromFile } = await import('./services/fileStorageService');
-        await autoImportFromFile();
+        const imported = await autoImportFromFile();
+        if (imported) {
+          console.log('成功从本地文件导入数据，设置已恢复');
+        }
       } catch (error) {
         // 静默处理导入错误
         console.warn('启动时导入文件数据失败:', error);
       }
+      
+      // 等待导入完成后再加载其他数据
+      await new Promise(resolve => setTimeout(resolve, 100));
       
       const savedUserInfo = getUserInfo();
       if (savedUserInfo) {

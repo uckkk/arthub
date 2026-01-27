@@ -511,10 +511,13 @@ fn icon_click(app: tauri::AppHandle) {
                 }
             }
             
-            // 先显示窗口（这会恢复最小化的窗口）
+            // 先显示窗口（这会恢复最小化的窗口，也会显示被隐藏的窗口）
             let show_result = main_window.show();
             if show_result.is_err() {
                 println!("Warning: First show() call failed, retrying...");
+                // 如果第一次失败，等待后重试
+                std::thread::sleep(std::time::Duration::from_millis(100));
+                let _ = main_window.show();
             }
             std::thread::sleep(std::time::Duration::from_millis(100));
             
@@ -522,13 +525,15 @@ fn icon_click(app: tauri::AppHandle) {
             let focus_result = main_window.set_focus();
             if focus_result.is_err() {
                 println!("Warning: First set_focus() call failed, retrying...");
+                std::thread::sleep(std::time::Duration::from_millis(100));
+                let _ = main_window.set_focus();
             }
             
             // 等待窗口响应
             std::thread::sleep(std::time::Duration::from_millis(150));
             
             // 多次验证并重试，确保窗口显示
-            for attempt in 1..=3 {
+            for attempt in 1..=5 {
                 let is_visible_after = main_window.is_visible().unwrap_or(false);
                 if is_visible_after {
                     println!("Window is now visible after {} attempt(s)", attempt);
@@ -539,6 +544,18 @@ fn icon_click(app: tauri::AppHandle) {
                     std::thread::sleep(std::time::Duration::from_millis(100));
                     let _ = main_window.set_focus();
                     std::thread::sleep(std::time::Duration::from_millis(100));
+                    
+                    #[cfg(target_os = "windows")]
+                    {
+                        // 在 Windows 上，尝试使用 Windows API 强制显示窗口
+                        if let Some(hwnd) = find_main_window_hwnd() {
+                            unsafe {
+                                ShowWindow(hwnd, SW_RESTORE);
+                                SetForegroundWindow(hwnd);
+                            }
+                            std::thread::sleep(std::time::Duration::from_millis(100));
+                        }
+                    }
                 }
             }
             
@@ -549,6 +566,8 @@ fn icon_click(app: tauri::AppHandle) {
                 println!("Window successfully shown and focused");
             } else {
                 println!("ERROR: Failed to show window after all attempts");
+                // 即使失败，也更新状态，避免下次点击时重复尝试
+                *window_visible = false;
             }
         }
     } else {
@@ -1956,6 +1975,22 @@ fn main() {
                 println!("Main window found, label: {}", main_window.label());
                 let _ = main_window.set_title("ArtHub - 游戏美术工作台");
                 println!("Main window title set");
+                
+                // 监听窗口关闭事件，更新状态
+                let app_handle = app.handle().clone();
+                main_window.on_window_event(move |event| {
+                    match event {
+                        tauri::WindowEvent::CloseRequested { .. } => {
+                            println!("Main window close requested");
+                            // 窗口关闭时，更新状态为不可见
+                            let state = app_handle.state::<AppState>();
+                            let mut window_visible = state.main_window_visible.lock().unwrap();
+                            *window_visible = false;
+                            println!("Main window visibility state updated to false");
+                        }
+                        _ => {}
+                    }
+                });
             } else {
                 println!("ERROR: Main window not found in setup!");
             }
