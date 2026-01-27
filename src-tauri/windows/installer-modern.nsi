@@ -221,7 +221,8 @@ FunctionEnd
 
 Function ModernInstallPageLeave
   ${If} $IsFinished == 1
-    ; 完成页面，允许离开
+    ; 完成页面，允许离开并退出
+    Quit
   ${ElseIf} $IsInstalling == 0
     ; 未开始安装，询问是否取消
     MessageBox MB_YESNO|MB_ICONQUESTION "确定要取消安装吗？" IDYES +2
@@ -239,18 +240,32 @@ Function OnInstallClick
   
   StrCpy $IsInstalling 1
   
-  ; 重新创建界面显示进度
+  ; 隐藏安装按钮，显示进度
+  ShowWindow $hwndInstallButton ${SW_HIDE}
+  ShowWindow $hwndSubtitle ${SW_HIDE}
+  
+  ; 创建进度UI
   Call ShowProgressUI
   
-  ; 开始安装（调用 Section）
+  ; 强制刷新界面
+  System::Call "user32::InvalidateRect(i $hwnd, i 0, i 1)"
+  System::Call "user32::UpdateWindow(i $hwnd)"
+  
+  ; 开始安装（直接执行，不使用 Section）
   Call DoInstallation
   
   ; 安装完成
   StrCpy $IsFinished 1
   StrCpy $IsInstalling 0
   
-  ; 重新创建界面显示完成页面
+  ; 隐藏进度，显示完成页面
+  ShowWindow $hwndProgress ${SW_HIDE}
+  ShowWindow $hwndProgressText ${SW_HIDE}
   Call ShowFinishUI
+  
+  ; 强制刷新界面
+  System::Call "user32::InvalidateRect(i $hwnd, i 0, i 1)"
+  System::Call "user32::UpdateWindow(i $hwnd)"
 FunctionEnd
 
 Function DoInstallation
