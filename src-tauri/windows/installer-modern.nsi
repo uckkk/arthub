@@ -124,26 +124,6 @@ Page custom ModernInstallPage ModernInstallPageLeave
 !insertmacro MUI_LANGUAGE "SimpChinese"
 
 ; ========================================
-; 完全移除标题栏和边框
-; ========================================
-Function .onGUIInit
-  ; 获取主窗口句柄
-  System::Call "user32::GetWindowLong(i $HWNDPARENT, i ${GWL_STYLE}) i .r1"
-  ; 移除所有标题栏和边框样式
-  IntOp $1 $1 & ~${WS_CAPTION}
-  IntOp $1 $1 & ~${WS_THICKFRAME}
-  IntOp $1 $1 & ~${WS_SYSMENU}
-  IntOp $1 $1 & ~${WS_MINIMIZEBOX}
-  IntOp $1 $1 & ~${WS_MAXIMIZEBOX}
-  IntOp $1 $1 & ~${WS_DLGFRAME}
-  System::Call "user32::SetWindowLong(i $HWNDPARENT, i ${GWL_STYLE}, i r1)"
-  
-  ; 强制重绘窗口
-  ShowWindow $HWNDPARENT ${SW_HIDE}
-  ShowWindow $HWNDPARENT ${SW_SHOW}
-FunctionEnd
-
-; ========================================
 ; 自定义安装页面函数
 ; ========================================
 Function ModernInstallPage
@@ -168,7 +148,7 @@ Function ModernInstallPage
   GetDlgItem $0 $DialogHWND 2
   ShowWindow $0 ${SW_HIDE}
   
-  ; 移除窗口边框和标题栏（再次确保）
+  ; 移除窗口边框和标题栏
   System::Call "user32::GetWindowLong(i $ParentHWND, i ${GWL_STYLE}) i .r1"
   IntOp $1 $1 & ~${WS_CAPTION}
   IntOp $1 $1 & ~${WS_THICKFRAME}
@@ -177,6 +157,9 @@ Function ModernInstallPage
   IntOp $1 $1 & ~${WS_MAXIMIZEBOX}
   IntOp $1 $1 & ~${WS_DLGFRAME}
   System::Call "user32::SetWindowLong(i $ParentHWND, i ${GWL_STYLE}, i r1)"
+  
+  ; 强制重绘窗口以应用样式更改
+  System::Call "user32::SetWindowPos(i $ParentHWND, i 0, i 0, i 0, i 0, i 0, i ${SWP_NOMOVE}|${SWP_NOSIZE}|${SWP_NOZORDER}|${SWP_FRAMECHANGED})"
   
   ; 设置窗口大小（600x480，更紧凑，移除底部空白）并居中
   System::Call "user32::GetSystemMetrics(i ${SM_CXSCREEN}) i .r1"
