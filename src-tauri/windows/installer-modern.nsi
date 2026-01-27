@@ -1,5 +1,5 @@
-; ArtHub 极简深色一键安装模板
-; 完全参考阶跃AI设计风格，现代化极简界面
+; ArtHub Windows 11 风格极简安装模板
+; 现代化卡片式界面，参考 Windows 11 Fluent Design
 ; 基于 Tauri 官方模板结构，使用 Handlebars 模板语法
 
 Unicode true
@@ -41,15 +41,18 @@ RequestExecutionLevel admin
 BrandingText " "
 
 ; ========================================
-; 深色主题颜色定义（参考阶跃AI）
+; Windows 11 风格颜色定义
 ; ========================================
-!define COLOR_BG_DARK 0x1a1a1a
-!define COLOR_BG_DARKER 0x0f0f0f
+!define COLOR_BG_DARK 0x202020
+!define COLOR_BG_CARD 0x2a2a2a
+!define COLOR_BG_DARKER 0x1a1a1a
 !define COLOR_TEXT_WHITE 0xffffff
-!define COLOR_TEXT_GRAY 0xcccccc
-!define COLOR_BUTTON_PRIMARY 0xffa500
-!define COLOR_BUTTON_PRIMARY_DARK 0xff8c00
-!define COLOR_INPUT_BG 0x2a2a2a
+!define COLOR_TEXT_GRAY 0xb3b3b3
+!define COLOR_BUTTON_PRIMARY 0x0078d4
+!define COLOR_BUTTON_PRIMARY_HOVER 0x106ebe
+!define COLOR_INPUT_BG 0x323232
+!define COLOR_BORDER 0x404040
+!define CORNER_RADIUS 12
 
 ; ========================================
 ; MUI2 深色主题配置
@@ -98,6 +101,7 @@ Var hFontButton
 Var ParentHWND
 Var ShouldInstall
 Var DialogHWND
+Var WindowRegion
 
 ; ========================================
 ; 页面定义
@@ -122,6 +126,24 @@ Page custom ModernInstallPage ModernInstallPageLeave
 ; 语言
 ; ========================================
 !insertmacro MUI_LANGUAGE "SimpChinese"
+
+; ========================================
+; Windows 11 圆角窗口函数
+; ========================================
+Function ApplyRoundedCorners
+  ; 获取窗口大小
+  System::Call "user32::GetWindowRect(i $ParentHWND, i .r0) i .r1"
+  System::Call "*$0(i .r1, i .r2, i .r3, i .r4)"
+  IntOp $3 $3 - $1  ; 宽度
+  IntOp $4 $4 - $2  ; 高度
+  
+  ; 创建圆角区域
+  System::Call "gdi32::CreateRoundRectRgn(i 0, i 0, i $3, i $4, i ${CORNER_RADIUS}, i ${CORNER_RADIUS}) i .r0"
+  Pop $WindowRegion
+  
+  ; 应用圆角区域到窗口
+  System::Call "user32::SetWindowRgn(i $ParentHWND, i $WindowRegion, i 1) i .r0"
+FunctionEnd
 
 ; ========================================
 ; 自定义安装页面函数
@@ -158,86 +180,103 @@ Function ModernInstallPage
   IntOp $1 $1 & ~${WS_DLGFRAME}
   System::Call "user32::SetWindowLong(i $ParentHWND, i ${GWL_STYLE}, i r1)"
   
-  ; 强制重绘窗口以应用样式更改
-  System::Call "user32::SetWindowPos(i $ParentHWND, i 0, i 0, i 0, i 0, i 0, i ${SWP_NOMOVE}|${SWP_NOSIZE}|${SWP_NOZORDER}|${SWP_FRAMECHANGED})"
+  ; 设置扩展样式，支持透明和分层窗口
+  System::Call "user32::GetWindowLong(i $ParentHWND, i ${GWL_EXSTYLE}) i .r1"
+  IntOp $1 $1 | ${WS_EX_LAYERED}
+  System::Call "user32::SetWindowLong(i $ParentHWND, i ${GWL_EXSTYLE}, i r1)"
   
-  ; 设置窗口大小（600x480，更紧凑，移除底部空白）并居中
+  ; 设置窗口大小（620x520，Windows 11 风格卡片尺寸）并居中
   System::Call "user32::GetSystemMetrics(i ${SM_CXSCREEN}) i .r1"
   System::Call "user32::GetSystemMetrics(i ${SM_CYSCREEN}) i .r2"
-  IntOp $1 $1 - 600
+  IntOp $1 $1 - 620
   IntOp $1 $1 / 2
-  IntOp $2 $2 - 480
+  IntOp $2 $2 - 520
   IntOp $2 $2 / 2
-  System::Call "user32::SetWindowPos(i $ParentHWND, i 0, i r1, i r2, i 600, i 480, i ${SWP_NOZORDER}|${SWP_FRAMECHANGED})"
+  System::Call "user32::SetWindowPos(i $ParentHWND, i 0, i r1, i r2, i 620, i 520, i ${SWP_NOZORDER}|${SWP_FRAMECHANGED})"
+  
+  ; 应用圆角窗口
+  Call ApplyRoundedCorners
   
   ; 设置窗口背景色
   SetCtlColors $hwnd "${COLOR_TEXT_WHITE}" "${COLOR_BG_DARK}"
   
-  ; 创建字体
-  CreateFont $hFontTitle "Microsoft YaHei UI" "52" "700"
-  CreateFont $hFontSubtitle "Microsoft YaHei UI" "16" "400"
-  CreateFont $hFontButton "Microsoft YaHei UI" "20" "600"
+  ; 创建字体（Windows 11 风格字体）
+  CreateFont $hFontTitle "Segoe UI" "48" "600"
+  CreateFont $hFontSubtitle "Segoe UI" "14" "400"
+  CreateFont $hFontButton "Segoe UI" "16" "600"
   
-  ; 自定义标题栏（顶部深色条，参考阶跃AI）
-  ${NSD_CreateLabel} 0 0 600 50 ""
+  ; 主卡片背景（Windows 11 风格）
+  ${NSD_CreateLabel} 20 20 580 480 ""
   Pop $hwndTitle
-  SetCtlColors $hwndTitle "${COLOR_TEXT_WHITE}" "${COLOR_BG_DARKER}"
+  SetCtlColors $hwndTitle "${COLOR_TEXT_WHITE}" "${COLOR_BG_CARD}"
   
-  ; 标题文字
-  ${NSD_CreateLabel} 25 15 400 25 "${PRODUCTNAME} 安装向导"
+  ; 应用图标区域（顶部居中）
+  ${NSD_CreateLabel} 0 50 620 80 ""
   Pop $hwndTitle
-  SendMessage $hwndTitle ${WM_SETFONT} $hFontSubtitle 1
-  SetCtlColors $hwndTitle "${COLOR_TEXT_WHITE}" "${COLOR_BG_DARKER}"
+  SetCtlColors $hwndTitle "${COLOR_TEXT_WHITE}" "transparent"
+  ${NSD_AddStyle} $hwndTitle ${SS_CENTER}|${SS_CENTERIMAGE}
   
-  ; 最小化按钮
-  ${NSD_CreateButton} 530 10 30 30 "−"
-  Pop $hwndMinimizeBtn
-  SetCtlColors $hwndMinimizeBtn "${COLOR_TEXT_WHITE}" "${COLOR_BG_DARKER}"
-  ${NSD_OnClick} $hwndMinimizeBtn OnMinimizeClick
-  
-  ; 关闭按钮
-  ${NSD_CreateButton} 565 10 30 30 "×"
-  Pop $hwndCloseBtn
-  SetCtlColors $hwndCloseBtn "${COLOR_TEXT_WHITE}" "${COLOR_BG_DARKER}"
-  ${NSD_OnClick} $hwndCloseBtn OnCloseClick
-  
-  ; 产品名称（大标题，居中，参考阶跃AI的排版）
-  ${NSD_CreateLabel} 0 90 600 90 "${PRODUCTNAME}"
+  ; 产品名称（大标题，居中，Windows 11 风格）
+  ${NSD_CreateLabel} 0 120 620 70 "${PRODUCTNAME}"
   Pop $hwndTitle
   SendMessage $hwndTitle ${WM_SETFONT} $hFontTitle 1
   SetCtlColors $hwndTitle "${COLOR_TEXT_WHITE}" "transparent"
   ${NSD_AddStyle} $hwndTitle ${SS_CENTER}|${SS_CENTERIMAGE}
   
-  ; 副标题（参考阶跃AI，调整间距）
-  ${NSD_CreateLabel} 0 180 600 35 "游戏美术工作台"
+  ; 副标题（Windows 11 风格，更优雅的间距）
+  ${NSD_CreateLabel} 0 190 620 30 "游戏美术工作台"
   Pop $hwndSubtitle
   SendMessage $hwndSubtitle ${WM_SETFONT} $hFontSubtitle 1
   SetCtlColors $hwndSubtitle "${COLOR_TEXT_GRAY}" "transparent"
   ${NSD_AddStyle} $hwndSubtitle ${SS_CENTER}|${SS_CENTERIMAGE}
   
-  ; 一键安装按钮（大型，居中，橙色，参考阶跃AI的排版和大小）
-  ${NSD_CreateButton} 200 250 200 75 "一键安装"
+  ; 一键安装按钮（Windows 11 风格，大按钮，圆角，蓝色）
+  ${NSD_CreateButton} 210 280 200 50 "安装"
   Pop $hwndInstallButton
   SendMessage $hwndInstallButton ${WM_SETFONT} $hFontButton 1
   SetCtlColors $hwndInstallButton "${COLOR_TEXT_WHITE}" "${COLOR_BUTTON_PRIMARY}"
   ${NSD_AddStyle} $hwndInstallButton ${BS_CENTER}|${BS_VCENTER}|${BS_PUSHBUTTON}
   ${NSD_OnClick} $hwndInstallButton OnInstallClick
   
-  ; 目标文件夹标签（参考阶跃AI，调整位置）
+  ; 目标文件夹标签（Windows 11 风格，更小的字体）
   ${NSD_CreateLabel} 50 360 100 20 "目标文件夹:"
   Pop $hwndPathLabel
   SetCtlColors $hwndPathLabel "${COLOR_TEXT_GRAY}" "transparent"
   
-  ; 安装路径输入框（参考阶跃AI）
-  ${NSD_CreateText} 50 385 400 35 "$INSTDIR"
+  ; 安装路径输入框（Windows 11 风格，圆角输入框）
+  ${NSD_CreateText} 50 385 420 36 "$INSTDIR"
   Pop $hwndPathInput
   SetCtlColors $hwndPathInput "${COLOR_TEXT_WHITE}" "${COLOR_INPUT_BG}"
   
-  ; 浏览按钮（参考阶跃AI）
-  ${NSD_CreateButton} 460 385 90 35 "浏览..."
+  ; 浏览按钮（Windows 11 风格，次要按钮）
+  ${NSD_CreateButton} 480 385 80 36 "浏览..."
   Pop $hwndBrowseButton
   SetCtlColors $hwndBrowseButton "${COLOR_TEXT_WHITE}" "${COLOR_INPUT_BG}"
   ${NSD_OnClick} $hwndBrowseButton OnBrowseClick
+  
+  ; 自定义标题栏（Windows 11 风格，无边框）
+  ${NSD_CreateLabel} 0 0 620 40 ""
+  Pop $hwndTitle
+  SetCtlColors $hwndTitle "${COLOR_TEXT_WHITE}" "${COLOR_BG_DARKER}"
+  
+  ; 标题文字
+  ${NSD_CreateLabel} 30 10 400 25 "${PRODUCTNAME} 安装向导"
+  Pop $hwndTitle
+  SendMessage $hwndTitle ${WM_SETFONT} $hFontSubtitle 1
+  SetCtlColors $hwndTitle "${COLOR_TEXT_WHITE}" "${COLOR_BG_DARKER}"
+  
+  ; 最小化按钮（Windows 11 风格，更小更精致）
+  ${NSD_CreateButton} 550 5 30 30 "−"
+  Pop $hwndMinimizeBtn
+  SetCtlColors $hwndMinimizeBtn "${COLOR_TEXT_WHITE}" "${COLOR_BG_DARKER}"
+  ${NSD_OnClick} $hwndMinimizeBtn OnMinimizeClick
+  
+  ; 关闭按钮（Windows 11 风格）
+  Pop $hwndCloseBtn
+  ${NSD_CreateButton} 585 5 30 30 "×"
+  Pop $hwndCloseBtn
+  SetCtlColors $hwndCloseBtn "${COLOR_TEXT_WHITE}" "${COLOR_BG_DARKER}"
+  ${NSD_OnClick} $hwndCloseBtn OnCloseClick
   
   StrCpy $ShouldInstall 0
   
