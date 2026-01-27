@@ -104,10 +104,7 @@
       "windows": {
         "certificateThumbprint": null,
         "digestAlgorithm": "sha256",
-        "timestampUrl": "",
-        "nsis": {
-          "template": "windows/installer-modern.nsi"
-        }
+        "timestampUrl": ""
       }
     },
     "security": {
