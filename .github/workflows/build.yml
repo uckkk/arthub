@@ -259,9 +259,6 @@ jobs:
           name: windows-build-artifacts
           path: ./windows-build
       
-      - name: Setup Conveyor
-        uses: hydraulic-software/conveyor/actions/setup@v9.1
-      
       - name: Build MSIX package with Conveyor
         uses: hydraulic-software/conveyor/actions/build@v9.1
         with:
