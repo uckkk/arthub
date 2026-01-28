@@ -94,15 +94,10 @@ if (-not $toastSuccess) {
     Show-MessageBox -Title $title -Message $message | Out-Null
 }
 
-# 如果提供了 Actions URL，询问是否打开
-if ($ActionsUrl -and $toastSuccess) {
-    # Toast 通知已显示，用户可以通过点击操作打开
+# 不再自动打开浏览器或询问用户
+# 只在对话窗口显示提示信息
+if ($ActionsUrl) {
     Write-Host ""
-    Write-Host "通知已显示！点击通知中的'查看构建'按钮可打开 GitHub Actions" -ForegroundColor Cyan
-} elseif ($ActionsUrl) {
-    # Toast 失败，使用消息框，然后询问是否打开浏览器
-    $openBrowser = Read-Host "是否打开浏览器访问 GitHub Actions? (Y/N)"
-    if ($openBrowser -eq "Y" -or $openBrowser -eq "y") {
-        Start-Process $ActionsUrl
-    }
+    Write-Host "GitHub Actions 链接: $ActionsUrl" -ForegroundColor Cyan
+    Write-Host "如需查看构建状态，请手动访问上述链接" -ForegroundColor Gray
 }
