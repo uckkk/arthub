@@ -287,11 +287,12 @@ const AppContent: React.FC = () => {
       // 只有在 localStorage 中完全不存在这些键时，才从文件导入
       // 这样可以确保用户最新输入的值（包括清空操作）不会被文件中的旧值覆盖
       if (!hasApiKeysInStorage) {
+        console.log('[API保护] localStorage 中不存在 API 配置键，允许从文件导入');
         try {
           const { autoImportFromFile } = await import('./services/fileStorageService');
           const result = await autoImportFromFile();
           if (result.success && result.imported) {
-            console.log('成功从本地文件导入数据，设置已恢复');
+            console.log('[API保护] 成功从本地文件导入数据，设置已恢复');
             // 显示提示消息
             if (result.message) {
               // 延迟显示，确保 ToastProvider 已初始化
@@ -299,17 +300,24 @@ const AppContent: React.FC = () => {
                 showToast('success', result.message || '本地信息已同步');
               }, 500);
             }
+          } else {
+            console.log('[API保护] 文件导入完成，但未导入 API 配置');
           }
         } catch (error) {
           // 静默处理导入错误
-          console.warn('启动时导入文件数据失败:', error);
+          console.warn('[API保护] 启动时导入文件数据失败:', error);
         }
       } else {
-        console.log('检测到 localStorage 中已有 API 配置键，保留用户最新输入，跳过文件导入');
-        console.log('当前 API 配置:', {
+        console.log('[API保护] 检测到 localStorage 中已有 API 配置键，保留用户最新输入，跳过文件导入');
+        console.log('[API保护] 当前 API 配置:', {
           geminiKey: geminiKey ? `${geminiKey.substring(0, 10)}...` : '(空)',
-          baiduAppId: baiduAppId ? `${baiduAppId.substring(0, 10)}...` : '(空)',
+          baiduAppId: baiduAppId ? `${baiduAppId.substring(0, 20)}...` : '(空)',
           baiduSecret: baiduSecret ? '(已设置)' : '(空)'
+        });
+        console.log('[API保护] 实际值:', {
+          geminiKey: geminiKey || '(null)',
+          baiduAppId: baiduAppId || '(null)',
+          baiduSecret: baiduSecret ? '(已设置)' : '(null)'
         });
       }
       

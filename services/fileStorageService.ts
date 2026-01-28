@@ -299,9 +299,18 @@ export async function importAllDataFromFile(): Promise<void> {
           // 3. 刷新页面时，localStorage 中的值优先于文件中的值
           if (isApiConfig && existingValue !== null) {
             // localStorage 中已存在该键，优先保留（无论值是否为空）
-            console.log(`保留 localStorage 中的 ${key} 值（${existingValue ? '非空' : '空字符串'}），跳过文件导入（用户最新输入优先）`);
+            const valuePreview = existingValue.length > 20 
+              ? `${existingValue.substring(0, 20)}...` 
+              : existingValue || '(空字符串)';
+            console.log(`[API保护-导入] 保留 localStorage 中的 ${key} 值（${valuePreview}），跳过文件导入（用户最新输入优先）`);
+            console.log(`[API保护-导入] 文件中的值: ${valueToStore.length > 20 ? valueToStore.substring(0, 20) + '...' : valueToStore}`);
             skipCount++;
             continue;
+          }
+          
+          // 如果是 API 配置且 localStorage 中不存在，记录日志
+          if (isApiConfig && existingValue === null) {
+            console.log(`[API保护-导入] localStorage 中不存在 ${key}，允许从文件导入: ${valueToStore.length > 20 ? valueToStore.substring(0, 20) + '...' : valueToStore}`);
           }
           
           // 对于其他数据，如果 localStorage 中已有值且文件中的值相同，跳过（避免不必要的写入）
