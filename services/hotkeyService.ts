@@ -58,17 +58,25 @@ export async function registerHotkey(hotkey: string): Promise<boolean> {
         const wasRegistered = await checkIsRegistered(savedHotkey);
         if (wasRegistered) {
           await unregister(savedHotkey);
+          console.log(`已注销旧快捷键: ${savedHotkey}`);
         }
       } catch (error) {
         console.warn('注销旧快捷键失败:', error);
       }
     }
 
-    // 检查新快捷键是否已被注册
+    // 检查新快捷键是否已被注册（包括当前应用已注册的情况）
     const alreadyRegistered = await checkIsRegistered(hotkey);
     if (alreadyRegistered) {
-      console.warn(`快捷键 ${hotkey} 已被注册`);
-      return false;
+      // 如果已被注册，先尝试注销再重新注册（可能是应用重启导致的重复注册）
+      try {
+        await unregister(hotkey);
+        console.log(`检测到快捷键 ${hotkey} 已被注册，已先注销`);
+      } catch (unregisterError) {
+        // 注销失败，可能是被其他应用占用
+        console.warn(`快捷键 ${hotkey} 已被其他应用注册，无法使用`, unregisterError);
+        return false;
+      }
     }
 
     // 注册新快捷键
@@ -78,10 +86,26 @@ export async function registerHotkey(hotkey: string): Promise<boolean> {
 
     // 保存快捷键
     saveHotkey(hotkey);
+    console.log(`快捷键 ${hotkey} 注册成功`);
     return true;
   } catch (error: any) {
+    // 如果是重复注册错误，尝试先注销再注册
+    if (error.message?.includes('already registered') || error.message?.includes('已被注册')) {
+      try {
+        await unregister(hotkey);
+        await register(hotkey, async () => {
+          await toggleMainWindow();
+        });
+        saveHotkey(hotkey);
+        console.log(`快捷键 ${hotkey} 重新注册成功`);
+        return true;
+      } catch (retryError: any) {
+        console.error('重新注册快捷键失败:', retryError);
+        return false;
+      }
+    }
     console.error('注册快捷键失败:', error);
-    throw new Error(`注册快捷键失败: ${error.message || '未知错误'}`);
+    return false;
   }
 }
 
@@ -101,15 +125,30 @@ export async function unregisterHotkey(hotkey?: string): Promise<void> {
 }
 
 // 初始化快捷键（应用启动时调用）
+let isInitializing = false; // 防止重复初始化
+
 export async function initHotkey(): Promise<void> {
+  // 防止重复初始化
+  if (isInitializing) {
+    console.log('快捷键初始化正在进行中，跳过重复调用');
+    return;
+  }
+  
+  isInitializing = true;
   try {
     const savedHotkey = getSavedHotkey();
     if (savedHotkey) {
-      await registerHotkey(savedHotkey);
-      console.log(`全局快捷键已注册: ${savedHotkey}`);
+      const success = await registerHotkey(savedHotkey);
+      if (success) {
+        console.log(`全局快捷键已注册: ${savedHotkey}`);
+      } else {
+        console.warn(`全局快捷键注册失败: ${savedHotkey}（可能已被占用）`);
+      }
     }
   } catch (error) {
     console.error('初始化快捷键失败:', error);
+  } finally {
+    isInitializing = false;
   }
 }
 
