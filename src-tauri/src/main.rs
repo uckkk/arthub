@@ -144,7 +144,7 @@ fn create_icon_window(app: &tauri::AppHandle) -> Result<tauri::Window, Box<dyn s
     #[cfg(target_os = "macos")]
     {
         use cocoa::base::id;
-        use objc::{msg_send, class};
+        use objc::{msg_send, sel, sel_impl, class};
         use std::ffi::c_void;
         
         // 获取 NSWindow 指针（返回 Result<*mut c_void, Error>）
