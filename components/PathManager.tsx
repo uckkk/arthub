@@ -239,20 +239,33 @@ const PathManager: React.FC = () => {
       if (state.isDragging && state.draggedGroup) {
         const groupContainers = document.querySelectorAll('[data-group-name]');
         let hoveredGroup: string | null = null;
+        let hoveredRect: DOMRect | null = null;
         
+        // 查找鼠标悬停的分组，扩大检测范围以提高准确性
         groupContainers.forEach((container) => {
           const rect = container.getBoundingClientRect();
-          if (e.clientY >= rect.top && e.clientY <= rect.bottom) {
+          // 扩大检测范围，包括分组标题区域
+          const padding = 30;
+          if (e.clientY >= rect.top - padding && e.clientY <= rect.bottom + padding) {
             hoveredGroup = container.getAttribute('data-group-name');
+            hoveredRect = rect;
           }
         });
         
         if (hoveredGroup && hoveredGroup !== state.draggedGroup) {
+          // 只有当悬停到不同分组时才更新
           if (dragOverGroupRef.current !== hoveredGroup) {
             setDragOverGroup(hoveredGroup);
             dragOverGroupRef.current = hoveredGroup;
           }
         } else if (hoveredGroup === state.draggedGroup) {
+          // 如果悬停到被拖动的分组本身，清除 dragOverGroup
+          if (dragOverGroupRef.current !== null) {
+            setDragOverGroup(null);
+            dragOverGroupRef.current = null;
+          }
+        } else {
+          // 如果没有悬停到任何分组，也清除 dragOverGroup
           if (dragOverGroupRef.current !== null) {
             setDragOverGroup(null);
             dragOverGroupRef.current = null;
@@ -264,21 +277,38 @@ const PathManager: React.FC = () => {
     const handleMouseUp = (e: MouseEvent) => {
       const state = mouseDragStateRef.current;
       if (state.isDragging && state.draggedGroup) {
-        const groupContainers = document.querySelectorAll('[data-group-name]');
-        let targetGroup: string | null = null;
-        let targetRect: DOMRect | null = null;
+        // 优先使用 dragOverGroup（如果已设置），因为它更准确
+        const targetGroup = dragOverGroupRef.current || (() => {
+          // 如果没有 dragOverGroup，使用鼠标位置查找
+          const groupContainers = document.querySelectorAll('[data-group-name]');
+          let foundGroup: string | null = null;
+          
+          groupContainers.forEach((container) => {
+            const rect = container.getBoundingClientRect();
+            // 扩大检测范围，提高准确性
+            const padding = 20;
+            if (e.clientY >= rect.top - padding && e.clientY <= rect.bottom + padding) {
+              foundGroup = container.getAttribute('data-group-name');
+            }
+          });
+          
+          return foundGroup;
+        })();
         
-        groupContainers.forEach((container) => {
-          const rect = container.getBoundingClientRect();
-          if (e.clientY >= rect.top && e.clientY <= rect.bottom) {
-            targetGroup = container.getAttribute('data-group-name');
-            targetRect = rect;
+        if (targetGroup && targetGroup !== state.draggedGroup) {
+          // 计算插入位置：如果鼠标在上半部分，插入到目标分组之前；否则插入到之后
+          const groupContainer = document.querySelector(`[data-group-name="${targetGroup}"]`);
+          let insertBefore = false;
+          
+          if (groupContainer) {
+            const rect = groupContainer.getBoundingClientRect();
+            const midpoint = rect.top + rect.height / 2;
+            insertBefore = e.clientY < midpoint;
+          } else {
+            // 如果找不到容器，使用 dragOverGroup 的位置判断
+            insertBefore = true; // 默认插入到前面
           }
-        });
-        
-        if (targetGroup && targetGroup !== state.draggedGroup && targetRect) {
-          const midpoint = targetRect.top + targetRect.height / 2;
-          const insertBefore = e.clientY < midpoint;
+          
           reorderGroups(state.draggedGroup, targetGroup, insertBefore);
         }
         
@@ -927,6 +957,35 @@ const PathManager: React.FC = () => {
     e.stopPropagation();
     e.dataTransfer.dropEffect = 'move';
     setDragOverGroup(groupName);
+    dragOverGroupRef.current = groupName;
+  };
+  
+  // 处理分组拖放的 drop 事件
+  const handleDropGroup = (targetGroup: string, e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    
+    if (!draggedGroup || draggedGroup === targetGroup) {
+      setDraggedGroup(null);
+      setDragOverGroup(null);
+      return;
+    }
+    
+    // 计算插入位置：根据鼠标位置判断插入到目标分组之前还是之后
+    const groupContainer = document.querySelector(`[data-group-name="${targetGroup}"]`);
+    let insertBefore = false;
+    
+    if (groupContainer) {
+      const rect = groupContainer.getBoundingClientRect();
+      const midpoint = rect.top + rect.height / 2;
+      insertBefore = e.clientY < midpoint;
+    }
+    
+    reorderGroups(draggedGroup, targetGroup, insertBefore);
+    setDraggedGroup(null);
+    setDragOverGroup(null);
+    draggedGroupRef.current = null;
+    dragOverGroupRef.current = null;
   };
 
   const handleDrop = (targetGroup: string, targetIndex: number, e: React.DragEvent) => {
@@ -1223,7 +1282,7 @@ const PathManager: React.FC = () => {
                   onEdit={handleEdit}
                   onCopy={handleCopy}
                   onDelete={handleDelete}
-                  onInsertBeforeDrop={(e) => { e.preventDefault(); e.stopPropagation(); const draggedGroupName = e.dataTransfer.getData('text/plain') || draggedGroup; if (draggedGroupName && draggedGroupName !== groupName) { reorderGroups(draggedGroupName, groupName, true); setDraggedGroup(null); setDragOverGroup(null); } }}
+                  onInsertBeforeDrop={(e) => { e.preventDefault(); e.stopPropagation(); const draggedGroupName = draggedGroup || e.dataTransfer.getData('text/plain'); if (draggedGroupName && draggedGroupName !== groupName) { const groupContainer = document.querySelector(`[data-group-name="${groupName}"]`); let insertBefore = true; if (groupContainer) { const rect = groupContainer.getBoundingClientRect(); const midpoint = rect.top + rect.height / 2; insertBefore = e.clientY < midpoint; } reorderGroups(draggedGroupName, groupName, insertBefore); setDraggedGroup(null); setDragOverGroup(null); draggedGroupRef.current = null; dragOverGroupRef.current = null; } }}
                   onLastGroupDrop={(e) => { e.preventDefault(); e.stopPropagation(); const draggedGroupName = e.dataTransfer.getData('text/plain') || draggedGroup; if (draggedGroupName && draggedGroupName !== groupName) { const allGroups = Array.from(new Set([...groupOrder, ...Object.keys(groupedPaths)])); const newOrder = [...allGroups]; const draggedIndex = newOrder.indexOf(draggedGroupName); if (draggedIndex >= 0) { newOrder.splice(draggedIndex, 1); newOrder.push(draggedGroupName); setGroupOrder(newOrder); localStorage.setItem('arthub_group_order', JSON.stringify(newOrder)); } setDraggedGroup(null); setDragOverGroup(null); }}}
                 />
               );
