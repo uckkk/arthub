@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, lazy, Suspense } from 'react';
 import { 
   Type, Menu, User, Settings, 
-  Code, Home, CheckSquare, Grid3X3
+  Sparkles, Home, CheckSquare, Grid3X3
 } from 'lucide-react';
 import { getStorageConfig, formatSyncTime } from './services/fileStorageService';
 import { getUserInfo, clearUserInfo, UserInfo } from './services/userAuthService';
@@ -103,7 +103,7 @@ const createMenuGroups = (): MenuGroup[] => [
   },
   {
     items: [
-      { id: 'api', label: 'AI工作流', icon: Code },
+      { id: 'api', label: 'AI工作流', icon: Sparkles },
       { id: 'naming', label: '资产命名', icon: Type },
       { id: 'paths', label: '常用入口', icon: Menu },
       { id: 'todo', label: '待办工作', icon: CheckSquare },
@@ -204,10 +204,20 @@ const AppContent: React.FC = () => {
   const handleMenuReorder = (groupId: number, fromIndex: number, toIndex: number) => {
     if (fromIndex === toIndex) return;
     
-    const group = baseMenuGroups[groupId];
+    // 使用当前已排序的菜单组，而不是 baseMenuGroups
+    const group = menuGroups[groupId];
     if (!group) return;
     
-    const newOrder = [...(menuItemOrder[groupId] || group.items.map(item => item.id))];
+    // 获取当前顺序（如果存在）或使用当前组的顺序
+    const currentOrder = menuItemOrder[groupId] || group.items.map(item => item.id);
+    const newOrder = [...currentOrder];
+    
+    // 确保索引有效
+    if (fromIndex < 0 || fromIndex >= newOrder.length || toIndex < 0 || toIndex >= newOrder.length) {
+      console.warn('[MenuReorder] Invalid indices:', { fromIndex, toIndex, length: newOrder.length });
+      return;
+    }
+    
     const [removed] = newOrder.splice(fromIndex, 1);
     newOrder.splice(toIndex, 0, removed);
     
@@ -535,7 +545,7 @@ const AppContent: React.FC = () => {
             
             {/* 版本号和同步时间 - 显示在右下角 */}
             <div className="absolute bottom-0 right-0 px-4 py-2 z-0 pointer-events-none">
-              <div className="flex items-center gap-2 text-[10px] text-[#333333] font-mono select-none">
+              <div className="flex items-center gap-2 text-[10px] text-[#888888] font-mono select-none bg-black/40 backdrop-blur-sm px-2 py-1 rounded border border-white/10">
                 {lastSyncTime && (
                   <span>已同步.{formatSyncTime(lastSyncTime)}</span>
                 )}

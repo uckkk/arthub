@@ -103,18 +103,28 @@ export const checkForUpdates = async (): Promise<UpdateCheckResult> => {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 5000);
     
-    const response = await fetch(
-      `https://api.github.com/repos/${GITHUB_REPO}/releases/latest`,
-      {
-        headers: {
-          'Accept': 'application/vnd.github.v3+json',
-        },
-        signal: controller.signal,
-      }
-    ).catch((error) => {
-      // 静默处理网络错误和超时
-      return null;
-    });
+    let response: Response | null = null;
+    try {
+      response = await fetch(
+        `https://api.github.com/repos/${GITHUB_REPO}/releases/latest`,
+        {
+          headers: {
+            'Accept': 'application/vnd.github.v3+json',
+          },
+          signal: controller.signal,
+        }
+      );
+    } catch (error: any) {
+      // 静默处理网络错误和超时（包括 AbortError）
+      clearTimeout(timeoutId);
+      return {
+        hasUpdate: false,
+        currentVersion: CURRENT_VERSION,
+        latestVersion: null,
+        releaseInfo: null,
+        error: null,
+      };
+    }
     
     clearTimeout(timeoutId);
 
@@ -130,7 +140,7 @@ export const checkForUpdates = async (): Promise<UpdateCheckResult> => {
     }
 
     if (!response.ok) {
-      // 404 是预期的（没有 release），静默处理
+      // 404 是预期的（没有 release），静默处理，不记录错误
       if (response.status === 404) {
         return {
           hasUpdate: false,

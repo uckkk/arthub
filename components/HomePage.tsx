@@ -1,17 +1,19 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { 
   Star, Folder, Globe, Server, Sparkles, 
-  X, Image as ImageIcon, Play
+  X, Image as ImageIcon, Play, GripVertical
 } from 'lucide-react';
-import { FavoriteItem, getAllFavorites, removeFavorite } from '../services/favoritesService';
+import { FavoriteItem, getAllFavorites, removeFavorite, reorderFavorites } from '../services/favoritesService';
 import { PathItem } from '../types';
 import { Tag } from './ui';
 import { useMiddleMouseScroll } from '../utils/useMiddleMouseScroll';
 import { openUrl, openUrlWithShell } from '../services/windowService';
+import { useDragSort } from '../hooks/useDragSort';
 
 const HomePage: React.FC = () => {
   const [favorites, setFavorites] = useState<FavoriteItem[]>([]);
   const [hoveredId, setHoveredId] = useState<string | null>(null);
+  const [isDragging, setIsDragging] = useState(false);
   
   // 鼠标中键滚动
   const scrollContainerRef = useMiddleMouseScroll<HTMLDivElement>({
@@ -55,6 +57,39 @@ const HomePage: React.FC = () => {
     
     return { paths, workflows };
   }, [favorites]);
+
+  // 路径拖动排序
+  const [pathDragState, pathDragHandlers] = useDragSort({
+    items: groupedFavorites.paths,
+    onReorder: (newPaths) => {
+      // 保持工作流的顺序不变，只更新路径的顺序
+      const workflows = groupedFavorites.workflows;
+      const allFavorites = [...workflows, ...newPaths];
+      reorderFavorites(allFavorites);
+      setFavorites(allFavorites);
+    },
+    enabled: true,
+  });
+
+  // 工作流拖动排序
+  const [workflowDragState, workflowDragHandlers] = useDragSort({
+    items: groupedFavorites.workflows,
+    onReorder: (newWorkflows) => {
+      // 保持路径的顺序不变，只更新工作流的顺序
+      const paths = groupedFavorites.paths;
+      const allFavorites = [...newWorkflows, ...paths];
+      reorderFavorites(allFavorites);
+      setFavorites(allFavorites);
+    },
+    enabled: true,
+  });
+
+  // 监听拖动状态
+  useEffect(() => {
+    setIsDragging(
+      pathDragState.draggedIndex !== null || workflowDragState.draggedIndex !== null
+    );
+  }, [pathDragState.draggedIndex, workflowDragState.draggedIndex]);
 
   // 处理路径跳转
   const handlePathJump = async (item: PathItem) => {
@@ -169,15 +204,27 @@ const HomePage: React.FC = () => {
                   </span>
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
-                  {groupedFavorites.workflows.map((fav) => {
+                  {groupedFavorites.workflows.map((fav, index) => {
                     const workflow = fav.aiWorkflow!;
+                    const isDragging = workflowDragState.draggedIndex === index;
+                    const isDragOver = workflowDragState.dragOverIndex === index;
                     return (
                       <div
                         key={fav.id}
+                        draggable={true}
+                        onDragStart={(e) => workflowDragHandlers.onDragStart(index, e)}
+                        onDragOver={(e) => workflowDragHandlers.onDragOver(index, e)}
+                        onDragLeave={workflowDragHandlers.onDragLeave}
+                        onDrop={(e) => workflowDragHandlers.onDrop(index, e)}
+                        onDragEnd={workflowDragHandlers.onDragEnd}
                         onMouseEnter={() => setHoveredId(fav.id)}
                         onMouseLeave={() => setHoveredId(null)}
-                        onClick={() => handleWorkflowOpen(workflow)}
-                        className="
+                        onClick={(e) => {
+                          if (!isDragging) {
+                            handleWorkflowOpen(workflow);
+                          }
+                        }}
+                        className={`
                           group relative
                           bg-[#1a1a1a] rounded-xl overflow-hidden
                           border border-[#2a2a2a]
@@ -185,8 +232,10 @@ const HomePage: React.FC = () => {
                           hover:border-[#3a3a3a] hover:bg-[#1f1f1f]
                           hover:shadow-lg hover:shadow-black/30
                           hover:-translate-y-0.5
-                          cursor-pointer
-                        "
+                          cursor-move
+                          ${isDragging ? 'opacity-50' : ''}
+                          ${isDragOver ? 'border-blue-500 border-2' : ''}
+                        `}
                       >
                         {/* 缩略图区域 */}
                         <div className="relative aspect-[16/10] bg-[#0f0f0f] overflow-hidden">
@@ -320,27 +369,45 @@ const HomePage: React.FC = () => {
                   </span>
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-2.5">
-                  {groupedFavorites.paths.map((fav) => {
+                  {groupedFavorites.paths.map((fav, index) => {
                     const path = fav.pathItem!;
+                    const isDragging = pathDragState.draggedIndex === index;
+                    const isDragOver = pathDragState.dragOverIndex === index;
                     return (
                       <div
                         key={fav.id}
+                        draggable={true}
+                        onDragStart={(e) => pathDragHandlers.onDragStart(index, e)}
+                        onDragOver={(e) => pathDragHandlers.onDragOver(index, e)}
+                        onDragLeave={pathDragHandlers.onDragLeave}
+                        onDrop={(e) => pathDragHandlers.onDrop(index, e)}
+                        onDragEnd={pathDragHandlers.onDragEnd}
                         onMouseEnter={() => setHoveredId(fav.id)}
                         onMouseLeave={() => setHoveredId(null)}
-                        onClick={() => handlePathJump(path)}
-                        className="
+                        onClick={(e) => {
+                          if (!isDragging) {
+                            handlePathJump(path);
+                          }
+                        }}
+                        className={`
                           group relative
                           bg-[#1a1a1a] rounded-lg
                           border border-[#2a2a2a]
                           transition-all duration-150
                           hover:border-[#3a3a3a] hover:bg-[#1f1f1f]
                           hover:shadow-md hover:shadow-black/20
-                          cursor-pointer
+                          cursor-move
                           px-3 py-2.5
                           flex items-center gap-2.5
                           min-h-[56px]
-                        "
+                          ${isDragging ? 'opacity-50' : ''}
+                          ${isDragOver ? 'border-blue-500 border-2' : ''}
+                        `}
                       >
+                        {/* 拖动指示器 */}
+                        <div className="shrink-0 text-[#444444] group-hover:text-[#666666] transition-colors">
+                          <GripVertical size={14} />
+                        </div>
                         {/* 图标 */}
                         <div className="shrink-0">
                           <div className="p-1.5 rounded-md bg-[#0f0f0f] group-hover:bg-[#151515] transition-colors">

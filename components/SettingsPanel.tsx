@@ -36,6 +36,10 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ isOpen, onClose, triggerR
   const [hotkey, setHotkey] = useState('');
   const [isRegisteringHotkey, setIsRegisteringHotkey] = useState(false);
   
+  // 自启动配置状态
+  const [autostartEnabled, setAutostartEnabled] = useState(false);
+  const [isLoadingAutostart, setIsLoadingAutostart] = useState(false);
+  
   const [statusMsg, setStatusMsg] = useState<{type: 'success' | 'error' | 'info', text: string} | null>(null);
   const [isTesting, setIsTesting] = useState(false);
 
@@ -62,12 +66,28 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ isOpen, onClose, triggerR
       // 加载快捷键配置
       setHotkey(getSavedHotkey());
       
+      // 加载自启动状态
+      if (isTauriEnvironment()) {
+        loadAutostartStatus();
+      }
+      
       if (config.enabled) {
         getSavedStoragePath().then(path => {
           if (path) {
             setSelectedDirectory(path);
           }
         }).catch(() => {});
+      }
+    };
+    
+    // 加载自启动状态
+    const loadAutostartStatus = async () => {
+      try {
+        const { invoke } = await import('@tauri-apps/api/tauri');
+        const enabled = await invoke<boolean>('is_autostart_enabled');
+        setAutostartEnabled(enabled);
+      } catch (error) {
+        console.error('加载自启动状态失败:', error);
       }
     };
     
@@ -388,6 +408,51 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ isOpen, onClose, triggerR
 
               {isTauriEnvironment() && (
                 <div className="space-y-4">
+                  {/* 开机自动启动开关 */}
+                  <div className="flex items-center justify-between">
+                    <label className="text-sm font-medium text-[#a0a0a0]">开机自动启动</label>
+                    <label className="relative inline-flex items-center cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={autostartEnabled}
+                        disabled={isLoadingAutostart}
+                        onChange={async (e) => {
+                          setIsLoadingAutostart(true);
+                          try {
+                            const { invoke } = await import('@tauri-apps/api/tauri');
+                            if (e.target.checked) {
+                              await invoke('enable_autostart');
+                              setAutostartEnabled(true);
+                              showStatus('success', '已启用开机自动启动');
+                            } else {
+                              await invoke('disable_autostart');
+                              setAutostartEnabled(false);
+                              showStatus('success', '已禁用开机自动启动');
+                            }
+                          } catch (error: any) {
+                            console.error('设置自启动失败:', error);
+                            showStatus('error', `设置失败: ${error.message || error}`);
+                            // 恢复原状态
+                            setAutostartEnabled(!e.target.checked);
+                          } finally {
+                            setIsLoadingAutostart(false);
+                          }
+                        }}
+                        className="sr-only peer"
+                      />
+                      <div className={`
+                        w-11 h-6 rounded-full
+                        bg-[#2a2a2a] peer-checked:bg-blue-600
+                        peer-focus:outline-none
+                        after:content-[''] after:absolute after:top-[2px] after:left-[2px]
+                        after:bg-white after:rounded-full after:h-5 after:w-5
+                        after:transition-all
+                        peer-checked:after:translate-x-full
+                        ${isLoadingAutostart ? 'opacity-50 cursor-not-allowed' : ''}
+                      `}></div>
+                    </label>
+                  </div>
+                  
                   {/* 启用开关 */}
                   <div className="flex items-center justify-between">
                     <label className="text-sm font-medium text-[#a0a0a0]">启用文件存储</label>

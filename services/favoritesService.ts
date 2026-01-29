@@ -251,6 +251,11 @@ export function toggleFavorite(item: FavoriteItem): boolean {
   }
 }
 
+// 重新排序收藏列表
+export function reorderFavorites(newOrder: FavoriteItem[]): void {
+  saveFavorites(newOrder);
+}
+
 // 迁移旧的快捷路径数据到新的收藏系统
 export function migrateQuickPaths(): void {
   const currentPresetId = localStorage.getItem('arthub_naming_preset') || 'fgui_card';

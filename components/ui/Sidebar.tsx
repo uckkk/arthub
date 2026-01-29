@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { LucideIcon, GripVertical } from 'lucide-react';
 
 // 菜单项类型
@@ -40,6 +40,88 @@ export const Sidebar: React.FC<SidebarProps> = ({
   const [draggedItem, setDraggedItem] = useState<{ groupIndex: number; itemIndex: number } | null>(null);
   const [dragOverIndex, setDragOverIndex] = useState<{ groupIndex: number; itemIndex: number } | null>(null);
   const [pressedItem, setPressedItem] = useState<{ groupIndex: number; itemIndex: number } | null>(null);
+  const [isDragging, setIsDragging] = useState(false);
+  const dragStartRef = useRef<{ groupIndex: number; itemIndex: number; startY: number } | null>(null);
+  const [dragStartState, setDragStartState] = useState<{ groupIndex: number; itemIndex: number; startY: number } | null>(null);
+
+  // 处理鼠标移动事件，实现拖动排序
+  useEffect(() => {
+    // 只有当 dragStartState 有值时才添加事件监听器
+    if (!dragStartState) return;
+
+    const handleMouseMove = (e: MouseEvent) => {
+      const dragStart = dragStartRef.current;
+      if (!dragStart || !onReorder) return;
+
+      const { groupIndex, itemIndex, startY } = dragStart;
+      const currentY = e.clientY;
+      const dy = currentY - startY;
+
+      // 如果移动距离超过5px，确认是拖动操作
+      if (Math.abs(dy) > 5) {
+        if (!isDragging) {
+          setIsDragging(true);
+          setDraggedItem({ groupIndex, itemIndex });
+        }
+
+        // 查找当前鼠标位置下的菜单项
+        const elements = document.elementsFromPoint(e.clientX, e.clientY);
+        let targetItem: { groupIndex: number; itemIndex: number } | null = null;
+
+        for (const el of elements) {
+          const itemElement = el.closest('[data-menu-item]') as HTMLElement;
+          if (itemElement) {
+            const itemGroupIndex = parseInt(itemElement.dataset.groupIndex || '0');
+            const itemItemIndex = parseInt(itemElement.dataset.itemIndex || '0');
+            if (itemGroupIndex === groupIndex && itemItemIndex !== itemIndex) {
+              targetItem = { groupIndex: itemGroupIndex, itemIndex: itemItemIndex };
+              break;
+            }
+          }
+        }
+
+        if (targetItem) {
+          setDragOverIndex(prev => {
+            if (prev?.groupIndex !== targetItem?.groupIndex || prev?.itemIndex !== targetItem?.itemIndex) {
+              return targetItem;
+            }
+            return prev;
+          });
+        }
+      }
+    };
+
+    const handleMouseUp = (e: MouseEvent) => {
+      const dragStart = dragStartRef.current;
+      if (dragStart && isDragging && draggedItem && dragOverIndex && onReorder) {
+        const { groupIndex } = dragStart;
+        if (dragOverIndex.groupIndex === groupIndex) {
+          const fromIndex = draggedItem.itemIndex;
+          const toIndex = dragOverIndex.itemIndex;
+          if (fromIndex !== toIndex) {
+            onReorder(groupIndex, fromIndex, toIndex);
+          }
+        }
+      }
+
+      // 清除拖动状态
+      dragStartRef.current = null;
+      setDragStartState(null);
+      setIsDragging(false);
+      setDraggedItem(null);
+      setDragOverIndex(null);
+      setPressedItem(null);
+    };
+
+    document.addEventListener('mousemove', handleMouseMove, { passive: false });
+    document.addEventListener('mouseup', handleMouseUp);
+
+    return () => {
+      document.removeEventListener('mousemove', handleMouseMove);
+      document.removeEventListener('mouseup', handleMouseUp);
+    };
+  }, [dragStartState, isDragging, draggedItem, dragOverIndex, onReorder]);
+
   return (
     <aside className={`
       flex flex-col h-full
@@ -94,91 +176,70 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 return (
                   <div
                     key={item.id}
-                    draggable={isDraggable}
-                    onDragStart={(e) => {
-                      if (onReorder && isDraggable) {
-                        setDraggedItem({ groupIndex, itemIndex });
-                        e.dataTransfer.effectAllowed = 'move';
-                        e.dataTransfer.setData('text/plain', item.id);
-                      } else {
-                        e.preventDefault();
-                      }
-                    }}
-                    onDragOver={(e) => {
-                      if (onReorder && draggedItem && draggedItem.groupIndex === groupIndex) {
-                        const draggedItemData = groups[draggedItem.groupIndex]?.items[draggedItem.itemIndex];
-                        const isDraggedItemDraggable = draggedItemData && (draggedItemData.draggable !== false);
-                        // 允许在同一分组内拖拽，且被拖拽项目和目标项目都可拖拽
-                        if (isDraggedItemDraggable && isDraggable) {
-                          e.preventDefault();
-                          e.stopPropagation();
-                          e.dataTransfer.dropEffect = 'move';
-                          setDragOverIndex({ groupIndex, itemIndex });
-                        } else if (isDraggedItemDraggable) {
-                          // 即使目标不可拖拽，也要阻止默认行为以允许视觉反馈
-                          e.preventDefault();
-                          e.stopPropagation();
-                        }
-                      }
-                    }}
-                    onDragLeave={() => {
-                      if (dragOverIndex?.groupIndex === groupIndex && dragOverIndex?.itemIndex === itemIndex) {
-                        setDragOverIndex(null);
-                      }
-                    }}
-                    onDrop={(e) => {
-                      e.preventDefault();
-                      e.stopPropagation();
-                      if (onReorder && draggedItem && draggedItem.groupIndex === groupIndex) {
-                        const draggedItemData = groups[draggedItem.groupIndex]?.items[draggedItem.itemIndex];
-                        const isDraggedItemDraggable = draggedItemData && (draggedItemData.draggable !== false);
-                        if (isDraggedItemDraggable && isDraggable) {
-                          onReorder(groupIndex, draggedItem.itemIndex, itemIndex);
-                          setDraggedItem(null);
-                          setDragOverIndex(null);
-                        }
-                      }
-                    }}
-                    onDragEnd={() => {
-                      setDraggedItem(null);
-                      setDragOverIndex(null);
-                      setPressedItem(null);
-                    }}
+                    data-menu-item
+                    data-group-index={groupIndex}
+                    data-item-index={itemIndex}
                     className={`
-                      ${isDragging ? 'opacity-50' : ''}
+                      ${isDragging && draggedItem?.groupIndex === groupIndex && draggedItem?.itemIndex === itemIndex ? 'opacity-50' : ''}
                       ${isDragOver ? 'border-t-2 border-blue-500' : ''}
                     `}
                   >
                     <button
-                      onClick={() => onSelect(item.id)}
+                      type="button"
+                      onClick={(e) => {
+                        // 如果正在拖动，阻止点击
+                        if (isDragging || dragStartRef.current) {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          return;
+                        }
+                        onSelect(item.id);
+                      }}
                       onMouseDown={(e) => {
                         if (isDraggable && e.button === 0) {
-                          setPressedItem({ groupIndex, itemIndex });
+                          const target = e.target as HTMLElement;
+                          // 如果点击的是拖动图标，立即开始拖动
+                          if (target.closest('[data-drag-handle]')) {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            const dragInfo = { groupIndex, itemIndex, startY: e.clientY };
+                            dragStartRef.current = dragInfo;
+                            setDragStartState(dragInfo); // 触发 useEffect
+                            setDraggedItem({ groupIndex, itemIndex });
+                            setPressedItem({ groupIndex, itemIndex });
+                          } else {
+                            setPressedItem({ groupIndex, itemIndex });
+                          }
                         }
                       }}
                       onMouseUp={() => {
-                        setPressedItem(null);
+                        // 如果不是拖动操作，清除 pressedItem
+                        if (!dragStartRef.current) {
+                          setPressedItem(null);
+                        }
                       }}
                       onMouseLeave={() => {
-                        setPressedItem(null);
+                        // 如果不是拖动操作，清除 pressedItem
+                        if (!dragStartRef.current) {
+                          setPressedItem(null);
+                        }
                       }}
                       className={`
                         w-full flex items-center gap-3 px-3 py-2.5 rounded-lg
                         text-[14px] font-medium
                         transition-all duration-150
+                        ${isDragging && draggedItem?.groupIndex === groupIndex && draggedItem?.itemIndex === itemIndex ? 'cursor-move' : 'cursor-pointer'}
                         ${isActive 
                           ? 'bg-[#1a1a1a] text-white' 
                           : 'text-[#808080] hover:bg-[#151515] hover:text-[#a0a0a0]'
                         }
                       `}
                     >
-                      {onReorder && isDraggable && isPressed && (
+                      {onReorder && isDraggable && (
                         <GripVertical 
                           size={14} 
-                          className="text-[#666666] cursor-move flex-shrink-0"
-                          onMouseDown={(e) => {
-                            e.stopPropagation();
-                          }}
+                          data-drag-handle
+                          className="text-[#444444] hover:text-[#666666] cursor-move flex-shrink-0 transition-colors"
                         />
                       )}
                       <Icon 

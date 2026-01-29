@@ -2063,6 +2063,275 @@ fn main() {
             println!("=== Tauri setup completed ===");
             Ok(())
         })
+// Tauri 命令：启用自启动
+#[tauri::command]
+fn enable_autostart(app: tauri::AppHandle) -> Result<bool, String> {
+    #[cfg(target_os = "windows")]
+    {
+        use winapi::um::winreg::{RegCreateKeyExW, RegSetValueExW, HKEY_CURRENT_USER, KEY_WRITE, REG_SZ};
+        use winapi::um::winreg::{RegCloseKey, REG_OPTION_NON_VOLATILE};
+        use std::ffi::OsStr;
+        use std::os::windows::ffi::OsStrExt;
+        use std::ptr;
+        
+        unsafe {
+            let exe_path = std::env::current_exe()
+                .map_err(|e| format!("获取可执行文件路径失败: {}", e))?;
+            let exe_path_str = exe_path.to_string_lossy().to_string();
+            
+            // 注册表路径：HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\Run
+            let key_name: Vec<u16> = OsStr::new("Software\\Microsoft\\Windows\\CurrentVersion\\Run")
+                .encode_wide()
+                .chain(Some(0))
+                .collect();
+            
+            let app_name: Vec<u16> = OsStr::new("ArtHub")
+                .encode_wide()
+                .chain(Some(0))
+                .collect();
+            
+            let exe_path_wide: Vec<u16> = OsStr::new(&exe_path_str)
+                .encode_wide()
+                .chain(Some(0))
+                .collect();
+            
+            let mut hkey: winapi::um::winreg::HKEY = ptr::null_mut();
+            let result = RegCreateKeyExW(
+                HKEY_CURRENT_USER,
+                key_name.as_ptr(),
+                0,
+                ptr::null_mut(),
+                REG_OPTION_NON_VOLATILE,
+                KEY_WRITE,
+                ptr::null_mut(),
+                &mut hkey,
+                ptr::null_mut(),
+            );
+            
+            if result == 0 {
+                let set_result = RegSetValueExW(
+                    hkey,
+                    app_name.as_ptr(),
+                    0,
+                    REG_SZ,
+                    exe_path_wide.as_ptr() as *const _,
+                    (exe_path_wide.len() * 2) as u32,
+                );
+                
+                RegCloseKey(hkey);
+                
+                if set_result == 0 {
+                    Ok(true)
+                } else {
+                    Err(format!("设置注册表值失败，错误代码: {}", set_result))
+                }
+            } else {
+                Err(format!("创建注册表键失败，错误代码: {}", result))
+            }
+        }
+    }
+    
+    #[cfg(target_os = "macos")]
+    {
+        use std::path::PathBuf;
+        use std::fs;
+        
+        let home_dir = std::env::var("HOME")
+            .map_err(|_| "无法获取用户主目录".to_string())?;
+        
+        let launch_agents_dir = PathBuf::from(&home_dir)
+            .join("Library")
+            .join("LaunchAgents");
+        
+        // 确保目录存在
+        fs::create_dir_all(&launch_agents_dir)
+            .map_err(|e| format!("创建 LaunchAgents 目录失败: {}", e))?;
+        
+        let plist_path = launch_agents_dir.join("com.arthub.gameartist.plist");
+        
+        let exe_path = std::env::current_exe()
+            .map_err(|e| format!("获取可执行文件路径失败: {}", e))?;
+        
+        let plist_content = format!(
+            r#"<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.arthub.gameartist</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>{}</string>
+    </array>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <false/>
+</dict>
+</plist>"#,
+            exe_path.to_string_lossy()
+        );
+        
+        fs::write(&plist_path, plist_content)
+            .map_err(|e| format!("写入 plist 文件失败: {}", e))?;
+        
+        Ok(true)
+    }
+    
+    #[cfg(not(any(target_os = "windows", target_os = "macos")))]
+    {
+        Err("当前平台不支持自启动功能".to_string())
+    }
+}
+
+// Tauri 命令：禁用自启动
+#[tauri::command]
+fn disable_autostart(_app: tauri::AppHandle) -> Result<bool, String> {
+    #[cfg(target_os = "windows")]
+    {
+        use winapi::um::winreg::{RegOpenKeyExW, RegDeleteValueW, RegCloseKey, HKEY_CURRENT_USER, KEY_WRITE};
+        use std::ffi::OsStr;
+        use std::os::windows::ffi::OsStrExt;
+        use std::ptr;
+        
+        unsafe {
+            let key_name: Vec<u16> = OsStr::new("Software\\Microsoft\\Windows\\CurrentVersion\\Run")
+                .encode_wide()
+                .chain(Some(0))
+                .collect();
+            
+            let app_name: Vec<u16> = OsStr::new("ArtHub")
+                .encode_wide()
+                .chain(Some(0))
+                .collect();
+            
+            let mut hkey: winapi::um::winreg::HKEY = ptr::null_mut();
+            let result = RegOpenKeyExW(
+                HKEY_CURRENT_USER,
+                key_name.as_ptr(),
+                0,
+                KEY_WRITE,
+                &mut hkey,
+            );
+            
+            if result == 0 {
+                let delete_result = RegDeleteValueW(hkey, app_name.as_ptr());
+                RegCloseKey(hkey);
+                
+                if delete_result == 0 {
+                    Ok(true)
+                } else {
+                    // 如果值不存在，也认为成功
+                    Ok(true)
+                }
+            } else {
+                // 如果键不存在，也认为成功
+                Ok(true)
+            }
+        }
+    }
+    
+    #[cfg(target_os = "macos")]
+    {
+        use std::path::PathBuf;
+        use std::fs;
+        
+        let home_dir = std::env::var("HOME")
+            .map_err(|_| "无法获取用户主目录".to_string())?;
+        
+        let plist_path = PathBuf::from(&home_dir)
+            .join("Library")
+            .join("LaunchAgents")
+            .join("com.arthub.gameartist.plist");
+        
+        if plist_path.exists() {
+            fs::remove_file(&plist_path)
+                .map_err(|e| format!("删除 plist 文件失败: {}", e))?;
+        }
+        
+        Ok(true)
+    }
+    
+    #[cfg(not(any(target_os = "windows", target_os = "macos")))]
+    {
+        Err("当前平台不支持自启动功能".to_string())
+    }
+}
+
+// Tauri 命令：检查自启动是否已启用
+#[tauri::command]
+fn is_autostart_enabled(_app: tauri::AppHandle) -> Result<bool, String> {
+    #[cfg(target_os = "windows")]
+    {
+        use winapi::um::winreg::{RegOpenKeyExW, RegQueryValueExW, RegCloseKey, HKEY_CURRENT_USER, KEY_READ};
+        use std::ffi::OsStr;
+        use std::os::windows::ffi::OsStrExt;
+        use std::ptr;
+        
+        unsafe {
+            let key_name: Vec<u16> = OsStr::new("Software\\Microsoft\\Windows\\CurrentVersion\\Run")
+                .encode_wide()
+                .chain(Some(0))
+                .collect();
+            
+            let app_name: Vec<u16> = OsStr::new("ArtHub")
+                .encode_wide()
+                .chain(Some(0))
+                .collect();
+            
+            let mut hkey: winapi::um::winreg::HKEY = ptr::null_mut();
+            let result = RegOpenKeyExW(
+                HKEY_CURRENT_USER,
+                key_name.as_ptr(),
+                0,
+                KEY_READ,
+                &mut hkey,
+            );
+            
+            if result == 0 {
+                let mut value_type: u32 = 0;
+                let mut data_len: u32 = 0;
+                
+                // 先查询值的大小
+                let query_result = RegQueryValueExW(
+                    hkey,
+                    app_name.as_ptr(),
+                    ptr::null_mut(),
+                    &mut value_type,
+                    ptr::null_mut(),
+                    &mut data_len,
+                );
+                
+                RegCloseKey(hkey);
+                
+                Ok(query_result == 0 && data_len > 0)
+            } else {
+                Ok(false)
+            }
+        }
+    }
+    
+    #[cfg(target_os = "macos")]
+    {
+        use std::path::PathBuf;
+        
+        let home_dir = std::env::var("HOME")
+            .map_err(|_| "无法获取用户主目录".to_string())?;
+        
+        let plist_path = PathBuf::from(&home_dir)
+            .join("Library")
+            .join("LaunchAgents")
+            .join("com.arthub.gameartist.plist");
+        
+        Ok(plist_path.exists())
+    }
+    
+    #[cfg(not(any(target_os = "windows", target_os = "macos")))]
+    {
+        Ok(false)
+    }
+}
+
         .invoke_handler(tauri::generate_handler![
             icon_mouse_down,
             icon_mouse_move,
@@ -2080,7 +2349,10 @@ fn main() {
             get_app_icon,
             write_file_with_path,
             read_file_with_path,
-            file_exists_with_path
+            file_exists_with_path,
+            enable_autostart,
+            disable_autostart,
+            is_autostart_enabled
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
