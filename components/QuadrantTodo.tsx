@@ -435,9 +435,23 @@ const QuadrantTodo: React.FC = () => {
       const pathParts = urlObj.pathname.split('/').filter(p => p);
       if (pathParts.length > 0) {
         const lastPart = pathParts[pathParts.length - 1];
-        // 如果最后一部分看起来像标题（不包含特殊字符），使用它
-        if (lastPart && !lastPart.includes('.') && lastPart.length < 50) {
-          title = decodeURIComponent(lastPart).replace(/[-_]/g, ' ');
+        
+        // 检查最后一部分是否适合作为标题
+        if (lastPart && lastPart.length < 50) {
+          // 排除纯数字、纯ID、哈希值等不适合作为标题的内容
+          const isNumeric = /^\d+$/.test(lastPart);
+          const isLongId = lastPart.length > 20 && /^[a-zA-Z0-9]+$/.test(lastPart);
+          const hasExtension = lastPart.includes('.');
+          
+          // 只有当不是纯数字、不是长ID、不包含扩展名时，才使用路径部分
+          if (!isNumeric && !isLongId && !hasExtension) {
+            const decodedPart = decodeURIComponent(lastPart);
+            // 检查是否包含有意义的文本（至少包含字母或中文字符）
+            const hasMeaningfulText = /[a-zA-Z\u4e00-\u9fa5]/.test(decodedPart);
+            if (hasMeaningfulText) {
+              title = decodedPart.replace(/[-_]/g, ' ');
+            }
+          }
         }
       }
       
