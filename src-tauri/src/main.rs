@@ -2094,8 +2094,12 @@ fn main() {
 fn enable_autostart(app: tauri::AppHandle) -> Result<bool, String> {
     #[cfg(target_os = "windows")]
     {
-        use winapi::um::winreg::{RegCreateKeyExW, RegSetValueExW, RegCloseKey, HKEY_CURRENT_USER, KEY_WRITE, REG_SZ, REG_OPTION_NON_VOLATILE};
+        use winapi::um::winreg::{RegCreateKeyExW, RegSetValueExW, RegCloseKey, HKEY_CURRENT_USER};
         use winapi::shared::minwindef::HKEY;
+        // 使用数字常量代替 winapi 常量（winapi 0.3 中这些常量可能不可用）
+        const KEY_WRITE: u32 = 0x20006;
+        const REG_SZ: u32 = 1;
+        const REG_OPTION_NON_VOLATILE: u32 = 0;
         use std::ffi::OsStr;
         use std::os::windows::ffi::OsStrExt;
         use std::ptr;
@@ -2215,8 +2219,9 @@ fn enable_autostart(app: tauri::AppHandle) -> Result<bool, String> {
 fn disable_autostart(_app: tauri::AppHandle) -> Result<bool, String> {
     #[cfg(target_os = "windows")]
     {
-        use winapi::um::winreg::{RegOpenKeyExW, RegDeleteValueW, RegCloseKey, HKEY_CURRENT_USER, KEY_WRITE};
+        use winapi::um::winreg::{RegOpenKeyExW, RegDeleteValueW, RegCloseKey, HKEY_CURRENT_USER};
         use winapi::shared::minwindef::HKEY;
+        const KEY_WRITE: u32 = 0x20006;
         use std::ffi::OsStr;
         use std::os::windows::ffi::OsStrExt;
         use std::ptr;
@@ -2290,8 +2295,9 @@ fn disable_autostart(_app: tauri::AppHandle) -> Result<bool, String> {
 fn is_autostart_enabled(_app: tauri::AppHandle) -> Result<bool, String> {
     #[cfg(target_os = "windows")]
     {
-        use winapi::um::winreg::{RegOpenKeyExW, RegQueryValueExW, RegCloseKey, HKEY_CURRENT_USER, KEY_READ};
+        use winapi::um::winreg::{RegOpenKeyExW, RegQueryValueExW, RegCloseKey, HKEY_CURRENT_USER};
         use winapi::shared::minwindef::HKEY;
+        const KEY_READ: u32 = 0x20019;
         use std::ffi::OsStr;
         use std::os::windows::ffi::OsStrExt;
         use std::ptr;
