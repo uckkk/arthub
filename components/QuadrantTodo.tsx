@@ -28,6 +28,8 @@ const QuadrantTodo: React.FC = () => {
   const [showAddModal, setShowAddModal] = useState(false);
   const [draggedTodo, setDraggedTodo] = useState<TodoItem | null>(null);
   const [dragOverQuadrant, setDragOverQuadrant] = useState<TodoItem['quadrant'] | null>(null);
+  const [dragOverTodoId, setDragOverTodoId] = useState<string | null>(null); // 用于象限内排序
+  const [dragOverPosition, setDragOverPosition] = useState<'above' | 'below' | null>(null); // 插入位置：上方或下方
   const [isDragging, setIsDragging] = useState(false);
   const dragStartRef = useRef<{ todoId: string; startY: number; startX: number } | null>(null);
   const [dragStartState, setDragStartState] = useState<{ todoId: string; startY: number; startX: number } | null>(null);
@@ -415,10 +417,28 @@ const QuadrantTodo: React.FC = () => {
           setDraggedTodo(todo);
         }
 
-        // 查找当前鼠标位置下的象限
+        // 查找当前鼠标位置下的元素
         const elements = document.elementsFromPoint(e.clientX, e.clientY);
         let targetQuadrant: TodoItem['quadrant'] | null = null;
+        let targetTodoId: string | null = null;
 
+        // 优先查找任务项（用于象限内排序）
+        for (const el of elements) {
+          const todoElement = el.closest('[data-todo-id]') as HTMLElement;
+          if (todoElement) {
+            const id = todoElement.dataset.todoId;
+            if (id && id !== todoId) {
+              targetTodoId = id;
+              // 判断插入位置：比较鼠标Y坐标和元素中心Y坐标
+              const rect = todoElement.getBoundingClientRect();
+              const elementCenterY = rect.top + rect.height / 2;
+              setDragOverPosition(e.clientY < elementCenterY ? 'above' : 'below');
+              break;
+            }
+          }
+        }
+
+        // 查找象限（用于跨象限移动）
         for (const el of elements) {
           const quadrantElement = el.closest('[data-quadrant]') as HTMLElement;
           if (quadrantElement) {
@@ -430,8 +450,31 @@ const QuadrantTodo: React.FC = () => {
           }
         }
 
-        if (targetQuadrant) {
+        // 如果找到目标任务项，检查是否在同一象限
+        if (targetTodoId) {
+          const targetTodo = todos.find(t => t.id === targetTodoId);
+          if (targetTodo && targetTodo.quadrant === todo.quadrant) {
+            // 同一象限内，进行排序
+            setDragOverTodoId(targetTodoId);
+            setDragOverQuadrant(null); // 清除象限高亮
+          } else {
+            // 不同象限，进行跨象限移动
+            setDragOverTodoId(null);
+            setDragOverPosition(null);
+            if (targetQuadrant) {
+              setDragOverQuadrant(targetQuadrant);
+            }
+          }
+        } else if (targetQuadrant) {
+          // 只找到象限，没有找到任务项，进行跨象限移动
+          setDragOverTodoId(null);
+          setDragOverPosition(null);
           setDragOverQuadrant(targetQuadrant);
+        } else {
+          // 都没有找到，清除状态
+          setDragOverTodoId(null);
+          setDragOverPosition(null);
+          setDragOverQuadrant(null);
         }
       }
     };
@@ -439,11 +482,25 @@ const QuadrantTodo: React.FC = () => {
     const handleMouseUp = (e: MouseEvent) => {
       const dragStart = dragStartRef.current;
       if (dragStart && isDragging && draggedTodo) {
-        // 再次查找目标象限（确保准确性）
+        // 再次查找目标元素（确保准确性）
         const elements = document.elementsFromPoint(e.clientX, e.clientY);
         let targetQuadrant: TodoItem['quadrant'] | null = dragOverQuadrant;
+        let targetTodoId: string | null = dragOverTodoId;
 
-        // 如果 dragOverQuadrant 为空，尝试从鼠标位置查找
+        // 如果状态为空，尝试从鼠标位置查找
+        if (!targetTodoId) {
+          for (const el of elements) {
+            const todoElement = el.closest('[data-todo-id]') as HTMLElement;
+            if (todoElement) {
+              const id = todoElement.dataset.todoId;
+              if (id && id !== draggedTodo.id) {
+                targetTodoId = id;
+                break;
+              }
+            }
+          }
+        }
+
         if (!targetQuadrant) {
           for (const el of elements) {
             const quadrantElement = el.closest('[data-quadrant]') as HTMLElement;
@@ -457,8 +514,49 @@ const QuadrantTodo: React.FC = () => {
           }
         }
 
-        // 执行跨象限移动
-        if (targetQuadrant && draggedTodo.quadrant !== targetQuadrant) {
+        // 优先处理象限内排序
+        if (targetTodoId) {
+          const targetTodo = todos.find(t => t.id === targetTodoId);
+          if (targetTodo && targetTodo.quadrant === draggedTodo.quadrant) {
+            // 同一象限内排序
+            const quadrantTodos = todos.filter(t => t.quadrant === draggedTodo.quadrant);
+            const draggedIndex = quadrantTodos.findIndex(t => t.id === draggedTodo.id);
+            let targetIndex = quadrantTodos.findIndex(t => t.id === targetTodoId);
+
+            if (draggedIndex !== -1 && targetIndex !== -1 && draggedIndex !== targetIndex) {
+              // 根据插入位置调整目标索引
+              if (dragOverPosition === 'below' && draggedIndex < targetIndex) {
+                targetIndex += 1;
+              } else if (dragOverPosition === 'above' && draggedIndex > targetIndex) {
+                // 保持targetIndex不变
+              } else if (dragOverPosition === 'below' && draggedIndex > targetIndex) {
+                targetIndex += 1;
+              }
+
+              // 创建新的排序数组
+              const newQuadrantTodos = [...quadrantTodos];
+              const [removed] = newQuadrantTodos.splice(draggedIndex, 1);
+              newQuadrantTodos.splice(targetIndex, 0, removed);
+
+              // 更新整个todos数组，保持其他象限不变
+              const otherTodos = todos.filter(t => t.quadrant !== draggedTodo.quadrant);
+              const updatedTodos = [...otherTodos, ...newQuadrantTodos].map(t => ({
+                ...t,
+                updatedAt: t.id === draggedTodo.id ? Date.now() : t.updatedAt
+              }));
+              setTodos(updatedTodos);
+            }
+          } else if (targetQuadrant && draggedTodo.quadrant !== targetQuadrant) {
+            // 跨象限移动
+            const updatedTodos = todos.map(t => 
+              t.id === draggedTodo.id 
+                ? { ...t, quadrant: targetQuadrant!, updatedAt: Date.now() }
+                : t
+            );
+            setTodos(updatedTodos);
+          }
+        } else if (targetQuadrant && draggedTodo.quadrant !== targetQuadrant) {
+          // 跨象限移动（没有找到目标任务项）
           const updatedTodos = todos.map(t => 
             t.id === draggedTodo.id 
               ? { ...t, quadrant: targetQuadrant!, updatedAt: Date.now() }
@@ -475,6 +573,8 @@ const QuadrantTodo: React.FC = () => {
         setIsDragging(false);
         setDraggedTodo(null);
         setDragOverQuadrant(null);
+        setDragOverTodoId(null);
+        setDragOverPosition(null);
       }, 100);
     };
 
@@ -746,32 +846,48 @@ const QuadrantTodo: React.FC = () => {
                     {isDragOver ? '松开以添加任务' : '暂无TODO，点击右上角添加或拖拽链接到这里'}
                   </div>
                 ) : (
-                  quadrantTodos.map((todo) => {
+                  quadrantTodos.map((todo, todoIndex) => {
                     const todoUrl = todo.url || extractUrl(todo.text);
                     const isClickable = !!todoUrl || (todo.linkedPaths && todo.linkedPaths.length > 0);
+                    const isDragged = draggedTodo?.id === todo.id;
+                    const isDragOver = dragOverTodoId === todo.id;
+                    const isSameQuadrantDrag = draggedTodo && draggedTodo.quadrant === quadrant.key;
                     
                     return (
-                      <div
-                        key={todo.id}
-                        data-todo-id={todo.id}
-                        onClick={(e) => {
-                          // 拖动时不触发点击
-                          if (isDragging || draggedTodo || dragStartRef.current) {
-                            e.preventDefault();
-                            e.stopPropagation();
-                            return;
-                          }
-                          if (isClickable) {
-                            handleTodoClick(todo, e);
-                          }
-                        }}
-                        className={`
-                          group relative p-3 rounded-lg bg-[#1a1a1a] border border-[#2a2a2a]
-                          hover:border-[#3a3a3a] transition-all
-                          ${draggedTodo?.id === todo.id ? 'opacity-50 cursor-move' : isClickable ? 'cursor-pointer' : 'cursor-move'}
-                          ${isClickable ? 'hover:bg-[#1f1f1f]' : ''}
-                        `}
-                      >
+                      <React.Fragment key={todo.id}>
+                        {/* 插入位置指示器（在目标任务项上方） */}
+                        {isDragOver && isSameQuadrantDrag && !isDragged && dragOverPosition === 'above' && (
+                          <div className="h-0.5 bg-blue-500 rounded-full mx-2 my-1 animate-pulse" />
+                        )}
+                        <div
+                          data-todo-id={todo.id}
+                          onClick={(e) => {
+                            // 拖动时不触发点击
+                            if (isDragging || draggedTodo || dragStartRef.current) {
+                              e.preventDefault();
+                              e.stopPropagation();
+                              return;
+                            }
+                            if (isClickable) {
+                              handleTodoClick(todo, e);
+                            }
+                          }}
+                          className={`
+                            group relative p-3 rounded-lg bg-[#1a1a1a] border transition-all
+                            ${isDragged 
+                              ? 'opacity-50 cursor-move border-blue-500/50' 
+                              : isDragOver && isSameQuadrantDrag
+                              ? 'border-blue-500 bg-blue-500/10'
+                              : isClickable 
+                              ? 'cursor-pointer border-[#2a2a2a] hover:border-[#3a3a3a] hover:bg-[#1f1f1f]' 
+                              : 'cursor-move border-[#2a2a2a] hover:border-[#3a3a3a]'
+                            }
+                          `}
+                        >
+                          {/* 插入位置指示器（在目标任务项下方） */}
+                          {isDragOver && isSameQuadrantDrag && !isDragged && dragOverPosition === 'below' && (
+                            <div className="absolute -bottom-1 left-0 right-0 h-0.5 bg-blue-500 rounded-full animate-pulse" />
+                          )}
                       {editingId === todo.id ? (
                         <div className="space-y-2">
                           {availablePaths.length > 0 && (
@@ -888,6 +1004,7 @@ const QuadrantTodo: React.FC = () => {
                         </>
                       )}
                     </div>
+                    </React.Fragment>
                     );
                   })
                 )}
