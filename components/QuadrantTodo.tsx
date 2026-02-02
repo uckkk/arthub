@@ -290,15 +290,25 @@ const QuadrantTodo: React.FC = () => {
     { key: 'not-urgent-not-important', title: '不紧急不重要', color: 'text-gray-400', bgColor: 'bg-gray-500/10' },
   ];
 
-  const handleAddTodo = () => {
+  const handleAddTodo = async () => {
     if (!newTodoText.trim()) return;
     
     const linkedPathIds = extractPathReferences(newTodoText);
-    const url = extractUrl(newTodoText);
+    let url = extractUrl(newTodoText);
+    
+    // 如果文本中包含URL，尝试获取标题并更新文本
+    let finalText = newTodoText.trim();
+    if (url) {
+      const title = await fetchPageTitle(url);
+      if (title) {
+        // 如果成功获取标题，用标题替换URL（URL保留在url字段中）
+        finalText = newTodoText.replace(url, title).trim();
+      }
+    }
     
     const newTodo: TodoItem = {
       id: Date.now().toString(),
-      text: newTodoText.trim(),
+      text: finalText,
       quadrant: newTodoQuadrant,
       createdAt: Date.now(),
       updatedAt: Date.now(),
@@ -313,16 +323,26 @@ const QuadrantTodo: React.FC = () => {
   };
 
   // 快速添加TODO到指定象限
-  const handleQuickAddTodo = (quadrant: TodoItem['quadrant']) => {
+  const handleQuickAddTodo = async (quadrant: TodoItem['quadrant']) => {
     const text = quickAddTexts[quadrant].trim();
     if (!text) return;
     
     const linkedPathIds = extractPathReferences(text);
-    const url = extractUrl(text);
+    let url = extractUrl(text);
+    
+    // 如果文本中包含URL，尝试获取标题并更新文本
+    let finalText = text;
+    if (url) {
+      const title = await fetchPageTitle(url);
+      if (title) {
+        // 如果成功获取标题，用标题替换URL（URL保留在url字段中）
+        finalText = text.replace(url, title).trim();
+      }
+    }
     
     const newTodo: TodoItem = {
       id: Date.now().toString(),
-      text: text,
+      text: finalText,
       quadrant: quadrant,
       createdAt: Date.now(),
       updatedAt: Date.now(),
@@ -366,17 +386,27 @@ const QuadrantTodo: React.FC = () => {
     setEditText(todo.text);
   };
 
-  const handleSaveEdit = () => {
+  const handleSaveEdit = async () => {
     if (!editText.trim()) return;
     
     const linkedPathIds = extractPathReferences(editText);
-    const url = extractUrl(editText);
+    let url = extractUrl(editText);
+    
+    // 如果文本中包含URL，尝试获取标题并更新文本
+    let finalText = editText.trim();
+    if (url) {
+      const title = await fetchPageTitle(url);
+      if (title) {
+        // 如果成功获取标题，用标题替换URL（URL保留在url字段中）
+        finalText = editText.replace(url, title).trim();
+      }
+    }
     
     setTodos(todos.map(t => 
       t.id === editingId 
         ? { 
             ...t, 
-            text: editText.trim(), 
+            text: finalText, 
             updatedAt: Date.now(), 
             linkedPaths: linkedPathIds.length > 0 ? linkedPathIds : undefined,
             url: url || undefined,
@@ -391,6 +421,60 @@ const QuadrantTodo: React.FC = () => {
   const handleCancelEdit = () => {
     setEditingId(null);
     setEditText('');
+  };
+
+  // 获取网页标题的辅助函数
+  const fetchPageTitle = async (url: string): Promise<string | null> => {
+    try {
+      // 由于CORS限制，直接fetch可能失败
+      // 尝试使用no-cors模式获取部分HTML（但无法读取响应内容）
+      // 或者使用代理服务（如果有的话）
+      
+      // 方案1：尝试直接fetch（可能因CORS失败）
+      try {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 3000); // 3秒超时
+        
+        const response = await fetch(url, {
+          method: 'GET',
+          signal: controller.signal,
+          mode: 'no-cors', // 使用no-cors模式，但无法读取响应
+        });
+        
+        clearTimeout(timeoutId);
+      } catch (fetchError) {
+        // CORS错误是预期的，继续使用备选方案
+        console.debug('直接fetch失败（CORS限制）:', fetchError);
+      }
+      
+      // 方案2：从URL解析友好的标题
+      try {
+        const urlObj = new URL(url);
+        let title = urlObj.hostname.replace('www.', '');
+        
+        // 尝试从路径中提取更友好的标题
+        const pathParts = urlObj.pathname.split('/').filter(p => p);
+        if (pathParts.length > 0) {
+          const lastPart = pathParts[pathParts.length - 1];
+          // 如果最后一部分看起来像标题（不包含特殊字符），使用它
+          if (lastPart && !lastPart.includes('.') && lastPart.length < 50) {
+            title = decodeURIComponent(lastPart).replace(/[-_]/g, ' ');
+          }
+        }
+        
+        // 清理标题
+        title = title.trim().substring(0, 100);
+        
+        return title || null;
+      } catch (parseError) {
+        console.debug('URL解析失败:', parseError);
+        return null;
+      }
+    } catch (error) {
+      // 静默失败，返回null，使用备选方案
+      console.debug('获取网页标题失败:', error);
+      return null;
+    }
   };
 
   // 自定义鼠标拖动实现
@@ -653,23 +737,29 @@ const QuadrantTodo: React.FC = () => {
       // 验证是否是有效的URL
       if (url && (url.startsWith('http://') || url.startsWith('https://'))) {
         try {
-          // 从URL提取标题（使用域名）
-          const urlObj = new URL(url);
-          let title = urlObj.hostname.replace('www.', '');
+          // 尝试获取网页标题
+          let title = await fetchPageTitle(url);
           
-          // 尝试从路径中提取更友好的标题
-          const pathParts = urlObj.pathname.split('/').filter(p => p);
-          if (pathParts.length > 0) {
-            const lastPart = pathParts[pathParts.length - 1];
-            // 如果最后一部分看起来像标题（不包含特殊字符），使用它
-            if (lastPart && !lastPart.includes('.') && lastPart.length < 50) {
-              title = decodeURIComponent(lastPart).replace(/[-_]/g, ' ');
+          // 如果获取失败，使用URL解析作为备选
+          if (!title) {
+            const urlObj = new URL(url);
+            title = urlObj.hostname.replace('www.', '');
+            
+            // 尝试从路径中提取更友好的标题
+            const pathParts = urlObj.pathname.split('/').filter(p => p);
+            if (pathParts.length > 0) {
+              const lastPart = pathParts[pathParts.length - 1];
+              // 如果最后一部分看起来像标题（不包含特殊字符），使用它
+              if (lastPart && !lastPart.includes('.') && lastPart.length < 50) {
+                title = decodeURIComponent(lastPart).replace(/[-_]/g, ' ');
+              }
             }
           }
           
+          // 只将标题作为任务名，URL存储在url字段中
           const newTodo: TodoItem = {
             id: Date.now().toString(),
-            text: `${title} ${url}`,
+            text: title || url, // 如果标题获取失败，使用URL作为任务名
             quadrant: targetQuadrant,
             createdAt: Date.now(),
             updatedAt: Date.now(),
