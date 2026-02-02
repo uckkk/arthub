@@ -29,6 +29,8 @@ const QuadrantTodo: React.FC = () => {
   const [draggedTodo, setDraggedTodo] = useState<TodoItem | null>(null);
   const [dragOverQuadrant, setDragOverQuadrant] = useState<TodoItem['quadrant'] | null>(null);
   const [isDragging, setIsDragging] = useState(false);
+  const dragStartRef = useRef<{ todoId: string; startY: number; startX: number } | null>(null);
+  const [dragStartState, setDragStartState] = useState<{ todoId: string; startY: number; startX: number } | null>(null);
   const [showPathSelector, setShowPathSelector] = useState(false);
   const [showPathSelectorEdit, setShowPathSelectorEdit] = useState(false);
   const [quickAddTexts, setQuickAddTexts] = useState<Record<TodoItem['quadrant'], string>>({
@@ -389,50 +391,112 @@ const QuadrantTodo: React.FC = () => {
     setEditText('');
   };
 
-  const handleDragStart = (e: React.DragEvent, todo: TodoItem) => {
-    setDraggedTodo(todo);
-    setIsDragging(true);
-    e.dataTransfer.effectAllowed = 'move';
-    e.dataTransfer.setData('text/plain', todo.id);
-    // 设置拖动图像
-    const dragImage = document.createElement('div');
-    dragImage.style.position = 'absolute';
-    dragImage.style.top = '-1000px';
-    document.body.appendChild(dragImage);
-    e.dataTransfer.setDragImage(dragImage, 0, 0);
-    setTimeout(() => document.body.removeChild(dragImage), 0);
-  };
+  // 自定义鼠标拖动实现
+  useEffect(() => {
+    if (!dragStartState) return;
 
-  const handleDragEnd = (e: React.DragEvent) => {
-    // 如果 dropEffect 是 'none'，说明拖动被取消或失败
-    // 只有在没有成功 drop 的情况下才清除状态
-    if (e.dataTransfer.dropEffect === 'none') {
+    const handleMouseMove = (e: MouseEvent) => {
+      const dragStart = dragStartRef.current;
+      if (!dragStart) return;
+
+      const { todoId, startY, startX } = dragStart;
+      const currentY = e.clientY;
+      const currentX = e.clientX;
+      const dy = currentY - startY;
+      const dx = currentX - startX;
+
+      // 如果移动距离超过5px，确认是拖动操作
+      if (Math.abs(dy) > 5 || Math.abs(dx) > 5) {
+        const todo = todos.find(t => t.id === todoId);
+        if (!todo) return;
+
+        if (!isDragging) {
+          setIsDragging(true);
+          setDraggedTodo(todo);
+        }
+
+        // 查找当前鼠标位置下的象限
+        const elements = document.elementsFromPoint(e.clientX, e.clientY);
+        let targetQuadrant: TodoItem['quadrant'] | null = null;
+
+        for (const el of elements) {
+          const quadrantElement = el.closest('[data-quadrant]') as HTMLElement;
+          if (quadrantElement) {
+            const quadrant = quadrantElement.dataset.quadrant as TodoItem['quadrant'];
+            if (quadrant) {
+              targetQuadrant = quadrant;
+              break;
+            }
+          }
+        }
+
+        if (targetQuadrant) {
+          setDragOverQuadrant(targetQuadrant);
+        }
+      }
+    };
+
+    const handleMouseUp = (e: MouseEvent) => {
+      const dragStart = dragStartRef.current;
+      if (dragStart && isDragging && draggedTodo) {
+        // 再次查找目标象限（确保准确性）
+        const elements = document.elementsFromPoint(e.clientX, e.clientY);
+        let targetQuadrant: TodoItem['quadrant'] | null = dragOverQuadrant;
+
+        // 如果 dragOverQuadrant 为空，尝试从鼠标位置查找
+        if (!targetQuadrant) {
+          for (const el of elements) {
+            const quadrantElement = el.closest('[data-quadrant]') as HTMLElement;
+            if (quadrantElement) {
+              const quadrant = quadrantElement.dataset.quadrant as TodoItem['quadrant'];
+              if (quadrant) {
+                targetQuadrant = quadrant;
+                break;
+              }
+            }
+          }
+        }
+
+        // 执行跨象限移动
+        if (targetQuadrant && draggedTodo.quadrant !== targetQuadrant) {
+          const updatedTodos = todos.map(t => 
+            t.id === draggedTodo.id 
+              ? { ...t, quadrant: targetQuadrant!, updatedAt: Date.now() }
+              : t
+          );
+          setTodos(updatedTodos);
+        }
+      }
+
+      // 清除拖动状态
+      dragStartRef.current = null;
+      setDragStartState(null);
       setTimeout(() => {
+        setIsDragging(false);
         setDraggedTodo(null);
         setDragOverQuadrant(null);
-        setIsDragging(false);
       }, 100);
-    }
-    // 如果 dropEffect 是 'move'，说明 drop 已经成功，状态会在 handleDrop 中清除
-  };
+    };
+
+    document.addEventListener('mousemove', handleMouseMove, { passive: false });
+    document.addEventListener('mouseup', handleMouseUp);
+
+    return () => {
+      document.removeEventListener('mousemove', handleMouseMove);
+      document.removeEventListener('mouseup', handleMouseUp);
+    };
+  }, [dragStartState, isDragging, draggedTodo, dragOverQuadrant, todos]);
 
   const handleDragOver = (e: React.DragEvent, quadrant: TodoItem['quadrant']) => {
+    // 只处理外部链接拖拽（HTML5拖放）
     e.preventDefault();
     e.stopPropagation();
-    
-    // 优先检查是否是任务拖动
-    if (draggedTodo) {
-      // 任务拖动（支持跨象限）
-      e.dataTransfer.dropEffect = 'move';
-      setDragOverQuadrant(quadrant);
-      return;
-    }
     
     // 检查是否是外部链接拖拽
     const types = Array.from(e.dataTransfer.types);
     const hasUrl = types.includes('text/uri-list') || types.includes('text/plain') || types.includes('text/html');
     
-    if (hasUrl) {
+    if (hasUrl && !draggedTodo) {
       // 外部链接拖拽
       e.dataTransfer.dropEffect = 'copy';
       setDragOverQuadrant(quadrant);
@@ -449,37 +513,21 @@ const QuadrantTodo: React.FC = () => {
       return;
     }
     
-    setDragOverQuadrant(null);
+    // 只在外部链接拖拽时清除
+    if (!draggedTodo) {
+      setDragOverQuadrant(null);
+    }
   };
 
   const handleDrop = async (e: React.DragEvent, targetQuadrant: TodoItem['quadrant']) => {
     e.preventDefault();
     e.stopPropagation();
     
-    // 优先处理任务拖动（如果有 draggedTodo）
-    if (draggedTodo) {
-      // 处理任务跨象限拖动（包括同象限内的拖动，虽然通常不会发生）
-      const updatedTodos = todos.map(t => 
-        t.id === draggedTodo.id 
-          ? { ...t, quadrant: targetQuadrant, updatedAt: Date.now() }
-          : t
-      );
-      setTodos(updatedTodos);
-      
-      // 清除拖动状态
-      setTimeout(() => {
-        setDraggedTodo(null);
-        setDragOverQuadrant(null);
-        setIsDragging(false);
-      }, 0);
-      return;
-    }
-    
-    // 检查是否是外部链接拖拽
+    // 只处理外部链接拖拽（任务拖动由自定义鼠标事件处理）
     const types = Array.from(e.dataTransfer.types);
     const hasUrlType = types.includes('text/uri-list') || types.includes('text/plain') || types.includes('text/html');
     
-    if (hasUrlType) {
+    if (hasUrlType && !draggedTodo) {
       // 处理外部链接拖拽
       let url = '';
       
@@ -579,6 +627,7 @@ const QuadrantTodo: React.FC = () => {
           return (
             <div
               key={quadrant.key}
+              data-quadrant={quadrant.key}
               className={
                 'rounded-lg border-2 border-dashed p-4 min-h-[300px] transition-all duration-200 ' +
                 (isDragOver ? 'border-blue-500 bg-blue-500/10' : 'border-[#2a2a2a] bg-[#0f0f0f]')
@@ -704,27 +753,16 @@ const QuadrantTodo: React.FC = () => {
                     return (
                       <div
                         key={todo.id}
-                        draggable={true}
-                        onDragStart={(e) => {
-                          handleDragStart(e, todo);
-                        }}
-                        onDragEnd={handleDragEnd}
+                        data-todo-id={todo.id}
                         onClick={(e) => {
                           // 拖动时不触发点击
-                          if (isDragging || draggedTodo) {
+                          if (isDragging || draggedTodo || dragStartRef.current) {
                             e.preventDefault();
                             e.stopPropagation();
                             return;
                           }
                           if (isClickable) {
                             handleTodoClick(todo, e);
-                          }
-                        }}
-                        onMouseDown={(e) => {
-                          // 如果点击的是拖动图标，阻止事件冒泡，确保可以拖动
-                          const target = e.target as HTMLElement;
-                          if (target.closest('[class*="GripVertical"]') || target.closest('svg')) {
-                            e.stopPropagation();
                           }
                         }}
                         className={`
@@ -804,10 +842,18 @@ const QuadrantTodo: React.FC = () => {
                           <div className="flex items-start gap-2">
                             <GripVertical 
                               size={16} 
+                              data-drag-handle
                               className="text-[#666666] mt-1 cursor-grab active:cursor-grabbing flex-shrink-0"
                               onMouseDown={(e) => {
-                                // 确保拖动图标可以正常拖动
-                                e.stopPropagation();
+                                // 启动自定义拖动
+                                if (e.button === 0) {
+                                  e.preventDefault();
+                                  e.stopPropagation();
+                                  const dragInfo = { todoId: todo.id, startY: e.clientY, startX: e.clientX };
+                                  dragStartRef.current = dragInfo;
+                                  setDragStartState(dragInfo);
+                                  setDraggedTodo(todo);
+                                }
                               }}
                             />
                             <div className="flex-1 text-white text-sm break-words">
