@@ -28,6 +28,7 @@ const QuadrantTodo: React.FC = () => {
   const [showAddModal, setShowAddModal] = useState(false);
   const [draggedTodo, setDraggedTodo] = useState<TodoItem | null>(null);
   const [dragOverQuadrant, setDragOverQuadrant] = useState<TodoItem['quadrant'] | null>(null);
+  const [isDragging, setIsDragging] = useState(false);
   const [showPathSelector, setShowPathSelector] = useState(false);
   const [showPathSelectorEdit, setShowPathSelectorEdit] = useState(false);
   const [quickAddTexts, setQuickAddTexts] = useState<Record<TodoItem['quadrant'], string>>({
@@ -157,6 +158,11 @@ const QuadrantTodo: React.FC = () => {
 
   // 处理任务点击跳转
   const handleTodoClick = async (todo: TodoItem, e: React.MouseEvent) => {
+    // 如果正在拖动，不触发点击
+    if (isDragging || draggedTodo) {
+      return;
+    }
+    
     // 如果点击的是链接、按钮或拖动图标，不触发跳转
     const target = e.target as HTMLElement;
     if (
@@ -385,8 +391,16 @@ const QuadrantTodo: React.FC = () => {
 
   const handleDragStart = (e: React.DragEvent, todo: TodoItem) => {
     setDraggedTodo(todo);
+    setIsDragging(true);
     e.dataTransfer.effectAllowed = 'move';
     e.dataTransfer.setData('text/plain', todo.id);
+    // 设置拖动图像
+    const dragImage = document.createElement('div');
+    dragImage.style.position = 'absolute';
+    dragImage.style.top = '-1000px';
+    document.body.appendChild(dragImage);
+    e.dataTransfer.setDragImage(dragImage, 0, 0);
+    setTimeout(() => document.body.removeChild(dragImage), 0);
   };
 
   const handleDragEnd = () => {
@@ -394,6 +408,7 @@ const QuadrantTodo: React.FC = () => {
     setTimeout(() => {
       setDraggedTodo(null);
       setDragOverQuadrant(null);
+      setIsDragging(false);
     }, 100);
   };
 
@@ -512,8 +527,10 @@ const QuadrantTodo: React.FC = () => {
       }
     }
     
+    // 清除拖动状态
     setDraggedTodo(null);
     setDragOverQuadrant(null);
+    setIsDragging(false);
   };
 
   const getTodosByQuadrant = (quadrant: TodoItem['quadrant']) => {
@@ -672,10 +689,29 @@ const QuadrantTodo: React.FC = () => {
                     return (
                       <div
                         key={todo.id}
-                        draggable
-                        onDragStart={(e) => handleDragStart(e, todo)}
+                        draggable={true}
+                        onDragStart={(e) => {
+                          handleDragStart(e, todo);
+                        }}
                         onDragEnd={handleDragEnd}
-                        onClick={(e) => isClickable && handleTodoClick(todo, e)}
+                        onClick={(e) => {
+                          // 拖动时不触发点击
+                          if (isDragging || draggedTodo) {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            return;
+                          }
+                          if (isClickable) {
+                            handleTodoClick(todo, e);
+                          }
+                        }}
+                        onMouseDown={(e) => {
+                          // 如果点击的是拖动图标，阻止事件冒泡，确保可以拖动
+                          const target = e.target as HTMLElement;
+                          if (target.closest('[class*="GripVertical"]') || target.closest('svg')) {
+                            e.stopPropagation();
+                          }
+                        }}
                         className={`
                           group relative p-3 rounded-lg bg-[#1a1a1a] border border-[#2a2a2a]
                           hover:border-[#3a3a3a] transition-all
@@ -754,6 +790,10 @@ const QuadrantTodo: React.FC = () => {
                             <GripVertical 
                               size={16} 
                               className="text-[#666666] mt-1 cursor-grab active:cursor-grabbing flex-shrink-0"
+                              onMouseDown={(e) => {
+                                // 确保拖动图标可以正常拖动
+                                e.stopPropagation();
+                              }}
                             />
                             <div className="flex-1 text-white text-sm break-words">
                               <div className="flex items-start gap-1.5">
