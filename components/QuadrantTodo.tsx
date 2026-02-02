@@ -579,7 +579,31 @@ const QuadrantTodo: React.FC = () => {
               const id = todoElement.dataset.todoId;
               if (id && id !== draggedTodo.id) {
                 targetTodoId = id;
+                // 重新计算插入位置
+                const rect = todoElement.getBoundingClientRect();
+                const elementCenterY = rect.top + rect.height / 2;
+                finalDragOverPosition = e.clientY < elementCenterY ? 'above' : 'below';
                 break;
+              }
+            }
+          }
+        }
+
+        // 如果没找到目标任务项，但鼠标在象限内，检查是否在第一行上方
+        if (!targetTodoId && draggedTodo.quadrant) {
+          const quadrantElement = document.querySelector(`[data-quadrant="${draggedTodo.quadrant}"]`) as HTMLElement;
+          if (quadrantElement) {
+            const quadrantTodos = todos.filter(t => t.quadrant === draggedTodo.quadrant);
+            if (quadrantTodos.length > 0) {
+              const firstTodoElement = document.querySelector(`[data-todo-id="${quadrantTodos[0].id}"]`) as HTMLElement;
+              if (firstTodoElement) {
+                const quadrantRect = quadrantElement.getBoundingClientRect();
+                const firstTodoRect = firstTodoElement.getBoundingClientRect();
+                // 如果鼠标在象限内，但在第一行上方
+                if (e.clientY >= quadrantRect.top && e.clientY < firstTodoRect.top) {
+                  targetTodoId = quadrantTodos[0].id;
+                  finalDragOverPosition = 'above';
+                }
               }
             }
           }
@@ -609,12 +633,23 @@ const QuadrantTodo: React.FC = () => {
 
             if (draggedIndex !== -1 && targetIndex !== -1 && draggedIndex !== targetIndex) {
               // 根据插入位置调整目标索引
-              if (dragOverPosition === 'below' && draggedIndex < targetIndex) {
+              // 如果拖动到上方（above），插入到目标位置
+              // 如果拖动到下方（below），插入到目标位置之后
+              const position = finalDragOverPosition || dragOverPosition;
+              if (position === 'above') {
+                // 拖动到上方：直接插入到targetIndex位置
+                // 如果是从下往上拖动（draggedIndex > targetIndex），targetIndex已经是正确位置
+                // 如果是从上往下拖动（draggedIndex < targetIndex），targetIndex也是正确位置（因为先移除draggedIndex）
+              } else if (position === 'below') {
+                // 拖动到下方：插入到targetIndex + 1位置
                 targetIndex += 1;
-              } else if (dragOverPosition === 'above' && draggedIndex > targetIndex) {
-                // 保持targetIndex不变
-              } else if (dragOverPosition === 'below' && draggedIndex > targetIndex) {
-                targetIndex += 1;
+              } else {
+                // 如果没有明确位置，根据拖动方向判断
+                if (draggedIndex < targetIndex) {
+                  // 从上往下拖动，插入到目标之后
+                  targetIndex += 1;
+                }
+                // 从下往上拖动，插入到目标位置（targetIndex不变）
               }
 
               // 创建新的排序数组
