@@ -570,6 +570,7 @@ const QuadrantTodo: React.FC = () => {
         const elements = document.elementsFromPoint(e.clientX, e.clientY);
         let targetQuadrant: TodoItem['quadrant'] | null = dragOverQuadrant;
         let targetTodoId: string | null = dragOverTodoId;
+        let finalDragOverPosition: 'above' | 'below' | null = dragOverPosition;
 
         // 如果状态为空，尝试从鼠标位置查找
         if (!targetTodoId) {
