@@ -23,6 +23,7 @@ const QuadrantTodo: React.FC = () => {
 
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editText, setEditText] = useState('');
+  const [editUrl, setEditUrl] = useState('');
   const [newTodoQuadrant, setNewTodoQuadrant] = useState<TodoItem['quadrant']>('urgent-important');
   const [newTodoText, setNewTodoText] = useState('');
   const [showAddModal, setShowAddModal] = useState(false);
@@ -296,13 +297,16 @@ const QuadrantTodo: React.FC = () => {
     const linkedPathIds = extractPathReferences(newTodoText);
     let url = extractUrl(newTodoText);
     
-    // 如果文本中包含URL，尝试获取标题并更新文本
+    // 如果文本中包含URL，尝试获取标题
     let finalText = newTodoText.trim();
     if (url) {
       const title = await fetchPageTitle(url);
-      if (title) {
-        // 如果成功获取标题，用标题替换URL（URL保留在url字段中）
-        finalText = newTodoText.replace(url, title).trim();
+      if (title && title !== url) {
+        // 如果成功获取标题，使用标题作为任务文本（URL保留在url字段中）
+        finalText = title;
+      } else {
+        // 如果获取标题失败，保持用户输入的文本
+        finalText = newTodoText.trim();
       }
     }
     
@@ -330,13 +334,16 @@ const QuadrantTodo: React.FC = () => {
     const linkedPathIds = extractPathReferences(text);
     let url = extractUrl(text);
     
-    // 如果文本中包含URL，尝试获取标题并更新文本
+    // 如果文本中包含URL，尝试获取标题
     let finalText = text;
     if (url) {
       const title = await fetchPageTitle(url);
-      if (title) {
-        // 如果成功获取标题，用标题替换URL（URL保留在url字段中）
-        finalText = text.replace(url, title).trim();
+      if (title && title !== url) {
+        // 如果成功获取标题，使用标题作为任务文本（URL保留在url字段中）
+        finalText = title;
+      } else {
+        // 如果获取标题失败，保持用户输入的文本
+        finalText = text;
       }
     }
     
@@ -384,21 +391,26 @@ const QuadrantTodo: React.FC = () => {
   const handleStartEdit = (todo: TodoItem) => {
     setEditingId(todo.id);
     setEditText(todo.text);
+    setEditUrl(todo.url || '');
   };
 
   const handleSaveEdit = async () => {
     if (!editText.trim()) return;
     
     const linkedPathIds = extractPathReferences(editText);
-    let url = extractUrl(editText);
+    // 优先使用编辑框中的URL，如果没有则从文本中提取
+    let url = editUrl.trim() || extractUrl(editText);
     
-    // 如果文本中包含URL，尝试获取标题并更新文本
+    // 如果编辑框中输入了新的URL，尝试获取标题
     let finalText = editText.trim();
-    if (url) {
+    if (url && editUrl.trim()) {
       const title = await fetchPageTitle(url);
-      if (title) {
-        // 如果成功获取标题，用标题替换URL（URL保留在url字段中）
-        finalText = editText.replace(url, title).trim();
+      if (title && title !== url) {
+        // 如果成功获取标题，且标题与URL不同，使用标题
+        finalText = title;
+      } else if (!title) {
+        // 如果获取标题失败，保持用户输入的文本
+        finalText = editText.trim();
       }
     }
     
@@ -415,12 +427,14 @@ const QuadrantTodo: React.FC = () => {
     ));
     setEditingId(null);
     setEditText('');
+    setEditUrl('');
     setShowPathSelectorEdit(false);
   };
 
   const handleCancelEdit = () => {
     setEditingId(null);
     setEditText('');
+    setEditUrl('');
   };
 
   // 获取网页标题的辅助函数
@@ -1080,20 +1094,43 @@ const QuadrantTodo: React.FC = () => {
                               </div>
                             </div>
                           )}
-                          <textarea
-                            value={editText}
-                            onChange={(e) => setEditText(e.target.value)}
-                            className="w-full px-3 py-2 rounded-lg bg-[#0f0f0f] border border-[#2a2a2a] text-white placeholder-[#666666] focus:outline-none focus:border-blue-500 resize-none"
-                            rows={3}
-                            autoFocus
-                            onKeyDown={(e) => {
-                              if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
-                                handleSaveEdit();
-                              } else if (e.key === 'Escape') {
-                                handleCancelEdit();
-                              }
-                            }}
-                          />
+                          <div className="space-y-2">
+                            <div>
+                              <label className="block text-xs text-[#808080] mb-1">任务标题</label>
+                              <textarea
+                                value={editText}
+                                onChange={(e) => setEditText(e.target.value)}
+                                className="w-full px-3 py-2 rounded-lg bg-[#0f0f0f] border border-[#2a2a2a] text-white placeholder-[#666666] focus:outline-none focus:border-blue-500 resize-none"
+                                rows={2}
+                                autoFocus
+                                placeholder="输入任务标题..."
+                                onKeyDown={(e) => {
+                                  if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+                                    handleSaveEdit();
+                                  } else if (e.key === 'Escape') {
+                                    handleCancelEdit();
+                                  }
+                                }}
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-xs text-[#808080] mb-1">URL链接（可选）</label>
+                              <input
+                                type="url"
+                                value={editUrl}
+                                onChange={(e) => setEditUrl(e.target.value)}
+                                className="w-full px-3 py-2 rounded-lg bg-[#0f0f0f] border border-[#2a2a2a] text-white placeholder-[#666666] focus:outline-none focus:border-blue-500 text-sm"
+                                placeholder="https://example.com"
+                                onKeyDown={(e) => {
+                                  if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+                                    handleSaveEdit();
+                                  } else if (e.key === 'Escape') {
+                                    handleCancelEdit();
+                                  }
+                                }}
+                              />
+                            </div>
+                          </div>
                           <div className="flex items-center gap-2">
                             <button
                               onClick={handleSaveEdit}
