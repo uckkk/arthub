@@ -403,30 +403,38 @@ const QuadrantTodo: React.FC = () => {
     setTimeout(() => document.body.removeChild(dragImage), 0);
   };
 
-  const handleDragEnd = () => {
-    // 延迟清除，避免闪烁
-    setTimeout(() => {
-      setDraggedTodo(null);
-      setDragOverQuadrant(null);
-      setIsDragging(false);
-    }, 100);
+  const handleDragEnd = (e: React.DragEvent) => {
+    // 如果 dropEffect 是 'none'，说明拖动被取消或失败
+    // 只有在没有成功 drop 的情况下才清除状态
+    if (e.dataTransfer.dropEffect === 'none') {
+      setTimeout(() => {
+        setDraggedTodo(null);
+        setDragOverQuadrant(null);
+        setIsDragging(false);
+      }, 100);
+    }
+    // 如果 dropEffect 是 'move'，说明 drop 已经成功，状态会在 handleDrop 中清除
   };
 
   const handleDragOver = (e: React.DragEvent, quadrant: TodoItem['quadrant']) => {
     e.preventDefault();
     e.stopPropagation();
     
+    // 优先检查是否是任务拖动
+    if (draggedTodo) {
+      // 任务拖动（支持跨象限）
+      e.dataTransfer.dropEffect = 'move';
+      setDragOverQuadrant(quadrant);
+      return;
+    }
+    
     // 检查是否是外部链接拖拽
     const types = Array.from(e.dataTransfer.types);
     const hasUrl = types.includes('text/uri-list') || types.includes('text/plain') || types.includes('text/html');
     
-    if (hasUrl && !draggedTodo) {
+    if (hasUrl) {
       // 外部链接拖拽
       e.dataTransfer.dropEffect = 'copy';
-      setDragOverQuadrant(quadrant);
-    } else if (draggedTodo) {
-      // 任务拖动（支持跨象限）
-      e.dataTransfer.dropEffect = 'move';
       setDragOverQuadrant(quadrant);
     }
   };
@@ -448,11 +456,30 @@ const QuadrantTodo: React.FC = () => {
     e.preventDefault();
     e.stopPropagation();
     
+    // 优先处理任务拖动（如果有 draggedTodo）
+    if (draggedTodo) {
+      // 处理任务跨象限拖动（包括同象限内的拖动，虽然通常不会发生）
+      const updatedTodos = todos.map(t => 
+        t.id === draggedTodo.id 
+          ? { ...t, quadrant: targetQuadrant, updatedAt: Date.now() }
+          : t
+      );
+      setTodos(updatedTodos);
+      
+      // 清除拖动状态
+      setTimeout(() => {
+        setDraggedTodo(null);
+        setDragOverQuadrant(null);
+        setIsDragging(false);
+      }, 0);
+      return;
+    }
+    
     // 检查是否是外部链接拖拽
     const types = Array.from(e.dataTransfer.types);
     const hasUrlType = types.includes('text/uri-list') || types.includes('text/plain') || types.includes('text/html');
     
-    if (hasUrlType && !draggedTodo) {
+    if (hasUrlType) {
       // 处理外部链接拖拽
       let url = '';
       
@@ -516,21 +543,9 @@ const QuadrantTodo: React.FC = () => {
           setTodos([...todos, newTodo]);
         }
       }
-    } else if (draggedTodo) {
-      // 处理任务跨象限拖动
-      if (draggedTodo.quadrant !== targetQuadrant) {
-        setTodos(todos.map(t => 
-          t.id === draggedTodo.id 
-            ? { ...t, quadrant: targetQuadrant, updatedAt: Date.now() }
-            : t
-        ));
-      }
+      // 清除拖动状态
+      setDragOverQuadrant(null);
     }
-    
-    // 清除拖动状态
-    setDraggedTodo(null);
-    setDragOverQuadrant(null);
-    setIsDragging(false);
   };
 
   const getTodosByQuadrant = (quadrant: TodoItem['quadrant']) => {
