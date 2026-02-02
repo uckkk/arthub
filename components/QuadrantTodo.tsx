@@ -714,7 +714,11 @@ const QuadrantTodo: React.FC = () => {
     
     // 检查是否是外部链接拖拽
     const types = Array.from(e.dataTransfer.types);
-    const hasUrl = types.includes('text/uri-list') || types.includes('text/plain') || types.includes('text/html');
+    const hasUrl = types.includes('text/uri-list') || 
+                   types.includes('text/plain') || 
+                   types.includes('text/html') ||
+                   types.includes('URL') ||
+                   types.includes('text/x-moz-url');
     
     if (hasUrl && !draggedTodo) {
       // 外部链接拖拽
@@ -745,15 +749,34 @@ const QuadrantTodo: React.FC = () => {
     
     // 只处理外部链接拖拽（任务拖动由自定义鼠标事件处理）
     const types = Array.from(e.dataTransfer.types);
-    const hasUrlType = types.includes('text/uri-list') || types.includes('text/plain') || types.includes('text/html');
+    const hasUrlType = types.includes('text/uri-list') || 
+                       types.includes('text/plain') || 
+                       types.includes('text/html') ||
+                       types.includes('URL') ||
+                       types.includes('text/x-moz-url');
     
     if (hasUrlType && !draggedTodo) {
       // 处理外部链接拖拽
       let url = '';
       
-      // 优先尝试获取 uri-list 格式
-      if (types.includes('text/uri-list')) {
+      // 调试：输出所有可用的数据类型
+      console.log('[QuadrantTodo] Drag types:', types);
+      
+      // 优先尝试获取 URL 类型（浏览器地址栏拖动）
+      if (types.includes('URL')) {
+        url = e.dataTransfer.getData('URL');
+        console.log('[QuadrantTodo] Got URL from "URL" type:', url);
+      } else if (types.includes('text/x-moz-url')) {
+        // Firefox 浏览器地址栏拖动
+        url = e.dataTransfer.getData('text/x-moz-url');
+        // Firefox 返回格式可能是 "URL\nTitle"，只取第一行
+        if (url) {
+          url = url.split('\n')[0];
+        }
+        console.log('[QuadrantTodo] Got URL from "text/x-moz-url" type:', url);
+      } else if (types.includes('text/uri-list')) {
         url = e.dataTransfer.getData('text/uri-list');
+        console.log('[QuadrantTodo] Got URL from "text/uri-list" type:', url);
       } else if (types.includes('text/html')) {
         // 从HTML中提取URL
         const html = e.dataTransfer.getData('text/html');
@@ -763,8 +786,27 @@ const QuadrantTodo: React.FC = () => {
         } else {
           url = e.dataTransfer.getData('text/plain');
         }
+        console.log('[QuadrantTodo] Got URL from "text/html" type:', url);
       } else {
         url = e.dataTransfer.getData('text/plain');
+        console.log('[QuadrantTodo] Got URL from "text/plain" type:', url);
+      }
+      
+      // 如果还没有获取到URL，尝试所有可能的数据类型
+      if (!url || (!url.startsWith('http://') && !url.startsWith('https://'))) {
+        // 尝试所有可能的数据类型
+        for (const type of types) {
+          try {
+            const data = e.dataTransfer.getData(type);
+            if (data && (data.startsWith('http://') || data.startsWith('https://'))) {
+              url = data.trim().split('\n')[0].trim();
+              console.log('[QuadrantTodo] Got URL from type "' + type + '":', url);
+              break;
+            }
+          } catch (err) {
+            // 忽略无法获取的数据类型
+          }
+        }
       }
       
       // 清理URL（移除换行符等）
