@@ -424,55 +424,29 @@ const QuadrantTodo: React.FC = () => {
   };
 
   // 获取网页标题的辅助函数
+  // 注意：由于CORS限制，无法直接fetch网页内容获取标题
+  // 因此只使用URL解析来生成友好的标题
   const fetchPageTitle = async (url: string): Promise<string | null> => {
     try {
-      // 由于CORS限制，直接fetch可能失败
-      // 尝试使用no-cors模式获取部分HTML（但无法读取响应内容）
-      // 或者使用代理服务（如果有的话）
+      const urlObj = new URL(url);
+      let title = urlObj.hostname.replace('www.', '');
       
-      // 方案1：尝试直接fetch（可能因CORS失败）
-      try {
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 3000); // 3秒超时
-        
-        const response = await fetch(url, {
-          method: 'GET',
-          signal: controller.signal,
-          mode: 'no-cors', // 使用no-cors模式，但无法读取响应
-        });
-        
-        clearTimeout(timeoutId);
-      } catch (fetchError) {
-        // CORS错误是预期的，继续使用备选方案
-        console.debug('直接fetch失败（CORS限制）:', fetchError);
-      }
-      
-      // 方案2：从URL解析友好的标题
-      try {
-        const urlObj = new URL(url);
-        let title = urlObj.hostname.replace('www.', '');
-        
-        // 尝试从路径中提取更友好的标题
-        const pathParts = urlObj.pathname.split('/').filter(p => p);
-        if (pathParts.length > 0) {
-          const lastPart = pathParts[pathParts.length - 1];
-          // 如果最后一部分看起来像标题（不包含特殊字符），使用它
-          if (lastPart && !lastPart.includes('.') && lastPart.length < 50) {
-            title = decodeURIComponent(lastPart).replace(/[-_]/g, ' ');
-          }
+      // 尝试从路径中提取更友好的标题
+      const pathParts = urlObj.pathname.split('/').filter(p => p);
+      if (pathParts.length > 0) {
+        const lastPart = pathParts[pathParts.length - 1];
+        // 如果最后一部分看起来像标题（不包含特殊字符），使用它
+        if (lastPart && !lastPart.includes('.') && lastPart.length < 50) {
+          title = decodeURIComponent(lastPart).replace(/[-_]/g, ' ');
         }
-        
-        // 清理标题
-        title = title.trim().substring(0, 100);
-        
-        return title || null;
-      } catch (parseError) {
-        console.debug('URL解析失败:', parseError);
-        return null;
       }
-    } catch (error) {
-      // 静默失败，返回null，使用备选方案
-      console.debug('获取网页标题失败:', error);
+      
+      // 清理标题
+      title = title.trim().substring(0, 100);
+      
+      return title || null;
+    } catch (parseError) {
+      // 静默失败，返回null
       return null;
     }
   };
