@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
-import { Plus, X, Edit2, Trash2, GripVertical, Link as LinkIcon, ChevronDown, ChevronUp } from 'lucide-react';
+import { Plus, X, Edit2, Trash2, GripVertical, Link as LinkIcon, ChevronDown, ChevronUp, ExternalLink } from 'lucide-react';
 import { useMiddleMouseScroll } from '../utils/useMiddleMouseScroll';
 import { PathItem } from '../types';
 import { launchApp } from '../services/appService';
@@ -12,6 +12,7 @@ interface TodoItem {
   createdAt: number;
   updatedAt: number;
   linkedPaths?: string[]; // 关联的路径ID列表
+  url?: string; // 关联的URL链接
 }
 
 const QuadrantTodo: React.FC = () => {
@@ -83,6 +84,18 @@ const QuadrantTodo: React.FC = () => {
     return matches;
   };
 
+  // 提取文本中的URL
+  const extractUrl = (text: string): string | null => {
+    const urlRegex = /(https?:\/\/[^\s]+)/gi;
+    const match = text.match(urlRegex);
+    return match ? match[0] : null;
+  };
+
+  // 检查文本是否包含URL
+  const hasUrl = (text: string): boolean => {
+    return extractUrl(text) !== null;
+  };
+
   // 处理路径跳转
   const handlePathJump = async (path: PathItem, e: React.MouseEvent) => {
     e.preventDefault();
@@ -139,6 +152,45 @@ const QuadrantTodo: React.FC = () => {
     } catch (error) {
       console.error('路径跳转失败:', error);
       navigator.clipboard.writeText(path.path);
+    }
+  };
+
+  // 处理任务点击跳转
+  const handleTodoClick = async (todo: TodoItem, e: React.MouseEvent) => {
+    // 如果点击的是链接、按钮或拖动图标，不触发跳转
+    const target = e.target as HTMLElement;
+    if (
+      target.closest('button') || 
+      target.closest('a') || 
+      target.closest('[class*="cursor-pointer"]') ||
+      target.closest('svg') ||
+      target.closest('[class*="GripVertical"]')
+    ) {
+      return;
+    }
+    
+    // 如果有URL，直接跳转
+    const todoUrl = todo.url || extractUrl(todo.text);
+    if (todoUrl) {
+      e.preventDefault();
+      e.stopPropagation();
+      try {
+        await openUrl(todoUrl, '_blank');
+      } catch (error) {
+        console.error('打开URL失败:', error);
+      }
+      return;
+    }
+    
+    // 如果有路径链接，跳转到第一个路径
+    if (todo.linkedPaths && todo.linkedPaths.length > 0) {
+      const pathId = todo.linkedPaths[0];
+      const path = availablePaths.find(p => p.id === pathId);
+      if (path) {
+        e.preventDefault();
+        e.stopPropagation();
+        await handlePathJump(path, e);
+      }
     }
   };
 
@@ -232,6 +284,7 @@ const QuadrantTodo: React.FC = () => {
     if (!newTodoText.trim()) return;
     
     const linkedPathIds = extractPathReferences(newTodoText);
+    const url = extractUrl(newTodoText);
     
     const newTodo: TodoItem = {
       id: Date.now().toString(),
@@ -240,6 +293,7 @@ const QuadrantTodo: React.FC = () => {
       createdAt: Date.now(),
       updatedAt: Date.now(),
       linkedPaths: linkedPathIds.length > 0 ? linkedPathIds : undefined,
+      url: url || undefined,
     };
     
     setTodos([...todos, newTodo]);
@@ -254,6 +308,7 @@ const QuadrantTodo: React.FC = () => {
     if (!text) return;
     
     const linkedPathIds = extractPathReferences(text);
+    const url = extractUrl(text);
     
     const newTodo: TodoItem = {
       id: Date.now().toString(),
@@ -262,6 +317,7 @@ const QuadrantTodo: React.FC = () => {
       createdAt: Date.now(),
       updatedAt: Date.now(),
       linkedPaths: linkedPathIds.length > 0 ? linkedPathIds : undefined,
+      url: url || undefined,
     };
     
     setTodos([...todos, newTodo]);
@@ -304,10 +360,17 @@ const QuadrantTodo: React.FC = () => {
     if (!editText.trim()) return;
     
     const linkedPathIds = extractPathReferences(editText);
+    const url = extractUrl(editText);
     
     setTodos(todos.map(t => 
       t.id === editingId 
-        ? { ...t, text: editText.trim(), updatedAt: Date.now(), linkedPaths: linkedPathIds.length > 0 ? linkedPathIds : undefined }
+        ? { 
+            ...t, 
+            text: editText.trim(), 
+            updatedAt: Date.now(), 
+            linkedPaths: linkedPathIds.length > 0 ? linkedPathIds : undefined,
+            url: url || undefined,
+          }
         : t
     ));
     setEditingId(null);
@@ -326,27 +389,127 @@ const QuadrantTodo: React.FC = () => {
     e.dataTransfer.setData('text/plain', todo.id);
   };
 
+  const handleDragEnd = () => {
+    // 延迟清除，避免闪烁
+    setTimeout(() => {
+      setDraggedTodo(null);
+      setDragOverQuadrant(null);
+    }, 100);
+  };
+
   const handleDragOver = (e: React.DragEvent, quadrant: TodoItem['quadrant']) => {
     e.preventDefault();
     e.stopPropagation();
-    e.dataTransfer.dropEffect = 'move';
-    setDragOverQuadrant(quadrant);
+    
+    // 检查是否是外部链接拖拽
+    const types = Array.from(e.dataTransfer.types);
+    const hasUrl = types.includes('text/uri-list') || types.includes('text/plain') || types.includes('text/html');
+    
+    if (hasUrl && !draggedTodo) {
+      // 外部链接拖拽
+      e.dataTransfer.dropEffect = 'copy';
+      setDragOverQuadrant(quadrant);
+    } else if (draggedTodo) {
+      // 任务拖动（支持跨象限）
+      e.dataTransfer.dropEffect = 'move';
+      setDragOverQuadrant(quadrant);
+    }
   };
 
-  const handleDragLeave = () => {
+  const handleDragLeave = (e: React.DragEvent) => {
+    // 检查是否真的离开了象限区域
+    const relatedTarget = e.relatedTarget as HTMLElement;
+    const currentTarget = e.currentTarget as HTMLElement;
+    
+    // 如果鼠标移动到象限内的其他元素，不清除dragOver状态
+    if (relatedTarget && currentTarget.contains(relatedTarget)) {
+      return;
+    }
+    
     setDragOverQuadrant(null);
   };
 
-  const handleDrop = (e: React.DragEvent, targetQuadrant: TodoItem['quadrant']) => {
+  const handleDrop = async (e: React.DragEvent, targetQuadrant: TodoItem['quadrant']) => {
     e.preventDefault();
     e.stopPropagation();
     
-    if (draggedTodo && draggedTodo.quadrant !== targetQuadrant) {
-      setTodos(todos.map(t => 
-        t.id === draggedTodo.id 
-          ? { ...t, quadrant: targetQuadrant, updatedAt: Date.now() }
-          : t
-      ));
+    // 检查是否是外部链接拖拽
+    const types = Array.from(e.dataTransfer.types);
+    const hasUrlType = types.includes('text/uri-list') || types.includes('text/plain') || types.includes('text/html');
+    
+    if (hasUrlType && !draggedTodo) {
+      // 处理外部链接拖拽
+      let url = '';
+      
+      // 优先尝试获取 uri-list 格式
+      if (types.includes('text/uri-list')) {
+        url = e.dataTransfer.getData('text/uri-list');
+      } else if (types.includes('text/html')) {
+        // 从HTML中提取URL
+        const html = e.dataTransfer.getData('text/html');
+        const urlMatch = html.match(/href=["']([^"']+)["']/i);
+        if (urlMatch) {
+          url = urlMatch[1];
+        } else {
+          url = e.dataTransfer.getData('text/plain');
+        }
+      } else {
+        url = e.dataTransfer.getData('text/plain');
+      }
+      
+      // 清理URL（移除换行符等）
+      url = url.trim().split('\n')[0].trim();
+      
+      // 验证是否是有效的URL
+      if (url && (url.startsWith('http://') || url.startsWith('https://'))) {
+        try {
+          // 从URL提取标题（使用域名）
+          const urlObj = new URL(url);
+          let title = urlObj.hostname.replace('www.', '');
+          
+          // 尝试从路径中提取更友好的标题
+          const pathParts = urlObj.pathname.split('/').filter(p => p);
+          if (pathParts.length > 0) {
+            const lastPart = pathParts[pathParts.length - 1];
+            // 如果最后一部分看起来像标题（不包含特殊字符），使用它
+            if (lastPart && !lastPart.includes('.') && lastPart.length < 50) {
+              title = decodeURIComponent(lastPart).replace(/[-_]/g, ' ');
+            }
+          }
+          
+          const newTodo: TodoItem = {
+            id: Date.now().toString(),
+            text: `${title} ${url}`,
+            quadrant: targetQuadrant,
+            createdAt: Date.now(),
+            updatedAt: Date.now(),
+            url: url,
+          };
+          
+          setTodos([...todos, newTodo]);
+        } catch (error) {
+          console.error('解析URL失败:', error);
+          // 即使解析失败，也创建任务
+          const newTodo: TodoItem = {
+            id: Date.now().toString(),
+            text: url,
+            quadrant: targetQuadrant,
+            createdAt: Date.now(),
+            updatedAt: Date.now(),
+            url: url,
+          };
+          setTodos([...todos, newTodo]);
+        }
+      }
+    } else if (draggedTodo) {
+      // 处理任务跨象限拖动
+      if (draggedTodo.quadrant !== targetQuadrant) {
+        setTodos(todos.map(t => 
+          t.id === draggedTodo.id 
+            ? { ...t, quadrant: targetQuadrant, updatedAt: Date.now() }
+            : t
+        ));
+      }
     }
     
     setDraggedTodo(null);
@@ -494,23 +657,32 @@ const QuadrantTodo: React.FC = () => {
               )}
 
               {/* TODO列表 */}
-              <div className="space-y-2">
+              <div className="space-y-2 min-h-[100px]">
                 {quadrantTodos.length === 0 ? (
-                  <div className="text-center py-8 text-[#666666] text-sm">
-                    暂无TODO，点击右上角添加
+                  <div className={`text-center py-8 text-sm transition-colors ${
+                    isDragOver ? 'text-blue-400' : 'text-[#666666]'
+                  }`}>
+                    {isDragOver ? '松开以添加任务' : '暂无TODO，点击右上角添加或拖拽链接到这里'}
                   </div>
                 ) : (
-                  quadrantTodos.map((todo) => (
-                    <div
-                      key={todo.id}
-                      draggable
-                      onDragStart={(e) => handleDragStart(e, todo)}
-                      className={`
-                        group relative p-3 rounded-lg bg-[#1a1a1a] border border-[#2a2a2a]
-                        hover:border-[#3a3a3a] transition-all cursor-move
-                        ${draggedTodo?.id === todo.id ? 'opacity-50' : ''}
-                      `}
-                    >
+                  quadrantTodos.map((todo) => {
+                    const todoUrl = todo.url || extractUrl(todo.text);
+                    const isClickable = !!todoUrl || (todo.linkedPaths && todo.linkedPaths.length > 0);
+                    
+                    return (
+                      <div
+                        key={todo.id}
+                        draggable
+                        onDragStart={(e) => handleDragStart(e, todo)}
+                        onDragEnd={handleDragEnd}
+                        onClick={(e) => isClickable && handleTodoClick(todo, e)}
+                        className={`
+                          group relative p-3 rounded-lg bg-[#1a1a1a] border border-[#2a2a2a]
+                          hover:border-[#3a3a3a] transition-all
+                          ${draggedTodo?.id === todo.id ? 'opacity-50 cursor-move' : isClickable ? 'cursor-pointer' : 'cursor-move'}
+                          ${isClickable ? 'hover:bg-[#1f1f1f]' : ''}
+                        `}
+                      >
                       {editingId === todo.id ? (
                         <div className="space-y-2">
                           {availablePaths.length > 0 && (
@@ -581,10 +753,19 @@ const QuadrantTodo: React.FC = () => {
                           <div className="flex items-start gap-2">
                             <GripVertical 
                               size={16} 
-                              className="text-[#666666] mt-1 cursor-grab active:cursor-grabbing"
+                              className="text-[#666666] mt-1 cursor-grab active:cursor-grabbing flex-shrink-0"
                             />
                             <div className="flex-1 text-white text-sm break-words">
-                              {renderTextWithPaths(todo.text)}
+                              <div className="flex items-start gap-1.5">
+                                <span className="flex-1">{renderTextWithPaths(todo.text)}</span>
+                                {todoUrl && (
+                                  <ExternalLink 
+                                    size={14} 
+                                    className="text-blue-400 flex-shrink-0 mt-0.5 opacity-70 hover:opacity-100 transition-opacity"
+                                    title={`点击打开: ${todoUrl}`}
+                                  />
+                                )}
+                              </div>
                             </div>
                           </div>
                           <div className="flex items-center gap-2 mt-2 opacity-0 group-hover:opacity-100 transition-opacity">
@@ -606,7 +787,8 @@ const QuadrantTodo: React.FC = () => {
                         </>
                       )}
                     </div>
-                  ))
+                    );
+                  })
                 )}
               </div>
             </div>
