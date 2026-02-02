@@ -2063,13 +2063,39 @@ fn main() {
             println!("=== Tauri setup completed ===");
             Ok(())
         })
+        .invoke_handler(tauri::generate_handler![
+            icon_mouse_down,
+            icon_mouse_move,
+            icon_mouse_up,
+            icon_click,
+            app_exit,
+            launch_app,
+            open_console_window,
+            open_ai_window,
+            open_ai_tab,
+            simulate_paste,
+            send_workflow_to_comfyui,
+            open_devtools,
+            open_folder,
+            get_app_icon,
+            write_file_with_path,
+            read_file_with_path,
+            file_exists_with_path,
+            enable_autostart,
+            disable_autostart,
+            is_autostart_enabled
+        ])
+        .run(tauri::generate_context!())
+        .expect("error while running tauri application");
+}
+
 // Tauri 命令：启用自启动
 #[tauri::command]
 fn enable_autostart(app: tauri::AppHandle) -> Result<bool, String> {
     #[cfg(target_os = "windows")]
     {
-        use winapi::um::winreg::{RegCreateKeyExW, RegSetValueExW, HKEY_CURRENT_USER, KEY_WRITE, REG_SZ};
-        use winapi::um::winreg::{RegCloseKey, REG_OPTION_NON_VOLATILE};
+        use winapi::um::winreg::{RegCreateKeyExW, RegSetValueExW, RegCloseKey, HKEY_CURRENT_USER, KEY_WRITE, REG_SZ, REG_OPTION_NON_VOLATILE};
+        use winapi::shared::minwindef::HKEY;
         use std::ffi::OsStr;
         use std::os::windows::ffi::OsStrExt;
         use std::ptr;
@@ -2095,7 +2121,7 @@ fn enable_autostart(app: tauri::AppHandle) -> Result<bool, String> {
                 .chain(Some(0))
                 .collect();
             
-            let mut hkey: winapi::um::winreg::HKEY = ptr::null_mut();
+            let mut hkey: HKEY = ptr::null_mut();
             let result = RegCreateKeyExW(
                 HKEY_CURRENT_USER,
                 key_name.as_ptr(),
@@ -2190,6 +2216,7 @@ fn disable_autostart(_app: tauri::AppHandle) -> Result<bool, String> {
     #[cfg(target_os = "windows")]
     {
         use winapi::um::winreg::{RegOpenKeyExW, RegDeleteValueW, RegCloseKey, HKEY_CURRENT_USER, KEY_WRITE};
+        use winapi::shared::minwindef::HKEY;
         use std::ffi::OsStr;
         use std::os::windows::ffi::OsStrExt;
         use std::ptr;
@@ -2205,7 +2232,7 @@ fn disable_autostart(_app: tauri::AppHandle) -> Result<bool, String> {
                 .chain(Some(0))
                 .collect();
             
-            let mut hkey: winapi::um::winreg::HKEY = ptr::null_mut();
+            let mut hkey: HKEY = ptr::null_mut();
             let result = RegOpenKeyExW(
                 HKEY_CURRENT_USER,
                 key_name.as_ptr(),
@@ -2264,6 +2291,7 @@ fn is_autostart_enabled(_app: tauri::AppHandle) -> Result<bool, String> {
     #[cfg(target_os = "windows")]
     {
         use winapi::um::winreg::{RegOpenKeyExW, RegQueryValueExW, RegCloseKey, HKEY_CURRENT_USER, KEY_READ};
+        use winapi::shared::minwindef::HKEY;
         use std::ffi::OsStr;
         use std::os::windows::ffi::OsStrExt;
         use std::ptr;
@@ -2279,7 +2307,7 @@ fn is_autostart_enabled(_app: tauri::AppHandle) -> Result<bool, String> {
                 .chain(Some(0))
                 .collect();
             
-            let mut hkey: winapi::um::winreg::HKEY = ptr::null_mut();
+            let mut hkey: HKEY = ptr::null_mut();
             let result = RegOpenKeyExW(
                 HKEY_CURRENT_USER,
                 key_name.as_ptr(),
@@ -2330,30 +2358,4 @@ fn is_autostart_enabled(_app: tauri::AppHandle) -> Result<bool, String> {
     {
         Ok(false)
     }
-}
-
-        .invoke_handler(tauri::generate_handler![
-            icon_mouse_down,
-            icon_mouse_move,
-            icon_mouse_up,
-            icon_click,
-            app_exit,
-            launch_app,
-            open_console_window,
-            open_ai_window,
-            open_ai_tab,
-            simulate_paste,
-            send_workflow_to_comfyui,
-            open_devtools,
-            open_folder,
-            get_app_icon,
-            write_file_with_path,
-            read_file_with_path,
-            file_exists_with_path,
-            enable_autostart,
-            disable_autostart,
-            is_autostart_enabled
-        ])
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
 }
