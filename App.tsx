@@ -149,6 +149,9 @@ const AppContent: React.FC = () => {
     };
   }, []);
 
+  // 无限画布访问标记 - 访问后保持挂载，避免 tldraw 卸载时内部 bug
+  const [hasVisitedWhiteboard, setHasVisitedWhiteboard] = useState(false);
+
   // 菜单顺序管理
   const [menuItemOrder, setMenuItemOrder] = useState<Record<number, string[]>>(() => {
     const saved = localStorage.getItem('arthub_menu_item_order');
@@ -421,6 +424,9 @@ const AppContent: React.FC = () => {
       'whiteboard': 'whiteboard',
     };
     setActiveTab(tabMapping[id] || 'home');
+    if (tabMapping[id] === 'whiteboard') {
+      setHasVisitedWhiteboard(true);
+    }
   };
 
   if (!isUserVerified) {
@@ -482,13 +488,8 @@ const AppContent: React.FC = () => {
           </Suspense>
         );
       case 'whiteboard':
-        return (
-          <Suspense fallback={<SkeletonScreen />}>
-            <ContentFadeIn>
-              <Whiteboard />
-            </ContentFadeIn>
-          </Suspense>
-        );
+        // 画布由下方独立区块渲染，此处返回 null
+        return null;
       default:
         return (
           <Suspense fallback={<SkeletonScreen />}>
@@ -566,7 +567,25 @@ const AppContent: React.FC = () => {
 
           {/* 主内容区域 */}
           <main className="flex-1 flex flex-col overflow-hidden relative">
-            {renderContent()}
+            {/* 非画布页面 - 画布激活时隐藏 */}
+            <div
+              className={`flex-1 flex flex-col overflow-hidden ${activeTab === 'whiteboard' ? 'hidden' : ''}`}
+            >
+              {renderContent()}
+            </div>
+            {/* 无限画布 - 访问后保持挂载，切换时仅隐藏不卸载，避免 tldraw 内部 "h is not a function" 错误 */}
+            {hasVisitedWhiteboard && (
+              <div
+                className={`flex-1 flex flex-col overflow-hidden absolute inset-0 ${activeTab !== 'whiteboard' ? 'invisible pointer-events-none' : ''}`}
+                aria-hidden={activeTab !== 'whiteboard'}
+              >
+                <Suspense fallback={<SkeletonScreen />}>
+                  <ContentFadeIn>
+                    <Whiteboard />
+                  </ContentFadeIn>
+                </Suspense>
+              </div>
+            )}
           </main>
 
           {/* 设置面板 - 始终渲染以静默加载数据，但只在 showSettings 为 true 时显示 */}
