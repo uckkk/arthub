@@ -78,6 +78,10 @@
       },
       "globalShortcut": {
         "all": true
+      },
+      "protocol": {
+        "asset": true,
+        "assetScope": ["**"]
       }
     },
     "bundle": {
