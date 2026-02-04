@@ -331,3 +331,84 @@ export async function convertFilePathToUrl(filePath: string): Promise<string> {
     throw new Error(getErrorMessage(error));
   }
 }
+
+// 画布数据文件名
+const CANVAS_DATA_FILE = 'canvas.json';
+
+// 保存画布数据到项目目录
+export async function saveCanvasData(projectId: string, data: unknown): Promise<void> {
+  try {
+    if (!isTauriEnvironment()) {
+      throw new Error('此功能仅在 Tauri 桌面应用中可用');
+    }
+
+    const projects = getAllProjects();
+    const project = projects.find(p => p.id === projectId);
+    if (!project) {
+      throw new Error('项目不存在');
+    }
+
+    const { join } = await getTauriPathApi();
+    const filePath = await join(project.directoryPath, CANVAS_DATA_FILE);
+
+    // 将数据序列化为 JSON
+    const jsonContent = JSON.stringify(data, null, 2);
+    const encoder = new TextEncoder();
+    const uint8Array = encoder.encode(jsonContent);
+
+    // 写入文件
+    const { invoke } = await import('@tauri-apps/api/tauri');
+    await invoke('write_binary_file_with_path', {
+      filePath: filePath,
+      content: Array.from(uint8Array),
+    });
+
+    // 更新项目更新时间
+    project.updatedAt = Date.now();
+    saveProjects(projects);
+
+    console.log('画布数据已保存到:', filePath);
+  } catch (error) {
+    console.error('保存画布数据失败:', error);
+    throw new Error(getErrorMessage(error));
+  }
+}
+
+// 从项目目录加载画布数据
+export async function loadCanvasData(projectId: string): Promise<unknown | null> {
+  try {
+    if (!isTauriEnvironment()) {
+      return null;
+    }
+
+    const projects = getAllProjects();
+    const project = projects.find(p => p.id === projectId);
+    if (!project) {
+      return null;
+    }
+
+    const { join } = await getTauriPathApi();
+    const filePath = await join(project.directoryPath, CANVAS_DATA_FILE);
+
+    // 检查文件是否存在
+    if (!(await fileExistsWithPath(filePath))) {
+      return null;
+    }
+
+    // 读取文件内容
+    const { invoke } = await import('@tauri-apps/api/tauri');
+    const content: number[] = await invoke('read_binary_file_with_path', { filePath });
+
+    // 解析 JSON
+    const decoder = new TextDecoder();
+    const uint8Array = new Uint8Array(content);
+    const jsonContent = decoder.decode(uint8Array);
+    const data = JSON.parse(jsonContent);
+
+    console.log('画布数据已从文件加载:', filePath);
+    return data;
+  } catch (error) {
+    console.error('加载画布数据失败:', error);
+    return null;
+  }
+}

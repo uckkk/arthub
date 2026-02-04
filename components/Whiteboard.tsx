@@ -61,6 +61,8 @@ import {
   deleteProject,
   saveAssetToProject,
   convertFilePathToUrl,
+  saveCanvasData,
+  loadCanvasData,
   WhiteboardProject
 } from '../services/whiteboardProjectService';
 import { getSavedStoragePath } from '../services/fileStorageService';
@@ -133,9 +135,35 @@ const Whiteboard: React.FC = () => {
     }
   };
 
+  // 手动保存当前画布
+  const handleSaveCanvas = useCallback(async () => {
+    if (!currentProject || !editorRef.current) {
+      return;
+    }
+
+    try {
+      const snapshot = editorRef.current.store.getSnapshot();
+      await saveCanvasData(currentProject.id, snapshot);
+      showToast('success', '画布已保存');
+    } catch (error: any) {
+      showToast('error', `保存失败: ${error.message}`);
+    }
+  }, [currentProject, showToast]);
+
   // 切换项目
   const handleSelectProject = async (projectId: string) => {
     try {
+      // 切换前保存当前画布
+      if (currentProject && editorRef.current) {
+        try {
+          const snapshot = editorRef.current.store.getSnapshot();
+          await saveCanvasData(currentProject.id, snapshot);
+          console.log('切换项目前已保存当前画布');
+        } catch (error) {
+          console.error('保存当前画布失败:', error);
+        }
+      }
+
       setCurrentProject(projectId);
       const project = projects.find(p => p.id === projectId);
       if (project) {
@@ -590,6 +618,16 @@ const Whiteboard: React.FC = () => {
             />
           </label>
 
+          {/* 保存按钮 */}
+          <button
+            onClick={handleSaveCanvas}
+            className="px-3 py-2 rounded-lg bg-green-600 hover:bg-green-700 text-white font-medium transition-colors flex items-center gap-2 text-sm"
+            title="保存画布到本地文件（自动保存每30秒）"
+          >
+            <Save size={16} />
+            保存
+          </button>
+
           {/* 导出为 PNG */}
           <button
             onClick={handleExportPng}
@@ -641,11 +679,37 @@ const Whiteboard: React.FC = () => {
           }}>
             <Tldraw
               // tldraw 3.x 不需要 license key，只需保留水印
-              // persistenceKey 用于自动保存画布内容到 localStorage
-              persistenceKey={`whiteboard-${currentProject.id}`}
-              onMount={(editor) => {
+              onMount={async (editor) => {
                 editorRef.current = editor;
                 console.log('tldraw 画布已加载，项目:', currentProject.name);
+                
+                // 从本地文件加载画布数据
+                try {
+                  const savedData = await loadCanvasData(currentProject.id);
+                  if (savedData) {
+                    editor.store.loadSnapshot(savedData as any);
+                    console.log('已从本地文件加载画布数据');
+                  }
+                } catch (error) {
+                  console.error('加载画布数据失败:', error);
+                }
+
+                // 设置自动保存（每30秒保存一次）
+                const autoSaveInterval = setInterval(async () => {
+                  if (editorRef.current) {
+                    try {
+                      const snapshot = editorRef.current.store.getSnapshot();
+                      await saveCanvasData(currentProject.id, snapshot);
+                    } catch (error) {
+                      console.error('自动保存失败:', error);
+                    }
+                  }
+                }, 30000);
+
+                // 组件卸载时清理定时器
+                return () => {
+                  clearInterval(autoSaveInterval);
+                };
               }}
             />
           </TldrawErrorBoundary>
