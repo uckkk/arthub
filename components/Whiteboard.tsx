@@ -734,7 +734,7 @@ const Whiteboard: React.FC = () => {
                 }
 
                 // 使用定时器代替 store.listen，避免 tldraw 内部 dispose 时 "h is not a function" 错误
-                const AUTO_SAVE_INTERVAL_MS = 60000; // 60 秒
+                const AUTO_SAVE_INTERVAL_MS = 600000; // 10 分钟
                 const intervalId = setInterval(async () => {
                   if (!editorRef.current) return;
                   try {
