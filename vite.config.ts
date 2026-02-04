@@ -42,7 +42,12 @@ export default defineConfig(({ mode }) => {
       },
       optimizeDeps: {
         exclude: ['@google/genai'],
-        include: ['react', 'react-dom', 'lucide-react'],
+        include: [
+          'react', 
+          'react-dom', 
+          'lucide-react',
+          'tldraw',
+        ],
       },
       build: {
         commonjsOptions: {
@@ -67,6 +72,10 @@ export default defineConfig(({ mode }) => {
                 }
                 if (id.includes('lucide-react')) {
                   return 'ui-vendor';
+                }
+                // tldraw 相关依赖单独打包
+                if (id.includes('tldraw') || id.includes('@tldraw')) {
+                  return 'tldraw-vendor';
                 }
                 // 其他第三方库
                 return 'vendor';
