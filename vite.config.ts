@@ -38,64 +38,78 @@ export default defineConfig(({ mode }) => {
       resolve: {
         alias: {
           '@': path.resolve(__dirname, '.'),
-        }
+        },
+        // 关键修复：强制所有依赖使用同一个 React 实例
+        // 这可以防止 tldraw 及其依赖（radix-ui, tiptap 等）创建多个 React 实例
+        dedupe: [
+          'react',
+          'react-dom',
+          'react/jsx-runtime',
+          'react/jsx-dev-runtime',
+        ],
       },
       optimizeDeps: {
         exclude: ['@google/genai'],
+        // 预优化 tldraw 及其核心依赖，确保它们正确解析 React
         include: [
           'react', 
           'react-dom', 
+          'react/jsx-runtime',
           'lucide-react',
+          // tldraw 核心
           'tldraw',
         ],
+        // 强制重新优化依赖（解决缓存问题）
+        force: false,
       },
       build: {
         commonjsOptions: {
           include: [/node_modules/],
           transformMixedEsModules: true
         },
-        // 优化构建性能 - 更激进的压缩
-        minify: 'esbuild', // 使用 esbuild 压缩，速度更快
-        target: 'es2020', // 使用 ES2020（更好的兼容性和更小的体积）
-        cssCodeSplit: true, // CSS 代码分割
-        sourcemap: false, // 生产环境不生成 sourcemap（减少体积）
-        cssMinify: 'esbuild', // CSS 也使用 esbuild 压缩
-        // 更激进的 tree-shaking
+        // 优化构建性能
+        minify: 'esbuild',
+        target: 'es2020',
+        cssCodeSplit: true,
+        sourcemap: false,
+        cssMinify: 'esbuild',
         rollupOptions: {
           output: {
-            // 手动代码分割 - 优化加载性能
+            // 修复代码分割策略：确保 React 不会被拆分到多个 chunk
             manualChunks: (id) => {
-              // node_modules 中的依赖
               if (id.includes('node_modules')) {
-                if (id.includes('react') || id.includes('react-dom')) {
+                // React 相关必须放在一起，确保单一实例
+                if (id.includes('react') || id.includes('react-dom') || id.includes('scheduler')) {
                   return 'react-vendor';
+                }
+                // tldraw 及其所有依赖放在一起
+                // 这包括 radix-ui, tiptap, use-gesture 等
+                if (
+                  id.includes('tldraw') || 
+                  id.includes('@tldraw') ||
+                  id.includes('@radix-ui') ||
+                  id.includes('@tiptap') ||
+                  id.includes('@use-gesture') ||
+                  id.includes('@floating-ui') ||
+                  id.includes('use-sync-external-store')
+                ) {
+                  return 'tldraw-vendor';
                 }
                 if (id.includes('lucide-react')) {
                   return 'ui-vendor';
                 }
-                // tldraw 相关依赖单独打包
-                if (id.includes('tldraw') || id.includes('@tldraw')) {
-                  return 'tldraw-vendor';
-                }
-                // 其他第三方库
                 return 'vendor';
               }
             },
-            // 优化 chunk 大小和命名
             chunkFileNames: 'assets/js/[name]-[hash:8].js',
             entryFileNames: 'assets/js/[name]-[hash:8].js',
             assetFileNames: 'assets/[ext]/[name]-[hash:8].[ext]',
-            // 压缩输出
             compact: true,
           },
-          // 外部化不需要打包的依赖（如果有）
           external: [],
         },
-        // 提高构建性能
-        chunkSizeWarningLimit: 500, // 降低警告阈值，更严格
-        // 启用压缩
+        chunkSizeWarningLimit: 1000, // tldraw 较大，提高警告阈值
         reportCompressedSize: true,
-        // 减少不必要的输出
         emptyOutDir: true,
       },
     };
