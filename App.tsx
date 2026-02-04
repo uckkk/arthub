@@ -431,7 +431,7 @@ const AppContent: React.FC = () => {
 
   if (!isUserVerified) {
     return (
-      <Suspense fallback={<SkeletonScreen />}>
+      <Suspense fallback={<SkeletonScreen variant="default" />}>
         <ContentFadeIn>
           <UserAuthModal onVerified={handleUserVerified} />
         </ContentFadeIn>
@@ -444,7 +444,7 @@ const AppContent: React.FC = () => {
     switch (activeTab) {
       case 'home':
         return (
-          <Suspense fallback={<SkeletonScreen />}>
+          <Suspense fallback={<SkeletonScreen variant="home" />}>
             <ContentFadeIn>
               <HomePage />
             </ContentFadeIn>
@@ -452,7 +452,7 @@ const AppContent: React.FC = () => {
         );
       case 'naming':
         return (
-          <Suspense fallback={<SkeletonScreen />}>
+          <Suspense fallback={<SkeletonScreen variant="naming" />}>
             <ContentFadeIn>
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 h-full p-6">
                 <NamingTool />
@@ -465,7 +465,7 @@ const AppContent: React.FC = () => {
         );
       case 'paths':
         return (
-          <Suspense fallback={<SkeletonScreen />}>
+          <Suspense fallback={<SkeletonScreen variant="paths" />}>
             <ContentFadeIn>
               <PathManager />
             </ContentFadeIn>
@@ -473,7 +473,7 @@ const AppContent: React.FC = () => {
         );
       case 'todo':
         return (
-          <Suspense fallback={<SkeletonScreen />}>
+          <Suspense fallback={<SkeletonScreen variant="todo" />}>
             <ContentFadeIn>
               <QuadrantTodo />
             </ContentFadeIn>
@@ -481,7 +481,7 @@ const AppContent: React.FC = () => {
         );
       case 'apps':
         return (
-          <Suspense fallback={<SkeletonScreen />}>
+          <Suspense fallback={<SkeletonScreen variant="apps" />}>
             <ContentFadeIn>
               <AppLauncher />
             </ContentFadeIn>
@@ -492,7 +492,7 @@ const AppContent: React.FC = () => {
         return null;
       default:
         return (
-          <Suspense fallback={<SkeletonScreen />}>
+          <Suspense fallback={<SkeletonScreen variant="ai" />}>
             <ContentFadeIn>
               <AITool />
             </ContentFadeIn>
@@ -579,7 +579,7 @@ const AppContent: React.FC = () => {
                 className={`flex-1 flex flex-col overflow-hidden absolute inset-0 ${activeTab !== 'whiteboard' ? 'invisible pointer-events-none' : ''}`}
                 aria-hidden={activeTab !== 'whiteboard'}
               >
-                <Suspense fallback={<SkeletonScreen />}>
+                <Suspense fallback={<SkeletonScreen variant="whiteboard" />}>
                   <ContentFadeIn>
                     <Whiteboard />
                   </ContentFadeIn>
