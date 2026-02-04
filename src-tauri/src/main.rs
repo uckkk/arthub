@@ -1514,6 +1514,20 @@ fn read_file_with_path(file_path: String) -> Result<String, String> {
     }
 }
 
+// Tauri 命令：读取二进制文件（用于创建 Blob URL）
+#[tauri::command]
+fn read_binary_file_with_path(file_path: String) -> Result<Vec<u8>, String> {
+    use std::fs;
+    use std::path::Path;
+    
+    let path = Path::new(&file_path);
+    
+    match fs::read(path) {
+        Ok(content) => Ok(content),
+        Err(e) => Err(format!("读取文件失败: {}", e)),
+    }
+}
+
 // Tauri 命令：检查文件是否存在（绕过文件系统作用域限制）
 #[tauri::command]
 fn file_exists_with_path(file_path: String) -> Result<bool, String> {
@@ -2165,6 +2179,7 @@ fn main() {
             write_binary_file_with_path,
             rename_directory_with_path,
             read_file_with_path,
+            read_binary_file_with_path,
             file_exists_with_path,
             create_dir_with_path,
             rename_file_with_path,

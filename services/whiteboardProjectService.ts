@@ -288,12 +288,39 @@ export async function saveAssetToProject(
 }
 
 // 将文件路径转换为可访问的 URL（用于 tldraw）
+// 使用 Blob URL 替代 asset 协议，因为 asset 协议受作用域限制
 export async function convertFilePathToUrl(filePath: string): Promise<string> {
   if (!isTauriEnvironment()) {
-    // 非 Tauri 环境，使用 Blob URL
+    // 非 Tauri 环境，直接返回路径
     return filePath;
   }
 
-  const { convertFileSrc } = await import('@tauri-apps/api/tauri');
-  return convertFileSrc(filePath);
+  try {
+    // 读取文件内容并创建 Blob URL
+    const { invoke } = await import('@tauri-apps/api/tauri');
+    const content: number[] = await invoke('read_binary_file_with_path', { filePath });
+    
+    // 根据文件扩展名确定 MIME 类型
+    const ext = filePath.toLowerCase().split('.').pop() || '';
+    const mimeTypes: Record<string, string> = {
+      'mp4': 'video/mp4',
+      'webm': 'video/webm',
+      'ogg': 'video/ogg',
+      'png': 'image/png',
+      'jpg': 'image/jpeg',
+      'jpeg': 'image/jpeg',
+      'gif': 'image/gif',
+      'webp': 'image/webp',
+    };
+    const mimeType = mimeTypes[ext] || 'application/octet-stream';
+    
+    // 创建 Blob 和 URL
+    const blob = new Blob([new Uint8Array(content)], { type: mimeType });
+    const blobUrl = URL.createObjectURL(blob);
+    
+    return blobUrl;
+  } catch (error) {
+    console.error('转换文件路径为 URL 失败:', error);
+    throw new Error(getErrorMessage(error));
+  }
 }

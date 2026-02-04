@@ -440,15 +440,7 @@ const Whiteboard: React.FC = () => {
           </div>
 
           {/* 编辑项目名按钮 */}
-          {!isEditingProjectName && (
-            <button
-              onClick={handleStartEditProjectName}
-              className="p-2 rounded-lg text-[#666666] hover:text-white hover:bg-[#2a2a2a] transition-colors"
-              title="编辑项目名"
-            >
-              <Edit2 size={16} />
-            </button>
-          )}
+          {/* 编辑按钮已集成到项目选择器中，不需要单独的按钮 */}
         </div>
 
         {/* 文件上传按钮 */}
