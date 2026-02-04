@@ -11,7 +11,7 @@ edition = "2021"
 tauri-build = { version = "1.5", features = [] }
 
 [dependencies]
-tauri = { version = "1.5", features = [
+tauri = { version = "1.5", features = [ "shell-execute", "dialog-ask", "dialog-confirm", "global-shortcut-all",
     "shell-open",           # 打开外部链接
     "window-all",           # 窗口管理
     "dialog-open",          # 文件选择对话框

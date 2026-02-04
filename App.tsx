@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, lazy, Suspense } from 'react';
 import { 
   Type, Menu, User, Settings, 
-  Sparkles, Home, CheckSquare, Grid3X3
+  Sparkles, Home, CheckSquare, Grid3X3, PenTool
 } from 'lucide-react';
 import { getStorageConfig, formatSyncTime } from './services/fileStorageService';
 import { getUserInfo, clearUserInfo, UserInfo } from './services/userAuthService';
@@ -27,6 +27,7 @@ const UpdateNotification = lazy(() => import('./components/UpdateNotification'))
 const HomePage = lazy(() => import('./components/HomePage'));
 const QuadrantTodo = lazy(() => import('./components/QuadrantTodo'));
 const AppLauncher = lazy(() => import('./components/AppLauncher'));
+const Whiteboard = lazy(() => import('./components/Whiteboard'));
 
 // 预加载所有组件的函数
 const preloadComponents = () => {
@@ -108,6 +109,7 @@ const createMenuGroups = (): MenuGroup[] => [
       { id: 'paths', label: '常用入口', icon: Menu },
       { id: 'todo', label: '待办工作', icon: CheckSquare },
       { id: 'apps', label: '常用应用', icon: Grid3X3 },
+      { id: 'whiteboard', label: '无限画布', icon: PenTool },
     ],
   },
 ];
@@ -426,6 +428,7 @@ const AppContent: React.FC = () => {
       'api': 'ai',
       'todo': 'todo',
       'apps': 'apps',
+      'whiteboard': 'whiteboard',
     };
     setActiveTab(tabMapping[id] || 'home');
   };
@@ -474,6 +477,12 @@ const AppContent: React.FC = () => {
         return (
           <Suspense fallback={<LoadingPlaceholder />}>
             <AppLauncher />
+          </Suspense>
+        );
+      case 'whiteboard':
+        return (
+          <Suspense fallback={<LoadingPlaceholder />}>
+            <Whiteboard />
           </Suspense>
         );
       default:

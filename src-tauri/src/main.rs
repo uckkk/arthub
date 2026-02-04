@@ -1413,6 +1413,27 @@ fn get_app_icon(_path: String) -> Result<String, String> {
 
 // Tauri 命令：写入文件（绕过文件系统作用域限制）
 #[tauri::command]
+fn write_binary_file_with_path(file_path: String, content: Vec<u8>) -> Result<(), String> {
+    use std::fs;
+    use std::path::Path;
+    
+    let path = Path::new(&file_path);
+    
+    // 确保父目录存在
+    if let Some(parent) = path.parent() {
+        if let Err(e) = fs::create_dir_all(parent) {
+            return Err(format!("创建目录失败: {}", e));
+        }
+    }
+    
+    // 写入二进制文件
+    match fs::write(path, content) {
+        Ok(_) => Ok(()),
+        Err(e) => Err(format!("写入文件失败: {}", e)),
+    }
+}
+
+#[tauri::command]
 fn write_file_with_path(file_path: String, content: String) -> Result<(), String> {
     use std::fs;
     use std::path::Path;
@@ -1434,7 +1455,52 @@ fn write_file_with_path(file_path: String, content: String) -> Result<(), String
     Ok(())
 }
 
+// Tauri 命令：重命名文件或目录（绕过文件系统作用域限制）
+#[tauri::command]
+fn rename_file_with_path(old_path: String, new_path: String) -> Result<(), String> {
+    use std::fs;
+    use std::path::Path;
+    
+    let old_path_obj = Path::new(&old_path);
+    let new_path_obj = Path::new(&new_path);
+    
+    // 确保新路径的父目录存在
+    if let Some(parent) = new_path_obj.parent() {
+        if let Err(e) = fs::create_dir_all(parent) {
+            return Err(format!("创建目录失败: {}", e));
+        }
+    }
+    
+    // 重命名文件或目录
+    match fs::rename(old_path_obj, new_path_obj) {
+        Ok(_) => Ok(()),
+        Err(e) => Err(format!("重命名失败: {}", e)),
+    }
+}
+
 // Tauri 命令：读取文件（绕过文件系统作用域限制）
+#[tauri::command]
+fn rename_directory_with_path(old_path: String, new_path: String) -> Result<(), String> {
+    use std::fs;
+    use std::path::Path;
+    
+    let old = Path::new(&old_path);
+    let new_path_obj = Path::new(&new_path);
+    
+    // 确保新路径的父目录存在
+    if let Some(parent) = new_path_obj.parent() {
+        if let Err(e) = fs::create_dir_all(parent) {
+            return Err(format!("创建目录失败: {}", e));
+        }
+    }
+    
+    // 重命名目录
+    match fs::rename(old, new_path_obj) {
+        Ok(_) => Ok(()),
+        Err(e) => Err(format!("重命名目录失败: {}", e)),
+    }
+}
+
 #[tauri::command]
 fn read_file_with_path(file_path: String) -> Result<String, String> {
     use std::fs;
@@ -2079,8 +2145,11 @@ fn main() {
             open_folder,
             get_app_icon,
             write_file_with_path,
+            write_binary_file_with_path,
+            rename_directory_with_path,
             read_file_with_path,
             file_exists_with_path,
+            rename_file_with_path,
             enable_autostart,
             disable_autostart,
             is_autostart_enabled
