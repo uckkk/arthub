@@ -239,6 +239,7 @@ const Whiteboard: React.FC = () => {
                       mimeType: file.type || 'image/png',
                       isAnimated: false,
                     },
+                    meta: {},
                   },
                 ]);
                 
@@ -283,6 +284,7 @@ const Whiteboard: React.FC = () => {
                       mimeType: file.type || 'video/mp4',
                       isAnimated: true,
                     },
+                    meta: {},
                   },
                 ]);
                 
