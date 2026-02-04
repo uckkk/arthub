@@ -206,13 +206,13 @@ const AppContent: React.FC = () => {
   const handleMenuReorder = (groupId: number, fromIndex: number, toIndex: number) => {
     if (fromIndex === toIndex) return;
     
-    // 使用当前已排序的菜单组，而不是 baseMenuGroups
+    // 使用当前已排序的菜单组（包含所有项目，包括新添加的）
     const group = menuGroups[groupId];
     if (!group) return;
     
-    // 获取当前顺序（如果存在）或使用当前组的顺序
-    const currentOrder = menuItemOrder[groupId] || group.items.map(item => item.id);
-    const newOrder = [...currentOrder];
+    // 始终使用当前组的项目顺序，因为 applyMenuOrder 已经处理了新项目的添加
+    // 这样可以确保索引与实际显示的菜单项一致
+    const newOrder = group.items.map(item => item.id);
     
     // 确保索引有效
     if (fromIndex < 0 || fromIndex >= newOrder.length || toIndex < 0 || toIndex >= newOrder.length) {
