@@ -733,36 +733,20 @@ const Whiteboard: React.FC = () => {
                   console.error('加载画布数据失败:', error);
                 }
 
-                const DEBOUNCE_MS = 3000;
-                let saveTimeout: ReturnType<typeof setTimeout> | null = null;
-                let isDisposed = false;
-
-                const scheduleSave = () => {
-                  if (isDisposed) return;
-                  if (saveTimeout) clearTimeout(saveTimeout);
-                  saveTimeout = setTimeout(async () => {
-                    saveTimeout = null;
-                    if (isDisposed || !editorRef.current) return;
-                    try {
-                      const snapshot = editorRef.current.getSnapshot();
-                      await saveCanvasData(projectId, snapshot);
-                    } catch (error) {
-                      console.error('自动保存失败:', error);
-                    }
-                  }, DEBOUNCE_MS);
-                };
-
-                const dispose = editor.store.listen(
-                  () => scheduleSave(),
-                  { source: 'user', scope: 'document' }
-                );
+                // 使用定时器代替 store.listen，避免 tldraw 内部 dispose 时 "h is not a function" 错误
+                const AUTO_SAVE_INTERVAL_MS = 60000; // 60 秒
+                const intervalId = setInterval(async () => {
+                  if (!editorRef.current) return;
+                  try {
+                    const snapshot = editorRef.current.getSnapshot();
+                    await saveCanvasData(projectId, snapshot);
+                  } catch (error) {
+                    console.error('自动保存失败:', error);
+                  }
+                }, AUTO_SAVE_INTERVAL_MS);
 
                 return () => {
-                  isDisposed = true;
-                  if (saveTimeout) {
-                    clearTimeout(saveTimeout);
-                    saveTimeout = null;
-                  }
+                  clearInterval(intervalId);
 
                   if (editorRef.current) {
                     try {
@@ -773,14 +757,6 @@ const Whiteboard: React.FC = () => {
                     } catch (e) {
                       console.error('[Whiteboard] 获取快照失败:', e);
                     }
-                  }
-
-                  try {
-                    if (typeof dispose === 'function') {
-                      dispose();
-                    }
-                  } catch (e) {
-                    console.warn('[Whiteboard] 清理 store 监听时出错:', e);
                   }
                   editorRef.current = null;
                 };
