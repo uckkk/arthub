@@ -67,6 +67,18 @@ import { getSavedStoragePath } from '../services/fileStorageService';
 import { Edit2, X, Plus, Folder, Save } from 'lucide-react';
 import { useToast } from './Toast';
 
+// 从 localStorage 获取 tldraw license key
+const TLDRAW_LICENSE_KEY_STORAGE = 'arthub_tldraw_license_key';
+
+function getTldrawLicenseKey(): string | undefined {
+  try {
+    const key = localStorage.getItem(TLDRAW_LICENSE_KEY_STORAGE);
+    return key || undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 const Whiteboard: React.FC = () => {
   const { showToast } = useToast();
   const [currentProject, setCurrentProjectState] = useState<WhiteboardProject | null>(null);
@@ -76,6 +88,7 @@ const Whiteboard: React.FC = () => {
   const [showProjectSelector, setShowProjectSelector] = useState(false);
   const [storagePath, setStoragePath] = useState<string | null>(null);
   const editorRef = useRef<Editor | null>(null);
+  const [licenseKey] = useState<string | undefined>(getTldrawLicenseKey);
 
   // 初始化：加载项目和存储路径
   useEffect(() => {
@@ -494,45 +507,13 @@ const Whiteboard: React.FC = () => {
             editorRef.current = null;
           }}>
             <Tldraw
-            onMount={(editor) => {
-              editorRef.current = editor;
-              
-              // 隐藏水印
-              const hideWatermark = () => {
-                try {
-                  // 检查是否已经添加了样式
-                  if (document.getElementById('tldraw-hide-watermark')) {
-                    return;
-                  }
-                  const style = document.createElement('style');
-                  style.id = 'tldraw-hide-watermark';
-                  style.textContent = `
-                    .tlui-menu-zone [data-testid="made-with-tldraw"],
-                    .tlui-menu-zone a[href*="tldraw"],
-                    .tlui-menu-zone .tlui-menu__group:has(a[href*="tldraw"]),
-                    .tlui-menu-zone a[href*="tldraw.com"],
-                    .tlui-menu-zone .tlui-menu__group:has(a[href*="tldraw.com"]) {
-                      display: none !important;
-                      visibility: hidden !important;
-                      opacity: 0 !important;
-                      height: 0 !important;
-                      width: 0 !important;
-                    }
-                  `;
-                  document.head.appendChild(style);
-                } catch (err) {
-                  console.warn('隐藏水印失败:', err);
-                }
-              };
-              
-              // 立即隐藏
-              hideWatermark();
-              
-              // 延迟再次隐藏（确保DOM渲染后）
-              setTimeout(hideWatermark, 100);
-              setTimeout(hideWatermark, 500);
-              setTimeout(hideWatermark, 1000);
-            }}
+              // License key 从 localStorage 读取，可在设置中配置
+              // 申请 Hobby License: https://tldraw.dev/get-a-license/hobby
+              licenseKey={licenseKey}
+              onMount={(editor) => {
+                editorRef.current = editor;
+                console.log('tldraw 画布已加载');
+              }}
             />
           </TldrawErrorBoundary>
         </div>
