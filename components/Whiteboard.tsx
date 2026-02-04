@@ -711,20 +711,20 @@ const Whiteboard: React.FC = () => {
             editorRef.current = null;
           }}>
             <Tldraw
+              key={currentProject.id}
               // tldraw 3.x 不需要 license key，只需保留水印
               onMount={async (editor) => {
+                const projectId = currentProject.id;
                 editorRef.current = editor;
                 console.log('tldraw 画布已加载，项目:', currentProject.name);
-                
-                // 应用保存的主题设置
+
                 const savedTheme = localStorage.getItem(THEME_STORAGE_KEY);
                 editor.user.updateUserPreferences({
                   colorScheme: savedTheme === 'light' ? 'light' : 'dark',
                 });
-                
-                // 从本地文件加载画布数据
+
                 try {
-                  const savedData = await loadCanvasData(currentProject.id);
+                  const savedData = await loadCanvasData(projectId);
                   if (savedData) {
                     editor.loadSnapshot(savedData as any);
                     console.log('已从本地文件加载画布数据');
@@ -733,34 +733,48 @@ const Whiteboard: React.FC = () => {
                   console.error('加载画布数据失败:', error);
                 }
 
-                // 设置自动保存：仅在内容变更时保存，防抖 3 秒避免频繁写入
                 const DEBOUNCE_MS = 3000;
                 let saveTimeout: ReturnType<typeof setTimeout> | null = null;
+                let isDisposed = false;
 
                 const scheduleSave = () => {
+                  if (isDisposed) return;
                   if (saveTimeout) clearTimeout(saveTimeout);
                   saveTimeout = setTimeout(async () => {
                     saveTimeout = null;
-                    if (editorRef.current) {
-                      try {
-                        const snapshot = editorRef.current.getSnapshot();
-                        await saveCanvasData(currentProject.id, snapshot);
-                      } catch (error) {
-                        console.error('自动保存失败:', error);
-                      }
+                    if (isDisposed || !editorRef.current) return;
+                    try {
+                      const snapshot = editorRef.current.getSnapshot();
+                      await saveCanvasData(projectId, snapshot);
+                    } catch (error) {
+                      console.error('自动保存失败:', error);
                     }
                   }, DEBOUNCE_MS);
                 };
 
-                // 仅监听用户操作产生的变更，避免加载快照时触发保存
                 const dispose = editor.store.listen(
                   () => scheduleSave(),
                   { source: 'user', scope: 'document' }
                 );
 
                 return () => {
-                  if (saveTimeout) clearTimeout(saveTimeout);
-                  saveTimeout = null;
+                  isDisposed = true;
+                  if (saveTimeout) {
+                    clearTimeout(saveTimeout);
+                    saveTimeout = null;
+                  }
+
+                  if (editorRef.current) {
+                    try {
+                      const snapshot = editorRef.current.getSnapshot();
+                      saveCanvasData(projectId, snapshot).catch((e) =>
+                        console.error('[Whiteboard] 卸载前保存失败:', e)
+                      );
+                    } catch (e) {
+                      console.error('[Whiteboard] 获取快照失败:', e);
+                    }
+                  }
+
                   try {
                     if (typeof dispose === 'function') {
                       dispose();
