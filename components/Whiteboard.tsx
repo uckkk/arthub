@@ -59,7 +59,7 @@ import {
   setCurrentProject,
   renameProject,
   deleteProject,
-  saveAssetToProject,
+  saveAssetToProjectFromBuffer,
   convertFilePathToUrl,
   saveCanvasData,
   loadCanvasData,
@@ -81,6 +81,13 @@ const Whiteboard: React.FC = () => {
   const [showProjectSelector, setShowProjectSelector] = useState(false);
   const [storagePath, setStoragePath] = useState<string | null>(null);
   const editorRef = useRef<Editor | null>(null);
+  
+  // 进度条状态（加载/上传时显示）
+  const [progress, setProgress] = useState<{ visible: boolean; percent: number; message: string }>({
+    visible: false,
+    percent: 0,
+    message: '',
+  });
   
   // 主题状态：'dark' | 'light'
   const [isDarkMode, setIsDarkMode] = useState<boolean>(() => {
@@ -240,6 +247,23 @@ const Whiteboard: React.FC = () => {
     setIsEditingProjectName(false);
   };
 
+  // 使用 FileReader 读取文件并报告进度
+  const readFileWithProgress = (
+    file: File,
+    onProgress?: (percent: number) => void
+  ): Promise<ArrayBuffer> =>
+    new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onprogress = (e) => {
+        if (e.lengthComputable && onProgress) {
+          onProgress(Math.round((e.loaded / e.total) * 100));
+        }
+      };
+      reader.onload = () => resolve(reader.result as ArrayBuffer);
+      reader.onerror = () => reject(reader.error);
+      reader.readAsArrayBuffer(file);
+    });
+
   // 处理文件上传
   const handleFileUpload = useCallback(async (files: FileList | File[]) => {
     if (!currentProject) {
@@ -255,6 +279,7 @@ const Whiteboard: React.FC = () => {
     const MAX_VIDEO_SIZE = 20 * 1024 * 1024; // 20MB
     const MAX_IMAGE_SIZE = 10 * 1024 * 1024; // 10MB
 
+    const validFiles: File[] = [];
     for (const file of fileArray) {
       const isImage = imageTypes.includes(file.type);
       const isVideo = videoTypes.includes(file.type) || file.name.toLowerCase().endsWith('.mp4');
@@ -264,7 +289,6 @@ const Whiteboard: React.FC = () => {
         continue;
       }
 
-      // 检查文件大小
       if (isVideo && file.size > MAX_VIDEO_SIZE) {
         const sizeMB = (file.size / (1024 * 1024)).toFixed(1);
         showToast('error', `视频文件过大 (${sizeMB}MB)，请压缩到 20MB 以下: ${file.name}`);
@@ -275,20 +299,43 @@ const Whiteboard: React.FC = () => {
         showToast('error', `图片文件过大 (${sizeMB}MB)，请压缩到 10MB 以下: ${file.name}`);
         continue;
       }
+      validFiles.push(file);
+    }
 
-      try {
-        // 保存文件到项目目录
-        const filePath = await saveAssetToProject(currentProject.id, file);
-        
-        // 转换为可访问的 URL
+    if (validFiles.length === 0) return;
+
+    const total = validFiles.length;
+    setProgress({ visible: true, percent: 0, message: `准备上传 ${total} 个文件...` });
+
+    try {
+      for (let i = 0; i < validFiles.length; i++) {
+        const file = validFiles[i];
+        const basePercent = (i / total) * 100;
+        const rangePercent = 100 / total;
+        const isImage = imageTypes.includes(file.type);
+        const isVideo = videoTypes.includes(file.type) || file.name.toLowerCase().endsWith('.mp4');
+
+        // 阶段1: 读取文件 (占该文件进度的 0-40%)
+        const arrayBuffer = await readFileWithProgress(file, (readPercent) => {
+          const pct = basePercent + (readPercent / 100) * rangePercent * 0.4;
+          setProgress({ visible: true, percent: pct, message: `读取 ${file.name} ${readPercent}% (${i + 1}/${total})` });
+        });
+
+        // 阶段2: 保存到磁盘 (40-70%)
+        setProgress({ visible: true, percent: basePercent + rangePercent * 0.4, message: `保存 ${file.name} (${i + 1}/${total})` });
+        const filePath = await saveAssetToProjectFromBuffer(currentProject.id, arrayBuffer, file.name, file.type);
+
+        // 阶段3: 转换为 URL (70-85%)
+        setProgress({ visible: true, percent: basePercent + rangePercent * 0.7, message: `处理 ${file.name} (${i + 1}/${total})` });
         const fileUrl = await convertFilePathToUrl(filePath);
+
+        // 阶段4: 添加到画布 (85-100%)
+        setProgress({ visible: true, percent: basePercent + rangePercent * 0.85, message: `添加到画布 ${file.name} (${i + 1}/${total})` });
         
-        // 添加到 tldraw 画布
         if (editorRef.current) {
           const editor = editorRef.current;
           
           if (isImage) {
-            // 创建图片资源
             const imageAssetId = AssetRecordType.createId();
             const image = new Image();
             image.onload = () => {
@@ -309,8 +356,6 @@ const Whiteboard: React.FC = () => {
                     meta: {},
                   },
                 ]);
-                
-                // 创建图片形状
                 editor.createShape({
                   id: createShapeId(),
                   type: 'image',
@@ -327,12 +372,9 @@ const Whiteboard: React.FC = () => {
                 showToast('error', `创建图片资源失败: ${file.name}`);
               }
             };
-            image.onerror = () => {
-              showToast('error', `加载图片失败: ${file.name}`);
-            };
+            image.onerror = () => showToast('error', `加载图片失败: ${file.name}`);
             image.src = fileUrl;
           } else if (isVideo) {
-            // 创建视频资源
             const videoAssetId = AssetRecordType.createId();
             const video = document.createElement('video');
             video.preload = 'metadata';
@@ -354,8 +396,6 @@ const Whiteboard: React.FC = () => {
                     meta: {},
                   },
                 ]);
-                
-                // 创建视频形状
                 editor.createShape({
                   id: createShapeId(),
                   type: 'video',
@@ -372,17 +412,18 @@ const Whiteboard: React.FC = () => {
                 showToast('error', `创建视频资源失败: ${file.name}`);
               }
             };
-            video.onerror = () => {
-              showToast('error', `加载视频失败: ${file.name}`);
-            };
+            video.onerror = () => showToast('error', `加载视频失败: ${file.name}`);
             video.src = fileUrl;
           }
         }
         
         showToast('success', `文件 "${file.name}" 已上传并添加到画布`);
-      } catch (error: any) {
-        showToast('error', `上传文件失败: ${error.message}`);
       }
+      setProgress({ visible: true, percent: 100, message: '上传完成' });
+      setTimeout(() => setProgress(p => ({ ...p, visible: false })), 500);
+    } catch (error: any) {
+      showToast('error', `上传文件失败: ${error.message}`);
+      setProgress(p => ({ ...p, visible: false }));
     }
   }, [currentProject, showToast]);
 
@@ -499,24 +540,30 @@ const Whiteboard: React.FC = () => {
       return;
     }
 
+    setProgress({ visible: true, percent: 0, message: '正在读取导入文件...' });
+
     try {
+      setProgress({ visible: true, percent: 20, message: '正在解析画布数据...' });
       const text = await file.text();
       const importData = JSON.parse(text);
 
       if (!importData.data) {
         showToast('error', '无效的画布数据文件');
+        setProgress(p => ({ ...p, visible: false }));
         return;
       }
 
-      // 加载快照
+      setProgress({ visible: true, percent: 70, message: '正在加载到画布...' });
       editor.loadSnapshot(importData.data);
+      setProgress({ visible: true, percent: 100, message: '导入完成' });
       showToast('success', `已导入画布: ${importData.projectName || '未命名'}`);
+      setTimeout(() => setProgress(p => ({ ...p, visible: false })), 500);
     } catch (error: any) {
       console.error('导入失败:', error);
       showToast('error', `导入失败: ${error.message}`);
+      setProgress(p => ({ ...p, visible: false }));
     }
 
-    // 重置 input
     e.target.value = '';
   }, [showToast]);
 
@@ -549,7 +596,7 @@ const Whiteboard: React.FC = () => {
   }
 
   return (
-    <div className="h-full flex flex-col bg-[#0a0a0a]">
+    <div className="h-full flex flex-col bg-[#0a0a0a] relative">
       {/* 顶部工具栏 */}
       <div className="flex items-center justify-between p-4 border-b border-[#1a1a1a] shrink-0">
         <div className="flex items-center gap-3">
@@ -695,6 +742,23 @@ const Whiteboard: React.FC = () => {
         </div>
       </div>
 
+      {/* 底部进度条 - 加载/上传时显示 */}
+      {progress.visible && (
+        <div className="absolute bottom-0 left-0 right-0 z-50 bg-[#1a1a1a] border-t border-[#2a2a2a] px-4 py-2">
+          <div className="flex items-center gap-3">
+            <div className="flex-1 h-2 bg-[#2a2a2a] rounded-full overflow-hidden">
+              <div
+                className="h-full bg-blue-500 transition-all duration-200 ease-out"
+                style={{ width: `${Math.min(100, Math.max(0, progress.percent))}%` }}
+              />
+            </div>
+            <span className="text-sm text-[#a0a0a0] shrink-0 min-w-[140px]">
+              {progress.message}
+            </span>
+          </div>
+        </div>
+      )}
+
       {/* 画布区域 - tldraw 需要明确的容器尺寸 */}
       <div
         className="flex-1 relative"
@@ -724,13 +788,17 @@ const Whiteboard: React.FC = () => {
                 });
 
                 try {
-                  const savedData = await loadCanvasData(projectId);
+                  const savedData = await loadCanvasData(projectId, (percent, message) => {
+                    setProgress({ visible: true, percent, message });
+                  });
                   if (savedData) {
                     editor.loadSnapshot(savedData as any);
                     console.log('已从本地文件加载画布数据');
                   }
                 } catch (error) {
                   console.error('加载画布数据失败:', error);
+                } finally {
+                  setProgress(p => ({ ...p, visible: false }));
                 }
 
                 // 使用定时器代替 store.listen，避免 tldraw 内部 dispose 时 "h is not a function" 错误

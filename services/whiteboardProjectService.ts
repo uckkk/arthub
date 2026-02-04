@@ -258,19 +258,26 @@ export async function saveAssetToProject(
   file: File,
   fileName?: string
 ): Promise<string> {
+  return saveAssetToProjectFromBuffer(projectId, await file.arrayBuffer(), fileName || file.name, file.type);
+}
+
+// 从 ArrayBuffer 保存文件（供带进度的上传流程使用）
+export async function saveAssetToProjectFromBuffer(
+  projectId: string,
+  arrayBuffer: ArrayBuffer,
+  fileName: string,
+  mimeType?: string
+): Promise<string> {
   try {
     if (!isTauriEnvironment()) {
       throw new Error('此功能仅在 Tauri 桌面应用中可用');
     }
 
     const assetsDir = await getProjectAssetsDir(projectId);
-    const finalFileName = fileName || file.name;
     
     const { join } = await getTauriPathApi();
-    const filePath = await join(assetsDir, finalFileName);
+    const filePath = await join(assetsDir, fileName);
 
-    // 读取文件内容
-    const arrayBuffer = await file.arrayBuffer();
     const uint8Array = new Uint8Array(arrayBuffer);
 
     // 写入文件
@@ -375,11 +382,16 @@ export async function saveCanvasData(projectId: string, data: unknown): Promise<
 }
 
 // 从项目目录加载画布数据
-export async function loadCanvasData(projectId: string): Promise<unknown | null> {
+export async function loadCanvasData(
+  projectId: string,
+  onProgress?: (percent: number, message: string) => void
+): Promise<unknown | null> {
   try {
     if (!isTauriEnvironment()) {
       return null;
     }
+
+    onProgress?.(5, '正在加载画布...');
 
     const projects = getAllProjects();
     const project = projects.find(p => p.id === projectId);
@@ -395,15 +407,21 @@ export async function loadCanvasData(projectId: string): Promise<unknown | null>
       return null;
     }
 
+    onProgress?.(30, '正在读取画布数据...');
+
     // 读取文件内容
     const { invoke } = await import('@tauri-apps/api/tauri');
     const content: number[] = await invoke('read_binary_file_with_path', { filePath });
+
+    onProgress?.(70, '正在解析画布...');
 
     // 解析 JSON
     const decoder = new TextDecoder();
     const uint8Array = new Uint8Array(content);
     const jsonContent = decoder.decode(uint8Array);
     const data = JSON.parse(jsonContent);
+
+    onProgress?.(100, '加载完成');
 
     console.log('画布数据已从文件加载:', filePath);
     return data;
