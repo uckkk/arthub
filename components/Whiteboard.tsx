@@ -478,19 +478,22 @@ const Whiteboard: React.FC = () => {
         </div>
       </div>
 
-      {/* 画布区域 */}
+      {/* 画布区域 - tldraw 需要明确的容器尺寸 */}
       <div
         className="flex-1 relative"
+        style={{ minHeight: 0 }} /* 确保 flex 子元素可以正确收缩 */
         onDrop={handleDrop}
         onDragOver={(e) => {
           e.preventDefault();
           e.stopPropagation();
         }}
       >
-        <TldrawErrorBoundary onReset={() => {
-          editorRef.current = null;
-        }}>
-          <Tldraw
+        {/* tldraw 容器需要 position: absolute 来填充父元素 */}
+        <div style={{ position: 'absolute', inset: 0 }}>
+          <TldrawErrorBoundary onReset={() => {
+            editorRef.current = null;
+          }}>
+            <Tldraw
             onMount={(editor) => {
               editorRef.current = editor;
               
@@ -530,8 +533,9 @@ const Whiteboard: React.FC = () => {
               setTimeout(hideWatermark, 500);
               setTimeout(hideWatermark, 1000);
             }}
-          />
-        </TldrawErrorBoundary>
+            />
+          </TldrawErrorBoundary>
+        </div>
       </div>
     </div>
   );
