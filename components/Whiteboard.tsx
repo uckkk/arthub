@@ -66,8 +66,11 @@ import {
   WhiteboardProject
 } from '../services/whiteboardProjectService';
 import { getSavedStoragePath } from '../services/fileStorageService';
-import { Edit2, X, Plus, Folder, Save, Download, Share2 } from 'lucide-react';
+import { Edit2, X, Plus, Folder, Save, Download, Share2, Sun, Moon } from 'lucide-react';
 import { useToast } from './Toast';
+
+// 主题存储 key
+const THEME_STORAGE_KEY = 'arthub_whiteboard_theme';
 
 const Whiteboard: React.FC = () => {
   const { showToast } = useToast();
@@ -78,6 +81,26 @@ const Whiteboard: React.FC = () => {
   const [showProjectSelector, setShowProjectSelector] = useState(false);
   const [storagePath, setStoragePath] = useState<string | null>(null);
   const editorRef = useRef<Editor | null>(null);
+  
+  // 主题状态：'dark' | 'light'
+  const [isDarkMode, setIsDarkMode] = useState<boolean>(() => {
+    const saved = localStorage.getItem(THEME_STORAGE_KEY);
+    return saved !== 'light'; // 默认深色
+  });
+
+  // 切换主题
+  const handleToggleTheme = useCallback(() => {
+    const newIsDark = !isDarkMode;
+    setIsDarkMode(newIsDark);
+    localStorage.setItem(THEME_STORAGE_KEY, newIsDark ? 'dark' : 'light');
+    
+    // 更新 tldraw 编辑器的主题
+    if (editorRef.current) {
+      editorRef.current.user.updateUserPreferences({
+        colorScheme: newIsDark ? 'dark' : 'light',
+      });
+    }
+  }, [isDarkMode]);
 
   // 初始化：加载项目和存储路径
   useEffect(() => {
@@ -659,6 +682,16 @@ const Whiteboard: React.FC = () => {
               className="hidden"
             />
           </label>
+
+          {/* 主题切换 */}
+          <button
+            onClick={handleToggleTheme}
+            className="px-3 py-2 rounded-lg bg-[#2a2a2a] hover:bg-[#3a3a3a] text-white font-medium transition-colors flex items-center gap-2 text-sm"
+            title={isDarkMode ? '切换到浅色模式' : '切换到深色模式'}
+          >
+            {isDarkMode ? <Sun size={16} /> : <Moon size={16} />}
+            {isDarkMode ? '浅色' : '深色'}
+          </button>
         </div>
       </div>
 
@@ -682,6 +715,12 @@ const Whiteboard: React.FC = () => {
               onMount={async (editor) => {
                 editorRef.current = editor;
                 console.log('tldraw 画布已加载，项目:', currentProject.name);
+                
+                // 应用保存的主题设置
+                const savedTheme = localStorage.getItem(THEME_STORAGE_KEY);
+                editor.user.updateUserPreferences({
+                  colorScheme: savedTheme === 'light' ? 'light' : 'dark',
+                });
                 
                 // 从本地文件加载画布数据
                 try {
