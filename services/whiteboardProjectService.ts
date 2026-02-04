@@ -1,10 +1,32 @@
 // 画布项目管理服务
 // 管理画布项目：创建、重命名、目录管理
 
-import { getSavedStoragePath } from './fileStorageService';
-import { join } from '@tauri-apps/api/path';
-import { exists, createDir } from '@tauri-apps/api/fs';
-import { isTauriEnvironment } from './fileStorageService';
+import { getSavedStoragePath, isTauriEnvironment } from './fileStorageService';
+
+// 动态导入 Tauri API，避免打包问题
+async function getTauriPathApi() {
+  const pathModule = await import('@tauri-apps/api/path');
+  return pathModule;
+}
+
+async function getTauriFsApi() {
+  const fsModule = await import('@tauri-apps/api/fs');
+  return fsModule;
+}
+
+// 统一错误消息提取
+function getErrorMessage(error: unknown): string {
+  if (error instanceof Error) {
+    return error.message;
+  }
+  if (typeof error === 'string') {
+    return error;
+  }
+  if (error && typeof error === 'object' && 'message' in error) {
+    return String((error as { message: unknown }).message);
+  }
+  return JSON.stringify(error) || '未知错误';
+}
 
 export interface WhiteboardProject {
   id: string;
@@ -66,102 +88,118 @@ export function setCurrentProject(projectId: string | null): void {
 
 // 创建新项目
 export async function createProject(name?: string): Promise<WhiteboardProject> {
-  if (!isTauriEnvironment()) {
-    throw new Error('此功能仅在 Tauri 桌面应用中可用');
-  }
+  try {
+    if (!isTauriEnvironment()) {
+      throw new Error('此功能仅在 Tauri 桌面应用中可用');
+    }
 
-  const storagePath = await getSavedStoragePath();
-  if (!storagePath) {
-    throw new Error('请先在设置中选择存储路径');
-  }
+    const storagePath = await getSavedStoragePath();
+    if (!storagePath) {
+      throw new Error('请先在设置中选择存储路径');
+    }
 
-  const projectName = name || generateDefaultProjectName();
-  const projectId = `project_${Date.now()}`;
-  const projectDir = await join(storagePath, 'whiteboard', projectName);
+    const { join } = await getTauriPathApi();
+    const { exists, createDir } = await getTauriFsApi();
 
-  // 确保 whiteboard 目录存在
-  const whiteboardDir = await join(storagePath, 'whiteboard');
-  if (!(await exists(whiteboardDir))) {
-    await createDir(whiteboardDir, { recursive: true });
-  }
+    const projectName = name || generateDefaultProjectName();
+    const projectId = `project_${Date.now()}`;
+    const projectDir = await join(storagePath, 'whiteboard', projectName);
 
-  // 创建项目目录
-  if (!(await exists(projectDir))) {
-    await createDir(projectDir, { recursive: true });
-  }
-
-  const project: WhiteboardProject = {
-    id: projectId,
-    name: projectName,
-    directoryPath: projectDir,
-    createdAt: Date.now(),
-    updatedAt: Date.now(),
-  };
-
-  const projects = getAllProjects();
-  projects.push(project);
-  saveProjects(projects);
-  setCurrentProject(projectId);
-
-  return project;
-}
-
-// 重命名项目
-export async function renameProject(projectId: string, newName: string): Promise<WhiteboardProject> {
-  if (!isTauriEnvironment()) {
-    throw new Error('此功能仅在 Tauri 桌面应用中可用');
-  }
-
-  const projects = getAllProjects();
-  const projectIndex = projects.findIndex(p => p.id === projectId);
-  if (projectIndex === -1) {
-    throw new Error('项目不存在');
-  }
-
-  const project = projects[projectIndex];
-  const oldDir = project.directoryPath;
-  
-  // 计算新目录路径
-  const storagePath = await getSavedStoragePath();
-  if (!storagePath) {
-    throw new Error('存储路径未设置');
-  }
-  
-  const newDir = await join(storagePath, 'whiteboard', newName);
-
-  // 如果目录名改变，重命名目录
-  if (oldDir !== newDir && (await exists(oldDir))) {
-    // 确保新目录的父目录存在
+    // 确保 whiteboard 目录存在
     const whiteboardDir = await join(storagePath, 'whiteboard');
     if (!(await exists(whiteboardDir))) {
       await createDir(whiteboardDir, { recursive: true });
     }
 
-    // 使用 Rust 命令重命名目录
-    try {
-      const { invoke } = await import('@tauri-apps/api/tauri');
-      await invoke('rename_file_with_path', { 
-        oldPath: oldDir, 
-        newPath: newDir 
-      });
-    } catch (error: any) {
-      // 如果重命名失败（可能是目录不存在或权限问题），尝试创建新目录
-      console.warn('重命名目录失败，尝试创建新目录:', error);
-      if (!(await exists(newDir))) {
-        await createDir(newDir, { recursive: true });
+    // 创建项目目录
+    if (!(await exists(projectDir))) {
+      await createDir(projectDir, { recursive: true });
+    }
+
+    const project: WhiteboardProject = {
+      id: projectId,
+      name: projectName,
+      directoryPath: projectDir,
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+    };
+
+    const projects = getAllProjects();
+    projects.push(project);
+    saveProjects(projects);
+    setCurrentProject(projectId);
+
+    return project;
+  } catch (error) {
+    console.error('创建项目失败:', error);
+    throw new Error(getErrorMessage(error));
+  }
+}
+
+// 重命名项目
+export async function renameProject(projectId: string, newName: string): Promise<WhiteboardProject> {
+  try {
+    if (!isTauriEnvironment()) {
+      throw new Error('此功能仅在 Tauri 桌面应用中可用');
+    }
+
+    const projects = getAllProjects();
+    const projectIndex = projects.findIndex(p => p.id === projectId);
+    if (projectIndex === -1) {
+      throw new Error('项目不存在');
+    }
+
+    const project = projects[projectIndex];
+    const oldDir = project.directoryPath;
+    
+    // 计算新目录路径
+    const storagePath = await getSavedStoragePath();
+    if (!storagePath) {
+      throw new Error('存储路径未设置');
+    }
+    
+    const { join } = await getTauriPathApi();
+    const { exists, createDir } = await getTauriFsApi();
+    
+    const newDir = await join(storagePath, 'whiteboard', newName);
+
+    // 如果目录名改变，重命名目录
+    if (oldDir !== newDir && (await exists(oldDir))) {
+      // 确保新目录的父目录存在
+      const whiteboardDir = await join(storagePath, 'whiteboard');
+      if (!(await exists(whiteboardDir))) {
+        await createDir(whiteboardDir, { recursive: true });
+      }
+
+      // 使用 Rust 命令重命名目录
+      try {
+        const { invoke } = await import('@tauri-apps/api/tauri');
+        await invoke('rename_file_with_path', { 
+          oldPath: oldDir, 
+          newPath: newDir 
+        });
+      } catch (renameError) {
+        // 如果重命名失败（可能是目录不存在或权限问题），尝试创建新目录
+        console.warn('重命名目录失败，尝试创建新目录:', renameError);
+        if (!(await exists(newDir))) {
+          await createDir(newDir, { recursive: true });
+        }
       }
     }
+
+    // 更新项目信息
+    project.name = newName;
+    project.directoryPath = newDir;
+    project.updatedAt = Date.now();
+
+    projects[projectIndex] = project;
+    saveProjects(projects);
+
+    return project;
+  } catch (error) {
+    console.error('重命名项目失败:', error);
+    throw new Error(getErrorMessage(error));
   }
-
-  // 更新项目信息
-  project.name = newName;
-  project.directoryPath = newDir;
-  project.updatedAt = Date.now();
-
-  projects[projectIndex] = project;
-  saveProjects(projects);
-
-  return project;
 }
 
 // 删除项目
@@ -187,20 +225,28 @@ export async function deleteProject(projectId: string): Promise<void> {
 
 // 获取项目资源目录（用于存储图片和视频）
 export async function getProjectAssetsDir(projectId: string): Promise<string> {
-  const projects = getAllProjects();
-  const project = projects.find(p => p.id === projectId);
-  if (!project) {
-    throw new Error('项目不存在');
-  }
+  try {
+    const projects = getAllProjects();
+    const project = projects.find(p => p.id === projectId);
+    if (!project) {
+      throw new Error('项目不存在');
+    }
 
-  const assetsDir = await join(project.directoryPath, 'assets');
-  
-  // 确保资源目录存在
-  if (!(await exists(assetsDir))) {
-    await createDir(assetsDir, { recursive: true });
-  }
+    const { join } = await getTauriPathApi();
+    const { exists, createDir } = await getTauriFsApi();
 
-  return assetsDir;
+    const assetsDir = await join(project.directoryPath, 'assets');
+    
+    // 确保资源目录存在
+    if (!(await exists(assetsDir))) {
+      await createDir(assetsDir, { recursive: true });
+    }
+
+    return assetsDir;
+  } catch (error) {
+    console.error('获取资源目录失败:', error);
+    throw new Error(getErrorMessage(error));
+  }
 }
 
 // 保存文件到项目资源目录
@@ -209,26 +255,33 @@ export async function saveAssetToProject(
   file: File,
   fileName?: string
 ): Promise<string> {
-  if (!isTauriEnvironment()) {
-    throw new Error('此功能仅在 Tauri 桌面应用中可用');
+  try {
+    if (!isTauriEnvironment()) {
+      throw new Error('此功能仅在 Tauri 桌面应用中可用');
+    }
+
+    const assetsDir = await getProjectAssetsDir(projectId);
+    const finalFileName = fileName || file.name;
+    
+    const { join } = await getTauriPathApi();
+    const filePath = await join(assetsDir, finalFileName);
+
+    // 读取文件内容
+    const arrayBuffer = await file.arrayBuffer();
+    const uint8Array = new Uint8Array(arrayBuffer);
+
+    // 写入文件
+    const { invoke } = await import('@tauri-apps/api/tauri');
+    await invoke('write_binary_file_with_path', {
+      filePath: filePath,
+      content: Array.from(uint8Array),
+    });
+
+    return filePath;
+  } catch (error) {
+    console.error('保存资源失败:', error);
+    throw new Error(getErrorMessage(error));
   }
-
-  const assetsDir = await getProjectAssetsDir(projectId);
-  const finalFileName = fileName || file.name;
-  const filePath = await join(assetsDir, finalFileName);
-
-  // 读取文件内容
-  const arrayBuffer = await file.arrayBuffer();
-  const uint8Array = new Uint8Array(arrayBuffer);
-
-  // 写入文件
-  const { invoke } = await import('@tauri-apps/api/tauri');
-  await invoke('write_binary_file_with_path', {
-    filePath: filePath,
-    content: Array.from(uint8Array),
-  });
-
-  return filePath;
 }
 
 // 将文件路径转换为可访问的 URL（用于 tldraw）
