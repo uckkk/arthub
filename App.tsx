@@ -544,6 +544,16 @@ const AppContent: React.FC = () => {
                   </div>
                 )}
 
+                {/* 版本号和同步时间 - 显示在用户名下方 */}
+                <div className="px-3 py-2 border-t border-[#1a1a1a]">
+                  <div className="flex items-center justify-between text-[10px] text-[#555555] font-mono select-none">
+                    {lastSyncTime && (
+                      <span>已同步.{formatSyncTime(lastSyncTime)}</span>
+                    )}
+                    <span>v{CURRENT_VERSION}</span>
+                  </div>
+                </div>
+
               </div>
             }
           />
@@ -551,16 +561,6 @@ const AppContent: React.FC = () => {
           {/* 主内容区域 */}
           <main className="flex-1 flex flex-col overflow-hidden relative">
             {renderContent()}
-            
-            {/* 版本号和同步时间 - 显示在右下角 */}
-            <div className="absolute bottom-0 right-0 px-4 py-2 z-0 pointer-events-none">
-              <div className="flex items-center gap-2 text-[10px] text-[#888888] font-mono select-none bg-black/40 backdrop-blur-sm px-2 py-1 rounded border border-white/10">
-                {lastSyncTime && (
-                  <span>已同步.{formatSyncTime(lastSyncTime)}</span>
-                )}
-                <span>v{CURRENT_VERSION}</span>
-              </div>
-            </div>
           </main>
 
           {/* 设置面板 - 始终渲染以静默加载数据，但只在 showSettings 为 true 时显示 */}
