@@ -281,6 +281,7 @@ const Whiteboard: React.FC = () => {
                       name: file.name,
                       src: fileUrl,
                       mimeType: file.type || 'video/mp4',
+                      isAnimated: true,
                     },
                   },
                 ]);
