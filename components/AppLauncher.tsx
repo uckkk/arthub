@@ -594,10 +594,7 @@ const AppLauncher: React.FC = () => {
 
   return (
     <div className="h-full flex flex-col overflow-hidden bg-[#0a0a0a]">
-      <div className="flex items-center justify-between p-6 border-b border-[#1a1a1a] shrink-0">
-        <div className="flex items-center gap-2">
-          <h2 className="text-lg font-semibold text-white">常用应用</h2>
-        </div>
+      <div className="flex items-center justify-end gap-2 p-6 border-b border-[#1a1a1a] shrink-0">
         <div className="flex items-center gap-2">
           <div className="relative">
             <button

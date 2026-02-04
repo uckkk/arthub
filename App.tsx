@@ -509,21 +509,23 @@ const AppContent: React.FC = () => {
             activeId={activeTab}
             onSelect={handleMenuSelect}
             onReorder={handleMenuReorder}
-            footer={
-              <div className="space-y-2">
+            footer={(collapsed) => (
+              <div className={collapsed ? 'flex flex-col items-center gap-2' : 'space-y-2'}>
                 {/* 设置和更新按钮行 */}
-                <div className="flex items-center gap-2">
+                <div className={collapsed ? 'flex flex-col items-center gap-1' : 'flex items-center gap-2'}>
                   <button
                     ref={settingsButtonRef}
                     onClick={() => setShowSettings(!showSettings)}
-                    className="
-                      flex-1 flex items-center gap-3 px-3 py-2 rounded-lg
+                    className={`
+                      flex items-center rounded-lg
                       text-[#808080] hover:text-white hover:bg-[#151515]
                       transition-colors duration-150 text-sm
-                    "
+                      ${collapsed ? 'justify-center p-2' : 'flex-1 gap-3 px-3 py-2'}
+                    `}
+                    title="设置"
                   >
                     <Settings size={16} />
-                    <span>设置</span>
+                    {!collapsed && <span>设置</span>}
                   </button>
                   <Suspense fallback={null}>
                     <UpdateNotification />
@@ -531,7 +533,7 @@ const AppContent: React.FC = () => {
                 </div>
 
                 {/* 用户信息和退出 */}
-                {userInfo && (
+                {userInfo && !collapsed && (
                   <div className="
                     flex items-center justify-between px-3 py-2 
                     border-t border-[#1a1a1a] mt-2 pt-3
@@ -551,18 +553,19 @@ const AppContent: React.FC = () => {
                   </div>
                 )}
 
-                {/* 版本号和同步时间 - 显示在用户名下方 */}
-                <div className="px-3 py-2 border-t border-[#1a1a1a]">
-                  <div className="flex items-center justify-between text-[10px] text-[#555555] font-mono select-none">
-                    {lastSyncTime && (
-                      <span>已同步.{formatSyncTime(lastSyncTime)}</span>
-                    )}
-                    <span>v{CURRENT_VERSION}</span>
+                {/* 版本号和同步时间 - 折叠时隐藏 */}
+                {!collapsed && (
+                  <div className="px-3 py-2 border-t border-[#1a1a1a]">
+                    <div className="flex items-center justify-between text-[10px] text-[#555555] font-mono select-none">
+                      {lastSyncTime && (
+                        <span>已同步.{formatSyncTime(lastSyncTime)}</span>
+                      )}
+                      <span>v{CURRENT_VERSION}</span>
+                    </div>
                   </div>
-                </div>
-
+                )}
               </div>
-            }
+            )}
           />
 
           {/* 主内容区域 */}

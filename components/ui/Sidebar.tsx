@@ -23,9 +23,12 @@ interface SidebarProps {
   activeId: string;
   onSelect: (id: string) => void;
   onReorder?: (groupId: number, fromIndex: number, toIndex: number) => void;
-  footer?: React.ReactNode;
+  footer?: React.ReactNode | ((collapsed: boolean) => React.ReactNode);
   className?: string;
 }
+
+const SIDEBAR_WIDTH_EXPANDED = 220;
+const SIDEBAR_WIDTH_COLLAPSED = 56;
 
 export const Sidebar: React.FC<SidebarProps> = ({
   logo,
@@ -37,6 +40,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   footer,
   className = '',
 }) => {
+  const [isCollapsed, setIsCollapsed] = useState(true);
   const [draggedItem, setDraggedItem] = useState<{ groupIndex: number; itemIndex: number } | null>(null);
   const [dragOverIndex, setDragOverIndex] = useState<{ groupIndex: number; itemIndex: number } | null>(null);
   const [pressedItem, setPressedItem] = useState<{ groupIndex: number; itemIndex: number } | null>(null);
@@ -123,14 +127,19 @@ export const Sidebar: React.FC<SidebarProps> = ({
   }, [dragStartState, isDragging, draggedItem, dragOverIndex, onReorder]);
 
   return (
-    <aside className={`
-      flex flex-col h-full
-      w-[220px] min-w-[220px]
-      bg-[#0f0f0f] border-r border-[#1a1a1a]
-      ${className}
-    `}>
-      {/* Logo 和标题 */}
-      {(logo || title) && (
+    <aside
+      className={`
+        flex flex-col h-full shrink-0
+        bg-[#0f0f0f] border-r border-[#1a1a1a]
+        transition-[width] duration-200 ease-out overflow-hidden
+        ${className}
+      `}
+      style={{ width: isCollapsed ? SIDEBAR_WIDTH_COLLAPSED : SIDEBAR_WIDTH_EXPANDED }}
+      onMouseEnter={() => setIsCollapsed(false)}
+      onMouseLeave={() => setIsCollapsed(true)}
+    >
+      {/* Logo 和标题 - 折叠时隐藏 */}
+      {(logo || title) && !isCollapsed && (
         <div className="flex items-center gap-3 px-5 py-5 border-b border-[#1a1a1a]">
           {logo}
           {title && (
@@ -151,9 +160,9 @@ export const Sidebar: React.FC<SidebarProps> = ({
         }}
       >
         {groups.map((group, groupIndex) => (
-          <div key={groupIndex} className={groupIndex > 0 ? 'mt-6' : ''}>
-            {/* 分组标题 */}
-            {group.title && (
+          <div key={groupIndex} className={groupIndex > 0 ? (isCollapsed ? 'mt-2' : 'mt-6') : ''}>
+            {/* 分组标题 - 折叠时隐藏 */}
+            {group.title && !isCollapsed && (
               <div className="
                 px-3 py-2 mb-1
                 text-[11px] font-medium text-[#666666]
@@ -186,6 +195,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                   >
                     <button
                       type="button"
+                      title={isCollapsed ? item.label : undefined}
                       onClick={(e) => {
                         // 如果正在拖动，阻止点击
                         if (isDragging || dragStartRef.current) {
@@ -196,7 +206,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                         onSelect(item.id);
                       }}
                       onMouseDown={(e) => {
-                        if (isDraggable && e.button === 0) {
+                        if (isDraggable && !isCollapsed && e.button === 0) {
                           const target = e.target as HTMLElement;
                           // 如果点击的是拖动图标，立即开始拖动
                           if (target.closest('[data-drag-handle]')) {
@@ -225,9 +235,10 @@ export const Sidebar: React.FC<SidebarProps> = ({
                         }
                       }}
                       className={`
-                        w-full flex items-center gap-3 px-3 py-2.5 rounded-lg
+                        w-full flex items-center rounded-lg
                         text-[14px] font-medium
                         transition-all duration-150
+                        ${isCollapsed ? 'justify-center px-0 py-2.5' : 'gap-3 px-3 py-2.5'}
                         ${isDragging && draggedItem?.groupIndex === groupIndex && draggedItem?.itemIndex === itemIndex ? 'cursor-move' : 'cursor-pointer'}
                         ${isActive 
                           ? 'bg-[#1a1a1a] text-white' 
@@ -235,7 +246,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                         }
                       `}
                     >
-                      {onReorder && isDraggable && (
+                      {onReorder && isDraggable && !isCollapsed && (
                         <GripVertical 
                           size={14} 
                           data-drag-handle
@@ -244,16 +255,20 @@ export const Sidebar: React.FC<SidebarProps> = ({
                       )}
                       <Icon 
                         size={18} 
-                        className={isActive ? 'text-blue-400' : ''} 
+                        className={`flex-shrink-0 ${isActive ? 'text-blue-400' : ''}`} 
                       />
-                      <span className="flex-1 text-left">{item.label}</span>
-                      {item.badge !== undefined && item.badge > 0 && (
-                        <span className="
-                          px-1.5 py-0.5 rounded text-[10px] font-medium
-                          bg-blue-500/20 text-blue-400
-                        ">
-                          {item.badge}
-                        </span>
+                      {!isCollapsed && (
+                        <>
+                          <span className="flex-1 text-left truncate">{item.label}</span>
+                          {item.badge !== undefined && item.badge > 0 && (
+                            <span className="
+                              px-1.5 py-0.5 rounded text-[10px] font-medium
+                              bg-blue-500/20 text-blue-400
+                            ">
+                              {item.badge}
+                            </span>
+                          )}
+                        </>
                       )}
                     </button>
                   </div>
@@ -266,8 +281,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
       {/* 底部区域 */}
       {footer && (
-        <div className="shrink-0 border-t border-[#1a1a1a] p-3">
-          {footer}
+        <div className="shrink-0 border-t border-[#1a1a1a] p-3 overflow-hidden">
+          {typeof footer === 'function' ? footer(isCollapsed) : footer}
         </div>
       )}
     </aside>
