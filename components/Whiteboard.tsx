@@ -64,7 +64,7 @@ import {
   WhiteboardProject
 } from '../services/whiteboardProjectService';
 import { getSavedStoragePath } from '../services/fileStorageService';
-import { Edit2, X, Plus, Folder, Save } from 'lucide-react';
+import { Edit2, X, Plus, Folder, Save, Download, Share2 } from 'lucide-react';
 import { useToast } from './Toast';
 
 const Whiteboard: React.FC = () => {
@@ -356,6 +356,119 @@ const Whiteboard: React.FC = () => {
     e.target.value = '';
   }, [handleFileUpload]);
 
+  // 导出画布为 PNG
+  const handleExportPng = useCallback(async () => {
+    const editor = editorRef.current;
+    if (!editor) {
+      showToast('error', '画布未加载');
+      return;
+    }
+
+    try {
+      // 获取所有形状的 ID
+      const shapeIds = editor.getCurrentPageShapeIds();
+      if (shapeIds.size === 0) {
+        showToast('error', '画布为空，无法导出');
+        return;
+      }
+
+      // 导出为 PNG blob
+      const blob = await editor.toImage([...shapeIds], {
+        format: 'png',
+        background: true,
+      });
+
+      if (!blob) {
+        showToast('error', '导出失败');
+        return;
+      }
+
+      // 创建下载链接
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${currentProject?.name || 'whiteboard'}-${Date.now()}.png`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+
+      showToast('success', '已导出为 PNG');
+    } catch (error: any) {
+      console.error('导出失败:', error);
+      showToast('error', `导出失败: ${error.message}`);
+    }
+  }, [currentProject, showToast]);
+
+  // 导出画布数据为 JSON（可分享）
+  const handleExportJson = useCallback(async () => {
+    const editor = editorRef.current;
+    if (!editor) {
+      showToast('error', '画布未加载');
+      return;
+    }
+
+    try {
+      // 获取画布数据快照
+      const snapshot = editor.store.getSnapshot();
+      
+      const exportData = {
+        version: 1,
+        projectName: currentProject?.name || 'whiteboard',
+        exportTime: new Date().toISOString(),
+        data: snapshot,
+      };
+
+      // 创建下载链接
+      const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${currentProject?.name || 'whiteboard'}-${Date.now()}.json`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+
+      showToast('success', '已导出画布数据，可分享给他人导入');
+    } catch (error: any) {
+      console.error('导出失败:', error);
+      showToast('error', `导出失败: ${error.message}`);
+    }
+  }, [currentProject, showToast]);
+
+  // 导入画布数据
+  const handleImportJson = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const editor = editorRef.current;
+    if (!editor) {
+      showToast('error', '画布未加载');
+      return;
+    }
+
+    try {
+      const text = await file.text();
+      const importData = JSON.parse(text);
+
+      if (!importData.data) {
+        showToast('error', '无效的画布数据文件');
+        return;
+      }
+
+      // 加载快照
+      editor.store.loadSnapshot(importData.data);
+      showToast('success', `已导入画布: ${importData.projectName || '未命名'}`);
+    } catch (error: any) {
+      console.error('导入失败:', error);
+      showToast('error', `导入失败: ${error.message}`);
+    }
+
+    // 重置 input
+    e.target.value = '';
+  }, [showToast]);
+
   if (!storagePath) {
     return (
       <div className="h-full flex items-center justify-center bg-[#0a0a0a]">
@@ -462,16 +575,49 @@ const Whiteboard: React.FC = () => {
           {/* 编辑按钮已集成到项目选择器中，不需要单独的按钮 */}
         </div>
 
-        {/* 文件上传按钮 */}
+        {/* 工具栏按钮 */}
         <div className="flex items-center gap-2">
-          <label className="px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-medium transition-colors cursor-pointer flex items-center gap-2">
+          {/* 上传文件 */}
+          <label className="px-3 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-medium transition-colors cursor-pointer flex items-center gap-2 text-sm">
             <Plus size={16} />
-            上传文件
+            上传
             <input
               type="file"
               multiple
               accept="image/*,video/mp4,video/webm,video/ogg"
               onChange={handleFileSelect}
+              className="hidden"
+            />
+          </label>
+
+          {/* 导出为 PNG */}
+          <button
+            onClick={handleExportPng}
+            className="px-3 py-2 rounded-lg bg-[#2a2a2a] hover:bg-[#3a3a3a] text-white font-medium transition-colors flex items-center gap-2 text-sm"
+            title="导出为 PNG 图片"
+          >
+            <Download size={16} />
+            导出图片
+          </button>
+
+          {/* 导出/分享 JSON */}
+          <button
+            onClick={handleExportJson}
+            className="px-3 py-2 rounded-lg bg-[#2a2a2a] hover:bg-[#3a3a3a] text-white font-medium transition-colors flex items-center gap-2 text-sm"
+            title="导出画布数据，可分享给他人"
+          >
+            <Share2 size={16} />
+            分享
+          </button>
+
+          {/* 导入 JSON */}
+          <label className="px-3 py-2 rounded-lg bg-[#2a2a2a] hover:bg-[#3a3a3a] text-white font-medium transition-colors cursor-pointer flex items-center gap-2 text-sm" title="导入他人分享的画布数据">
+            <Folder size={16} />
+            导入
+            <input
+              type="file"
+              accept=".json"
+              onChange={handleImportJson}
               className="hidden"
             />
           </label>
@@ -495,9 +641,11 @@ const Whiteboard: React.FC = () => {
           }}>
             <Tldraw
               // tldraw 3.x 不需要 license key，只需保留水印
+              // persistenceKey 用于自动保存画布内容到 localStorage
+              persistenceKey={`whiteboard-${currentProject.id}`}
               onMount={(editor) => {
                 editorRef.current = editor;
-                console.log('tldraw 画布已加载');
+                console.log('tldraw 画布已加载，项目:', currentProject.name);
               }}
             />
           </TldrawErrorBoundary>
