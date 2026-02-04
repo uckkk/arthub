@@ -48,6 +48,13 @@ const QuadrantTodo: React.FC = () => {
     'urgent-not-important': false,
     'not-urgent-not-important': false,
   });
+  
+  // 删除确认状态
+  const [deleteConfirm, setDeleteConfirm] = useState<{ show: boolean; todoId: string | null; todoText: string }>({
+    show: false,
+    todoId: null,
+    todoText: '',
+  });
   const [showPathSelectorQuick, setShowPathSelectorQuick] = useState<Record<TodoItem['quadrant'], boolean>>({
     'urgent-important': false,
     'not-urgent-important': false,
@@ -382,10 +389,29 @@ const QuadrantTodo: React.FC = () => {
     }, 0);
   };
 
+  // 显示删除确认对话框
   const handleDelete = (id: string) => {
-    if (window.confirm('确定要删除这个TODO吗？')) {
-      setTodos(todos.filter(t => t.id !== id));
+    const todo = todos.find(t => t.id === id);
+    if (todo) {
+      setDeleteConfirm({
+        show: true,
+        todoId: id,
+        todoText: todo.text.length > 30 ? todo.text.substring(0, 30) + '...' : todo.text,
+      });
     }
+  };
+
+  // 确认删除
+  const confirmDelete = () => {
+    if (deleteConfirm.todoId) {
+      setTodos(todos.filter(t => t.id !== deleteConfirm.todoId));
+    }
+    setDeleteConfirm({ show: false, todoId: null, todoText: '' });
+  };
+
+  // 取消删除
+  const cancelDelete = () => {
+    setDeleteConfirm({ show: false, todoId: null, todoText: '' });
   };
 
   const handleStartEdit = (todo: TodoItem) => {
@@ -1305,6 +1331,50 @@ const QuadrantTodo: React.FC = () => {
               >
                 <Plus size={16} />
                 添加
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 删除确认模态框 */}
+      {deleteConfirm.show && (
+        <div 
+          className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50"
+          onClick={cancelDelete}
+        >
+          <div 
+            className="bg-[#1a1a1a] rounded-xl border border-[#2a2a2a] w-full max-w-sm mx-4 shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="px-6 py-5">
+              <div className="flex items-center gap-3 mb-4">
+                <div className="p-2 rounded-lg bg-red-500/20">
+                  <Trash2 size={20} className="text-red-400" />
+                </div>
+                <h3 className="text-lg font-semibold text-white">确认删除</h3>
+              </div>
+              <p className="text-[#a0a0a0] text-sm">
+                确定要删除这个待办事项吗？
+              </p>
+              {deleteConfirm.todoText && (
+                <p className="mt-2 text-white text-sm bg-[#0f0f0f] rounded-lg px-3 py-2 border border-[#2a2a2a]">
+                  "{deleteConfirm.todoText}"
+                </p>
+              )}
+            </div>
+            <div className="flex gap-3 px-6 py-4 border-t border-[#2a2a2a]">
+              <button 
+                onClick={cancelDelete}
+                className="flex-1 px-4 py-2.5 rounded-lg bg-[#2a2a2a] border border-[#3a3a3a] text-[#a0a0a0] hover:text-white hover:bg-[#3a3a3a] transition-colors font-medium"
+              >
+                取消
+              </button>
+              <button 
+                onClick={confirmDelete}
+                className="flex-1 px-4 py-2.5 rounded-lg bg-red-600 hover:bg-red-700 text-white font-medium transition-colors"
+              >
+                删除
               </button>
             </div>
           </div>
