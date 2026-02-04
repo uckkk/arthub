@@ -165,7 +165,7 @@ const Whiteboard: React.FC = () => {
     }
 
     try {
-      const snapshot = editorRef.current.store.getSnapshot();
+      const snapshot = editorRef.current.getSnapshot();
       await saveCanvasData(currentProject.id, snapshot);
       showToast('success', '画布已保存');
     } catch (error: any) {
@@ -179,7 +179,7 @@ const Whiteboard: React.FC = () => {
       // 切换前保存当前画布
       if (currentProject && editorRef.current) {
         try {
-          const snapshot = editorRef.current.store.getSnapshot();
+          const snapshot = editorRef.current.getSnapshot();
           await saveCanvasData(currentProject.id, snapshot);
           console.log('切换项目前已保存当前画布');
         } catch (error) {
@@ -461,7 +461,7 @@ const Whiteboard: React.FC = () => {
 
     try {
       // 获取画布数据快照
-      const snapshot = editor.store.getSnapshot();
+      const snapshot = editor.getSnapshot();
       
       const exportData = {
         version: 1,
@@ -509,7 +509,7 @@ const Whiteboard: React.FC = () => {
       }
 
       // 加载快照
-      editor.store.loadSnapshot(importData.data);
+      editor.loadSnapshot(importData.data);
       showToast('success', `已导入画布: ${importData.projectName || '未命名'}`);
     } catch (error: any) {
       console.error('导入失败:', error);
@@ -726,7 +726,7 @@ const Whiteboard: React.FC = () => {
                 try {
                   const savedData = await loadCanvasData(currentProject.id);
                   if (savedData) {
-                    editor.store.loadSnapshot(savedData as any);
+                    editor.loadSnapshot(savedData as any);
                     console.log('已从本地文件加载画布数据');
                   }
                 } catch (error) {
@@ -737,7 +737,7 @@ const Whiteboard: React.FC = () => {
                 const autoSaveInterval = setInterval(async () => {
                   if (editorRef.current) {
                     try {
-                      const snapshot = editorRef.current.store.getSnapshot();
+                      const snapshot = editorRef.current.getSnapshot();
                       await saveCanvasData(currentProject.id, snapshot);
                     } catch (error) {
                       console.error('自动保存失败:', error);
