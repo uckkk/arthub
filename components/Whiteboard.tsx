@@ -199,6 +199,10 @@ const Whiteboard: React.FC = () => {
     const fileArray = Array.from(files);
     const imageTypes = ['image/png', 'image/jpeg', 'image/jpg', 'image/gif', 'image/webp'];
     const videoTypes = ['video/mp4', 'video/webm', 'video/ogg'];
+    
+    // 文件大小限制（单位：字节）
+    const MAX_VIDEO_SIZE = 20 * 1024 * 1024; // 20MB
+    const MAX_IMAGE_SIZE = 10 * 1024 * 1024; // 10MB
 
     for (const file of fileArray) {
       const isImage = imageTypes.includes(file.type);
@@ -206,6 +210,18 @@ const Whiteboard: React.FC = () => {
 
       if (!isImage && !isVideo) {
         showToast('warning', `不支持的文件类型: ${file.name}`);
+        continue;
+      }
+
+      // 检查文件大小
+      if (isVideo && file.size > MAX_VIDEO_SIZE) {
+        const sizeMB = (file.size / (1024 * 1024)).toFixed(1);
+        showToast('error', `视频文件过大 (${sizeMB}MB)，请压缩到 20MB 以下: ${file.name}`);
+        continue;
+      }
+      if (isImage && file.size > MAX_IMAGE_SIZE) {
+        const sizeMB = (file.size / (1024 * 1024)).toFixed(1);
+        showToast('error', `图片文件过大 (${sizeMB}MB)，请压缩到 10MB 以下: ${file.name}`);
         continue;
       }
 
