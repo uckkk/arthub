@@ -760,7 +760,15 @@ const Whiteboard: React.FC = () => {
 
                 return () => {
                   if (saveTimeout) clearTimeout(saveTimeout);
-                  dispose();
+                  saveTimeout = null;
+                  try {
+                    if (typeof dispose === 'function') {
+                      dispose();
+                    }
+                  } catch (e) {
+                    console.warn('[Whiteboard] 清理 store 监听时出错:', e);
+                  }
+                  editorRef.current = null;
                 };
               }}
             />
