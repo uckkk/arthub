@@ -733,21 +733,34 @@ const Whiteboard: React.FC = () => {
                   console.error('加载画布数据失败:', error);
                 }
 
-                // 设置自动保存（每30秒保存一次）
-                const autoSaveInterval = setInterval(async () => {
-                  if (editorRef.current) {
-                    try {
-                      const snapshot = editorRef.current.getSnapshot();
-                      await saveCanvasData(currentProject.id, snapshot);
-                    } catch (error) {
-                      console.error('自动保存失败:', error);
-                    }
-                  }
-                }, 30000);
+                // 设置自动保存：仅在内容变更时保存，防抖 3 秒避免频繁写入
+                const DEBOUNCE_MS = 3000;
+                let saveTimeout: ReturnType<typeof setTimeout> | null = null;
 
-                // 组件卸载时清理定时器
+                const scheduleSave = () => {
+                  if (saveTimeout) clearTimeout(saveTimeout);
+                  saveTimeout = setTimeout(async () => {
+                    saveTimeout = null;
+                    if (editorRef.current) {
+                      try {
+                        const snapshot = editorRef.current.getSnapshot();
+                        await saveCanvasData(currentProject.id, snapshot);
+                      } catch (error) {
+                        console.error('自动保存失败:', error);
+                      }
+                    }
+                  }, DEBOUNCE_MS);
+                };
+
+                // 仅监听用户操作产生的变更，避免加载快照时触发保存
+                const dispose = editor.store.listen(
+                  () => scheduleSave(),
+                  { source: 'user', scope: 'document' }
+                );
+
                 return () => {
-                  clearInterval(autoSaveInterval);
+                  if (saveTimeout) clearTimeout(saveTimeout);
+                  dispose();
                 };
               }}
             />
