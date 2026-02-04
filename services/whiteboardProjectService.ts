@@ -288,7 +288,7 @@ export async function saveAssetToProject(
 }
 
 // 将文件路径转换为可访问的 URL（用于 tldraw）
-// 使用 Tauri 的 asset 协议（需要在 tauri.conf.json 中启用 protocol.asset）
+// 使用 data: URL（base64 编码），因为 tldraw 明确支持此格式
 export async function convertFilePathToUrl(filePath: string): Promise<string> {
   if (!isTauriEnvironment()) {
     // 非 Tauri 环境，直接返回路径
@@ -296,9 +296,36 @@ export async function convertFilePathToUrl(filePath: string): Promise<string> {
   }
 
   try {
-    const { convertFileSrc } = await import('@tauri-apps/api/tauri');
-    // convertFileSrc 会返回 https://asset.localhost/... 格式的 URL
-    return convertFileSrc(filePath);
+    // 读取文件内容
+    const { invoke } = await import('@tauri-apps/api/tauri');
+    const content: number[] = await invoke('read_binary_file_with_path', { filePath });
+    
+    // 根据文件扩展名确定 MIME 类型
+    const ext = filePath.toLowerCase().split('.').pop() || '';
+    const mimeTypes: Record<string, string> = {
+      'mp4': 'video/mp4',
+      'webm': 'video/webm',
+      'ogg': 'video/ogg',
+      'png': 'image/png',
+      'jpg': 'image/jpeg',
+      'jpeg': 'image/jpeg',
+      'gif': 'image/gif',
+      'webp': 'image/webp',
+    };
+    const mimeType = mimeTypes[ext] || 'application/octet-stream';
+    
+    // 将字节数组转换为 base64
+    const uint8Array = new Uint8Array(content);
+    let binary = '';
+    const chunkSize = 8192; // 分块处理避免栈溢出
+    for (let i = 0; i < uint8Array.length; i += chunkSize) {
+      const chunk = uint8Array.slice(i, i + chunkSize);
+      binary += String.fromCharCode.apply(null, Array.from(chunk));
+    }
+    const base64 = btoa(binary);
+    
+    // 返回 data: URL
+    return `data:${mimeType};base64,${base64}`;
   } catch (error) {
     console.error('转换文件路径为 URL 失败:', error);
     throw new Error(getErrorMessage(error));
