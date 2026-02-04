@@ -1522,6 +1522,23 @@ fn file_exists_with_path(file_path: String) -> Result<bool, String> {
     Ok(Path::new(&file_path).exists())
 }
 
+// Tauri 命令：创建目录（绕过文件系统作用域限制）
+#[tauri::command]
+fn create_dir_with_path(dir_path: String, recursive: bool) -> Result<(), String> {
+    use std::fs;
+    use std::path::Path;
+    
+    let path = Path::new(&dir_path);
+    
+    if recursive {
+        fs::create_dir_all(path)
+            .map_err(|e| format!("创建目录失败: {}", e))
+    } else {
+        fs::create_dir(path)
+            .map_err(|e| format!("创建目录失败: {}", e))
+    }
+}
+
 // Tauri 命令：启动应用（Windows 上使用 cmd start）
 #[tauri::command]
 fn launch_app(app_path: String) -> Result<(), String> {
@@ -2149,6 +2166,7 @@ fn main() {
             rename_directory_with_path,
             read_file_with_path,
             file_exists_with_path,
+            create_dir_with_path,
             rename_file_with_path,
             enable_autostart,
             disable_autostart,

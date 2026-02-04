@@ -3,15 +3,21 @@
 
 import { getSavedStoragePath, isTauriEnvironment } from './fileStorageService';
 
-// 动态导入 Tauri API，避免打包问题
+// 动态导入 Tauri API
 async function getTauriPathApi() {
   const pathModule = await import('@tauri-apps/api/path');
   return pathModule;
 }
 
-async function getTauriFsApi() {
-  const fsModule = await import('@tauri-apps/api/fs');
-  return fsModule;
+// 使用自定义 Rust 命令绕过文件系统作用域限制
+async function fileExistsWithPath(filePath: string): Promise<boolean> {
+  const { invoke } = await import('@tauri-apps/api/tauri');
+  return invoke('file_exists_with_path', { filePath });
+}
+
+async function createDirWithPath(dirPath: string, recursive: boolean = true): Promise<void> {
+  const { invoke } = await import('@tauri-apps/api/tauri');
+  await invoke('create_dir_with_path', { dirPath, recursive });
 }
 
 // 统一错误消息提取
@@ -99,21 +105,20 @@ export async function createProject(name?: string): Promise<WhiteboardProject> {
     }
 
     const { join } = await getTauriPathApi();
-    const { exists, createDir } = await getTauriFsApi();
 
     const projectName = name || generateDefaultProjectName();
     const projectId = `project_${Date.now()}`;
     const projectDir = await join(storagePath, 'whiteboard', projectName);
 
-    // 确保 whiteboard 目录存在
+    // 确保 whiteboard 目录存在（使用自定义命令绕过作用域限制）
     const whiteboardDir = await join(storagePath, 'whiteboard');
-    if (!(await exists(whiteboardDir))) {
-      await createDir(whiteboardDir, { recursive: true });
+    if (!(await fileExistsWithPath(whiteboardDir))) {
+      await createDirWithPath(whiteboardDir, true);
     }
 
     // 创建项目目录
-    if (!(await exists(projectDir))) {
-      await createDir(projectDir, { recursive: true });
+    if (!(await fileExistsWithPath(projectDir))) {
+      await createDirWithPath(projectDir, true);
     }
 
     const project: WhiteboardProject = {
@@ -159,16 +164,15 @@ export async function renameProject(projectId: string, newName: string): Promise
     }
     
     const { join } = await getTauriPathApi();
-    const { exists, createDir } = await getTauriFsApi();
     
     const newDir = await join(storagePath, 'whiteboard', newName);
 
-    // 如果目录名改变，重命名目录
-    if (oldDir !== newDir && (await exists(oldDir))) {
+    // 如果目录名改变，重命名目录（使用自定义命令绕过作用域限制）
+    if (oldDir !== newDir && (await fileExistsWithPath(oldDir))) {
       // 确保新目录的父目录存在
       const whiteboardDir = await join(storagePath, 'whiteboard');
-      if (!(await exists(whiteboardDir))) {
-        await createDir(whiteboardDir, { recursive: true });
+      if (!(await fileExistsWithPath(whiteboardDir))) {
+        await createDirWithPath(whiteboardDir, true);
       }
 
       // 使用 Rust 命令重命名目录
@@ -181,8 +185,8 @@ export async function renameProject(projectId: string, newName: string): Promise
       } catch (renameError) {
         // 如果重命名失败（可能是目录不存在或权限问题），尝试创建新目录
         console.warn('重命名目录失败，尝试创建新目录:', renameError);
-        if (!(await exists(newDir))) {
-          await createDir(newDir, { recursive: true });
+        if (!(await fileExistsWithPath(newDir))) {
+          await createDirWithPath(newDir, true);
         }
       }
     }
@@ -233,13 +237,12 @@ export async function getProjectAssetsDir(projectId: string): Promise<string> {
     }
 
     const { join } = await getTauriPathApi();
-    const { exists, createDir } = await getTauriFsApi();
 
     const assetsDir = await join(project.directoryPath, 'assets');
     
-    // 确保资源目录存在
-    if (!(await exists(assetsDir))) {
-      await createDir(assetsDir, { recursive: true });
+    // 确保资源目录存在（使用自定义命令绕过作用域限制）
+    if (!(await fileExistsWithPath(assetsDir))) {
+      await createDirWithPath(assetsDir, true);
     }
 
     return assetsDir;
