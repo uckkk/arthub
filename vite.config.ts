@@ -19,13 +19,13 @@ const APP_VERSION = getVersion();
 export default defineConfig(({ mode }) => {
     const env = loadEnv(mode, '.', '');
     return {
-      base: './', // 使用相对路径，可以直接打开 HTML 文件
+      base: './',
       server: {
         port: 3000,
         host: '0.0.0.0',
-        strictPort: true, // Tauri 需要固定端口
+        strictPort: true,
         hmr: {
-          overlay: true, // 显示错误覆盖层
+          overlay: true,
         },
       },
       plugins: [react()],
@@ -39,8 +39,7 @@ export default defineConfig(({ mode }) => {
         alias: {
           '@': path.resolve(__dirname, '.'),
         },
-        // 关键修复：强制所有依赖使用同一个 React 实例
-        // 这可以防止 tldraw 及其依赖（radix-ui, tiptap 等）创建多个 React 实例
+        // 强制所有模块使用同一个 React 实例
         dedupe: [
           'react',
           'react-dom',
@@ -50,65 +49,32 @@ export default defineConfig(({ mode }) => {
       },
       optimizeDeps: {
         exclude: ['@google/genai'],
-        // 预优化 tldraw 及其核心依赖，确保它们正确解析 React
         include: [
           'react', 
-          'react-dom', 
-          'react/jsx-runtime',
+          'react-dom',
           'lucide-react',
-          // tldraw 核心
-          'tldraw',
         ],
-        // 强制重新优化依赖（解决缓存问题）
-        force: false,
       },
       build: {
         commonjsOptions: {
           include: [/node_modules/],
-          transformMixedEsModules: true
+          transformMixedEsModules: true,
         },
-        // 优化构建性能
         minify: 'esbuild',
         target: 'es2020',
         cssCodeSplit: true,
         sourcemap: false,
         cssMinify: 'esbuild',
+        // 不使用手动代码分割，让 Vite 自动处理
+        // 这可以避免 React 多实例问题
         rollupOptions: {
           output: {
-            // 修复代码分割策略：确保 React 不会被拆分到多个 chunk
-            manualChunks: (id) => {
-              if (id.includes('node_modules')) {
-                // React 相关必须放在一起，确保单一实例
-                if (id.includes('react') || id.includes('react-dom') || id.includes('scheduler')) {
-                  return 'react-vendor';
-                }
-                // tldraw 及其所有依赖放在一起
-                // 这包括 radix-ui, tiptap, use-gesture 等
-                if (
-                  id.includes('tldraw') || 
-                  id.includes('@tldraw') ||
-                  id.includes('@radix-ui') ||
-                  id.includes('@tiptap') ||
-                  id.includes('@use-gesture') ||
-                  id.includes('@floating-ui') ||
-                  id.includes('use-sync-external-store')
-                ) {
-                  return 'tldraw-vendor';
-                }
-                if (id.includes('lucide-react')) {
-                  return 'ui-vendor';
-                }
-                return 'vendor';
-              }
-            },
             chunkFileNames: 'assets/js/[name]-[hash:8].js',
             entryFileNames: 'assets/js/[name]-[hash:8].js',
             assetFileNames: 'assets/[ext]/[name]-[hash:8].[ext]',
-            compact: true,
           },
-          external: [],
         },
-        chunkSizeWarningLimit: 1000, // tldraw 较大，提高警告阈值
+        chunkSizeWarningLimit: 2000,
         reportCompressedSize: true,
         emptyOutDir: true,
       },
