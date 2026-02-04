@@ -67,18 +67,6 @@ import { getSavedStoragePath } from '../services/fileStorageService';
 import { Edit2, X, Plus, Folder, Save } from 'lucide-react';
 import { useToast } from './Toast';
 
-// 从 localStorage 获取 tldraw license key
-const TLDRAW_LICENSE_KEY_STORAGE = 'arthub_tldraw_license_key';
-
-function getTldrawLicenseKey(): string | undefined {
-  try {
-    const key = localStorage.getItem(TLDRAW_LICENSE_KEY_STORAGE);
-    return key || undefined;
-  } catch {
-    return undefined;
-  }
-}
-
 const Whiteboard: React.FC = () => {
   const { showToast } = useToast();
   const [currentProject, setCurrentProjectState] = useState<WhiteboardProject | null>(null);
@@ -88,7 +76,6 @@ const Whiteboard: React.FC = () => {
   const [showProjectSelector, setShowProjectSelector] = useState(false);
   const [storagePath, setStoragePath] = useState<string | null>(null);
   const editorRef = useRef<Editor | null>(null);
-  const [licenseKey] = useState<string | undefined>(getTldrawLicenseKey);
 
   // 初始化：加载项目和存储路径
   useEffect(() => {
@@ -507,9 +494,7 @@ const Whiteboard: React.FC = () => {
             editorRef.current = null;
           }}>
             <Tldraw
-              // License key 从 localStorage 读取，可在设置中配置
-              // 申请 Hobby License: https://tldraw.dev/get-a-license/hobby
-              licenseKey={licenseKey}
+              // tldraw 3.x 不需要 license key，只需保留水印
               onMount={(editor) => {
                 editorRef.current = editor;
                 console.log('tldraw 画布已加载');

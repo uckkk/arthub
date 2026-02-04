@@ -520,40 +520,6 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ isOpen, onClose, triggerR
                 </div>
               )}
               
-              {/* tldraw License Key 配置 */}
-              <div className="pt-4 border-t border-[#2a2a2a]">
-                <div className="space-y-3">
-                  <div className="flex items-center justify-between">
-                    <label className="text-sm font-medium text-[#a0a0a0]">无限画布 License Key</label>
-                    <a 
-                      href="https://tldraw.dev/get-a-license/hobby"
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="text-xs text-blue-400 hover:text-blue-300 flex items-center gap-1"
-                    >
-                      申请免费 License
-                      <ExternalLink size={12} />
-                    </a>
-                  </div>
-                  <Input
-                    type="text"
-                    value={localStorage.getItem('arthub_tldraw_license_key') || ''}
-                    onChange={(e) => {
-                      const value = e.target.value.trim();
-                      if (value) {
-                        localStorage.setItem('arthub_tldraw_license_key', value);
-                      } else {
-                        localStorage.removeItem('arthub_tldraw_license_key');
-                      }
-                    }}
-                    placeholder="粘贴 tldraw license key..."
-                    className="font-mono text-xs"
-                  />
-                  <p className="text-xs text-[#555555]">
-                    无限画布功能需要 License Key 才能正常使用。申请 Hobby License 免费，但需保留水印。
-                  </p>
-                </div>
-              </div>
             </>
           )}
 
