@@ -10,7 +10,7 @@ import { preloadAllData } from './services/preloadService';
 import { initHotkey } from './services/hotkeyService';
 import { ToastProvider, useToast } from './components/Toast';
 import { ErrorBoundary } from './components/ErrorBoundary';
-import { Sidebar, MenuGroup } from './components/ui';
+import { Sidebar, MenuGroup, SkeletonScreen, ContentFadeIn } from './components/ui';
 import { CURRENT_VERSION } from './services/updateService';
 import { consoleService } from './services/consoleService';
 import Console from './components/Console';
@@ -84,16 +84,6 @@ const preloadComponents = () => {
     import('./components/UpdateNotification').catch(() => {});
   }, 600);
 };
-
-// 加载占位符组件
-const LoadingPlaceholder = () => (
-  <div className="flex items-center justify-center h-full bg-[#0a0a0a]">
-    <div className="flex flex-col items-center gap-4">
-      <div className="w-10 h-10 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" />
-      <span className="text-[#666666] text-sm">加载中...</span>
-    </div>
-  </div>
-);
 
 // 定义菜单项
 const createMenuGroups = (): MenuGroup[] => [
@@ -435,8 +425,10 @@ const AppContent: React.FC = () => {
 
   if (!isUserVerified) {
     return (
-      <Suspense fallback={<LoadingPlaceholder />}>
-        <UserAuthModal onVerified={handleUserVerified} />
+      <Suspense fallback={<SkeletonScreen />}>
+        <ContentFadeIn>
+          <UserAuthModal onVerified={handleUserVerified} />
+        </ContentFadeIn>
       </Suspense>
     );
   }
@@ -446,49 +438,63 @@ const AppContent: React.FC = () => {
     switch (activeTab) {
       case 'home':
         return (
-          <Suspense fallback={<LoadingPlaceholder />}>
-            <HomePage />
+          <Suspense fallback={<SkeletonScreen />}>
+            <ContentFadeIn>
+              <HomePage />
+            </ContentFadeIn>
           </Suspense>
         );
       case 'naming':
         return (
-          <Suspense fallback={<LoadingPlaceholder />}>
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 h-full p-6">
-              <NamingTool />
-              <div className="hidden lg:block">
-                <NamingHistory />
+          <Suspense fallback={<SkeletonScreen />}>
+            <ContentFadeIn>
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 h-full p-6">
+                <NamingTool />
+                <div className="hidden lg:block">
+                  <NamingHistory />
+                </div>
               </div>
-            </div>
+            </ContentFadeIn>
           </Suspense>
         );
       case 'paths':
         return (
-          <Suspense fallback={<LoadingPlaceholder />}>
-            <PathManager />
+          <Suspense fallback={<SkeletonScreen />}>
+            <ContentFadeIn>
+              <PathManager />
+            </ContentFadeIn>
           </Suspense>
         );
       case 'todo':
         return (
-          <Suspense fallback={<LoadingPlaceholder />}>
-            <QuadrantTodo />
+          <Suspense fallback={<SkeletonScreen />}>
+            <ContentFadeIn>
+              <QuadrantTodo />
+            </ContentFadeIn>
           </Suspense>
         );
       case 'apps':
         return (
-          <Suspense fallback={<LoadingPlaceholder />}>
-            <AppLauncher />
+          <Suspense fallback={<SkeletonScreen />}>
+            <ContentFadeIn>
+              <AppLauncher />
+            </ContentFadeIn>
           </Suspense>
         );
       case 'whiteboard':
         return (
-          <Suspense fallback={<LoadingPlaceholder />}>
-            <Whiteboard />
+          <Suspense fallback={<SkeletonScreen />}>
+            <ContentFadeIn>
+              <Whiteboard />
+            </ContentFadeIn>
           </Suspense>
         );
       default:
         return (
-          <Suspense fallback={<LoadingPlaceholder />}>
-            <AITool />
+          <Suspense fallback={<SkeletonScreen />}>
+            <ContentFadeIn>
+              <AITool />
+            </ContentFadeIn>
           </Suspense>
         );
     }
