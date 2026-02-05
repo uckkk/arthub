@@ -22,7 +22,10 @@ class TldrawErrorBoundary extends Component<
   }
 
   componentDidCatch(error: Error, errorInfo: ErrorInfo) {
-    console.error('tldraw 组件错误:', error, errorInfo);
+    const errMsg = error instanceof Error ? error.message : String(error);
+    const errStack = error instanceof Error ? error.stack : undefined;
+    const fullMsg = `tldraw 组件错误: ${errMsg}${errStack ? '\n' + errStack : ''}${errorInfo?.componentStack ? '\n组件堆栈:\n' + errorInfo.componentStack : ''}`;
+    console.error(fullMsg);
   }
 
   render() {

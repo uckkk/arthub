@@ -255,7 +255,10 @@ export async function importAllDataFromFile(): Promise<void> {
     const originalSetItem = (Storage.prototype as any).__originalSetItem || Storage.prototype.setItem;
     
     let importCount = 0;
-    let skipCount = 0;
+    let skipApiProtection = 0;
+    let skipSameValue = 0;
+    let skipTooLarge = 0;
+    let skipError = 0;
     const errors: string[] = [];
     
     for (const [key, value] of Object.entries(allData)) {
@@ -272,7 +275,7 @@ export async function importAllDataFromFile(): Promise<void> {
             } catch (stringifyError: any) {
               console.warn(`序列化数据失败 ${key}:`, stringifyError);
               errors.push(`${key}: 序列化失败 - ${stringifyError.message}`);
-              skipCount++;
+              skipError++;
               continue;
             }
           }
@@ -281,7 +284,7 @@ export async function importAllDataFromFile(): Promise<void> {
           if (valueToStore.length > 5 * 1024 * 1024) {
             console.warn(`数据太大，跳过 ${key} (${(valueToStore.length / 1024 / 1024).toFixed(2)}MB)`);
             errors.push(`${key}: 数据太大 (${(valueToStore.length / 1024 / 1024).toFixed(2)}MB)`);
-            skipCount++;
+            skipTooLarge++;
             continue;
           }
           
@@ -299,12 +302,7 @@ export async function importAllDataFromFile(): Promise<void> {
           // 3. 刷新页面时，localStorage 中的值优先于文件中的值
           if (isApiConfig && existingValue !== null) {
             // localStorage 中已存在该键，优先保留（无论值是否为空）
-            const valuePreview = existingValue.length > 20 
-              ? `${existingValue.substring(0, 20)}...` 
-              : existingValue || '(空字符串)';
-            console.log(`[API保护-导入] 保留 localStorage 中的 ${key} 值（${valuePreview}），跳过文件导入（用户最新输入优先）`);
-            console.log(`[API保护-导入] 文件中的值: ${valueToStore.length > 20 ? valueToStore.substring(0, 20) + '...' : valueToStore}`);
-            skipCount++;
+            skipApiProtection++;
             continue;
           }
           
@@ -315,7 +313,7 @@ export async function importAllDataFromFile(): Promise<void> {
           
           // 对于其他数据，如果 localStorage 中已有值且文件中的值相同，跳过（避免不必要的写入）
           if (existingValue === valueToStore) {
-            skipCount++;
+            skipSameValue++;
             continue;
           }
           
@@ -324,7 +322,7 @@ export async function importAllDataFromFile(): Promise<void> {
         } catch (error: any) {
           console.warn(`导入数据失败 ${key}:`, error);
           errors.push(`${key}: ${error.message || String(error)}`);
-          skipCount++;
+          skipError++;
         }
       }
     }
@@ -332,10 +330,19 @@ export async function importAllDataFromFile(): Promise<void> {
     if (importCount > 0) {
       console.log(`成功从文件导入 ${importCount} 条数据`);
     }
-    if (skipCount > 0) {
-      console.warn(`跳过 ${skipCount} 条数据（错误或数据过大）`);
-      if (errors.length > 0) {
-        console.warn('导入错误详情:', errors);
+    const totalSkip = skipApiProtection + skipSameValue + skipTooLarge + skipError;
+    if (totalSkip > 0) {
+      const parts: string[] = [];
+      if (skipApiProtection > 0) parts.push(`API保护保留${skipApiProtection}条`);
+      if (skipSameValue > 0) parts.push(`数据相同${skipSameValue}条`);
+      if (skipTooLarge > 0) parts.push(`数据过大${skipTooLarge}条`);
+      if (skipError > 0) parts.push(`错误${skipError}条`);
+      const msg = `跳过 ${totalSkip} 条数据（${parts.join('，')}）`;
+      if (skipError > 0 || skipTooLarge > 0) {
+        console.warn(msg);
+        if (errors.length > 0) console.warn('导入错误详情:', errors);
+      } else {
+        console.log(msg);
       }
     }
   } catch (error: any) {
