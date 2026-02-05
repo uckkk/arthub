@@ -183,7 +183,7 @@ const Whiteboard: React.FC = () => {
     }
   }, [currentProject, showToast]);
 
-  // 切换项目
+  // 切换项目（不卸载 Tldraw，手动加载数据，避免 tldraw 内部 dispose 时 "h is not a function" 错误）
   const handleSelectProject = async (projectId: string) => {
     try {
       // 切换前保存当前画布
@@ -203,6 +203,29 @@ const Whiteboard: React.FC = () => {
         setCurrentProjectState(project);
         setProjectNameInput(project.name);
         setShowProjectSelector(false);
+
+        // 手动加载新项目数据到画布（不通过 key 触发 remount，避免 tldraw dispose bug）
+        if (editorRef.current) {
+          try {
+            const savedData = await loadCanvasData(projectId);
+            if (savedData) {
+              editorRef.current.loadSnapshot(savedData as any);
+              console.log('已加载项目画布:', project.name);
+            } else {
+              const shapeIds = editorRef.current.getCurrentPageShapeIds();
+              if (shapeIds.size > 0) {
+                editorRef.current.deleteShapes([...shapeIds]);
+              }
+            }
+          } catch (error) {
+            console.error('加载项目画布失败:', error);
+            const shapeIds = editorRef.current.getCurrentPageShapeIds();
+            if (shapeIds.size > 0) {
+              editorRef.current.deleteShapes([...shapeIds]);
+            }
+          }
+        }
+
         showToast('success', `已切换到项目 "${project.name}"`);
       }
     } catch (error: any) {
@@ -778,8 +801,7 @@ const Whiteboard: React.FC = () => {
             editorRef.current = null;
           }}>
             <Tldraw
-              key={currentProject.id}
-              // tldraw 3.x 不需要 license key，只需保留水印
+              // 不使用 key 避免切换项目时卸载，防止 tldraw 内部 dispose 触发 "h is not a function"
               onMount={async (editor) => {
                 const projectId = currentProject.id;
                 editorRef.current = editor;
