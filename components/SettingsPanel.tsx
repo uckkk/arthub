@@ -20,7 +20,7 @@ interface SettingsPanelProps {
 }
 
 const SettingsPanel: React.FC<SettingsPanelProps> = ({ isOpen, onClose, triggerRef }) => {
-  const [activeGroup, setActiveGroup] = useState<'api' | 'storage' | 'hotkey'>('api');
+  const [activeGroup, setActiveGroup] = useState<'general' | 'api' | 'storage' | 'hotkey'>('api');
   
   // API 配置状态
   const [geminiKey, setGeminiKey] = useState('');
@@ -80,7 +80,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ isOpen, onClose, triggerR
       }
     };
     
-    // 加载自启动状态
+    // 加载自启动状态（与系统实际状态同步）
     const loadAutostartStatus = async () => {
       try {
         const { invoke } = await import('@tauri-apps/api/tauri');
@@ -130,6 +130,21 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ isOpen, onClose, triggerR
       window.removeEventListener('storage', handleStorageChange);
     };
   }, []); // 组件挂载时立即加载，不依赖 isOpen
+
+  // 切换到「通用」时重新拉取自启动状态，保证开关与系统一致
+  useEffect(() => {
+    if (activeGroup === 'general' && isTauriEnvironment()) {
+      (async () => {
+        try {
+          const { invoke } = await import('@tauri-apps/api/tauri');
+          const enabled = await invoke<boolean>('is_autostart_enabled');
+          setAutostartEnabled(enabled);
+        } catch (e) {
+          console.error('加载自启动状态失败:', e);
+        }
+      })();
+    }
+  }, [activeGroup]);
 
   const showStatus = (type: 'success' | 'error' | 'info', text: string) => {
     setStatusMsg({ type, text });
@@ -256,6 +271,18 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ isOpen, onClose, triggerR
         {/* 分组切换 */}
         <div className="flex gap-2 px-5 py-3 border-b border-[#2a2a2a]">
           <button
+            onClick={() => setActiveGroup('general')}
+            className={`
+              flex-1 px-4 py-2 rounded-lg text-sm font-medium transition-colors
+              ${activeGroup === 'general'
+                ? 'bg-blue-500/20 text-blue-400 border border-blue-500/30'
+                : 'bg-[#1a1a1a] text-[#808080] border border-[#2a2a2a] hover:border-[#3a3a3a]'
+              }
+            `}
+          >
+            通用
+          </button>
+          <button
             onClick={() => setActiveGroup('api')}
             className={`
               flex-1 px-4 py-2 rounded-lg text-sm font-medium transition-colors
@@ -296,6 +323,73 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ isOpen, onClose, triggerR
         {/* 内容区域 */}
         <div className="p-5 space-y-5 max-h-[60vh] overflow-y-auto">
           {/* 组1：翻译 API 配置 */}
+          {/* 通用：开机自动启动等 */}
+          {activeGroup === 'general' && (
+            <>
+              {!isTauriEnvironment() && (
+                <div className="
+                  p-3 rounded-lg
+                  bg-yellow-500/10 border border-yellow-500/20
+                  text-xs text-yellow-300
+                ">
+                  <p>此功能仅在桌面应用中可用</p>
+                </div>
+              )}
+              {isTauriEnvironment() && (
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between">
+                    <label className="text-sm font-medium text-[#a0a0a0]">开机自动启动</label>
+                    <label className="relative inline-flex items-center cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={autostartEnabled}
+                        disabled={isLoadingAutostart}
+                        onChange={async (e) => {
+                          const wantEnable = e.target.checked;
+                          setIsLoadingAutostart(true);
+                          try {
+                            const { invoke } = await import('@tauri-apps/api/tauri');
+                            if (wantEnable) {
+                              const ok = await invoke<boolean>('enable_autostart');
+                              if (ok) {
+                                setAutostartEnabled(true);
+                                showStatus('success', '开机自动启动已开启');
+                              } else {
+                                showStatus('error', '无法开启开机自动启动，请重试或检查权限');
+                                setAutostartEnabled(false);
+                              }
+                            } else {
+                              await invoke('disable_autostart');
+                              setAutostartEnabled(false);
+                              showStatus('success', '开机自动启动已关闭');
+                            }
+                          } catch (error: any) {
+                            console.error('设置自启动失败:', error);
+                            showStatus('error', `设置失败: ${error.message || error}`);
+                            setAutostartEnabled(!wantEnable);
+                          } finally {
+                            setIsLoadingAutostart(false);
+                          }
+                        }}
+                        className="sr-only peer"
+                      />
+                      <div className={`
+                        w-11 h-6 rounded-full
+                        bg-[#2a2a2a] peer-checked:bg-blue-600
+                        peer-focus:outline-none
+                        after:content-[''] after:absolute after:top-[2px] after:left-[2px]
+                        after:bg-white after:rounded-full after:h-5 after:w-5
+                        after:transition-all
+                        peer-checked:after:translate-x-full
+                        ${isLoadingAutostart ? 'opacity-50 cursor-not-allowed' : ''}
+                      `}></div>
+                    </label>
+                  </div>
+                </div>
+              )}
+            </>
+          )}
+
           {activeGroup === 'api' && (
             <>
               {/* Gemini Section */}
@@ -408,51 +502,6 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ isOpen, onClose, triggerR
 
               {isTauriEnvironment() && (
                 <div className="space-y-4">
-                  {/* 开机自动启动开关 */}
-                  <div className="flex items-center justify-between">
-                    <label className="text-sm font-medium text-[#a0a0a0]">开机自动启动</label>
-                    <label className="relative inline-flex items-center cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={autostartEnabled}
-                        disabled={isLoadingAutostart}
-                        onChange={async (e) => {
-                          setIsLoadingAutostart(true);
-                          try {
-                            const { invoke } = await import('@tauri-apps/api/tauri');
-                            if (e.target.checked) {
-                              await invoke('enable_autostart');
-                              setAutostartEnabled(true);
-                              showStatus('success', '已启用开机自动启动');
-                            } else {
-                              await invoke('disable_autostart');
-                              setAutostartEnabled(false);
-                              showStatus('success', '已禁用开机自动启动');
-                            }
-                          } catch (error: any) {
-                            console.error('设置自启动失败:', error);
-                            showStatus('error', `设置失败: ${error.message || error}`);
-                            // 恢复原状态
-                            setAutostartEnabled(!e.target.checked);
-                          } finally {
-                            setIsLoadingAutostart(false);
-                          }
-                        }}
-                        className="sr-only peer"
-                      />
-                      <div className={`
-                        w-11 h-6 rounded-full
-                        bg-[#2a2a2a] peer-checked:bg-blue-600
-                        peer-focus:outline-none
-                        after:content-[''] after:absolute after:top-[2px] after:left-[2px]
-                        after:bg-white after:rounded-full after:h-5 after:w-5
-                        after:transition-all
-                        peer-checked:after:translate-x-full
-                        ${isLoadingAutostart ? 'opacity-50 cursor-not-allowed' : ''}
-                      `}></div>
-                    </label>
-                  </div>
-                  
                   {/* 启用开关 */}
                   <div className="flex items-center justify-between">
                     <label className="text-sm font-medium text-[#a0a0a0]">启用文件存储</label>

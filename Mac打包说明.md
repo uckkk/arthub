@@ -32,6 +32,43 @@ chmod +x scripts/fix-mac-app-open.sh
 
 **右键点击** 应用图标 → 选择 **打开** → 在弹窗中确认 **打开**，之后即可正常双击启动。
 
+### 仍然打不开时
+
+1. **先跑一遍修复脚本**（会移除隔离并做本地签名）：
+   ```bash
+   chmod +x scripts/fix-mac-app-open.sh
+   ./scripts/fix-mac-app-open.sh /Applications/ArtHub.app
+   ```
+   然后按脚本提示：**右键 → 打开** 或 在 **系统设置 → 隐私与安全性** 里点「仍要打开」。
+
+2. **看具体报错**：若点击后没反应或闪退，在终端直接运行主程序可见错误信息：
+   ```bash
+   /Applications/ArtHub.app/Contents/MacOS/ArtHub
+   ```
+   把终端里出现的报错贴给开发者便于排查。
+
+3. **确认架构**：当前 GitHub Actions 默认构建的是 **Intel (x86_64)**。若是 **Apple Silicon (M1/M2/M3)**，可：
+   - 使用 Intel 版本（通过 Rosetta 运行，一般可用）；或
+   - 在仓库的 `.github/workflows/build.yml` 中启用 `aarch64-apple-darwin` 构建，再下载 ARM 版 DMG。
+
+4. **重新下载安装包**：项目已启用构建时 ad-hoc 签名（`signingIdentity: "-"`），新构建的 DMG 在移除隔离后更容易打开。请从 GitHub Actions 下载最新构建后再试。
+
+### 打开后提示「意外退出」或闪退
+
+1. **从终端运行以查看报错**（推荐）：
+   ```bash
+   /Applications/ArtHub.app/Contents/MacOS/ArtHub
+   ```
+   终端里会输出日志或崩溃原因，把完整输出发给开发者便于排查。
+
+2. **查看系统崩溃报告**：
+   - 打开 **应用程序 → 实用工具 → 控制台（Console）**
+   - 左侧选择本机，右上角搜索 `ArtHub` 或 `arthub`
+   - 查看崩溃时间附近的错误信息；或到 **用户 → 日志** 里找 `ArtHub` 相关崩溃报告
+   - 可将崩溃报告或控制台相关段落发给开发者
+
+3. **使用最新构建**：新版本已对 macOS 图标窗口做防护，减少因原生层导致的崩溃。请从 GitHub Actions 下载最新构建后再试。
+
 ---
 
 ## 方式一：在 Mac 上直接打包（推荐）
