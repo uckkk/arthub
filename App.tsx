@@ -558,7 +558,7 @@ const AppContent: React.FC = () => {
                   <div className="px-3 py-2 border-t border-[#1a1a1a]">
                     <div className="flex items-center justify-between text-[10px] text-[#555555] font-mono select-none">
                       {lastSyncTime && (
-                        <span>已同步.{formatSyncTime(lastSyncTime)}</span>
+                        <span>{formatSyncTime(lastSyncTime)}</span>
                       )}
                       <span>v{CURRENT_VERSION}</span>
                     </div>
