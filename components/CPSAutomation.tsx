@@ -27,7 +27,7 @@ const DEFAULT_CONFIG = {
   popup: {
     width: 1009,
     height: 567,
-    borderRadius: 46,
+    // borderRadius 共用 portrait.borderRadius
     namePrefix: 'cps_image@',
   },
   appIcon: {
@@ -372,7 +372,7 @@ const CPSAutomation: React.FC = () => {
       // 平滑圆角裁剪
       ctx.save();
       drawRoundedRect(ctx, 0, 0, canvas.width, canvas.height,
-        config.popup.borderRadius, config.portrait.smoothBorderRadius);
+        config.portrait.borderRadius, config.portrait.smoothBorderRadius);
       ctx.clip();
 
       // 最长边撑满，保持比例
@@ -380,7 +380,7 @@ const CPSAutomation: React.FC = () => {
       ctx.drawImage(img, p.sx, p.sy, p.sw, p.sh, p.dx, p.dy, p.dw, p.dh);
       ctx.restore();
     } catch (e) { console.error('渲染弹窗预览失败:', e); }
-  }, [popupImage, config.popup, config.portrait.smoothBorderRadius]);
+  }, [popupImage, config.popup, config.portrait.borderRadius, config.portrait.smoothBorderRadius]);
 
   // APPicon 渲染（无投影，平滑圆角裁剪，最短边撑满）
   const renderAppIcon = useCallback(async () => {
@@ -695,7 +695,7 @@ const CPSAutomation: React.FC = () => {
       <div className="grid grid-cols-2 gap-4 mb-4">
         {/* 弹窗 */}
         <div className="bg-[#1a1a1a] rounded-lg p-5">
-          <h2 className="text-base font-semibold mb-3">弹窗 <span className="text-xs text-[#666] font-normal ml-2">{config.popup.width}×{config.popup.height} R{config.popup.borderRadius}</span></h2>
+          <h2 className="text-base font-semibold mb-3">弹窗 <span className="text-xs text-[#666] font-normal ml-2">{config.popup.width}×{config.popup.height} R{config.portrait.borderRadius}</span></h2>
           <div className="mb-2">
             <div className="text-xs text-[#888888] mb-1">默认资产名称</div>
             <div className="text-xs text-white bg-[#2a2a2a] border border-[#3a3a3a] rounded px-2 py-1 inline-block">
