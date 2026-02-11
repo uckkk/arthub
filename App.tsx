@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, lazy, Suspense } from 'react';
 import { 
   Type, Menu, User, Settings, 
-  Sparkles, Home, CheckSquare, Grid3X3, PenTool
+  Sparkles, Home, CheckSquare, Grid3X3, PenTool, Zap
 } from 'lucide-react';
 import { getStorageConfig, formatSyncTime } from './services/fileStorageService';
 import { getUserInfo, clearUserInfo, UserInfo } from './services/userAuthService';
@@ -28,6 +28,7 @@ const HomePage = lazy(() => import('./components/HomePage'));
 const QuadrantTodo = lazy(() => import('./components/QuadrantTodo'));
 const AppLauncher = lazy(() => import('./components/AppLauncher'));
 const Whiteboard = lazy(() => import('./components/Whiteboard'));
+const CPSAutomation = lazy(() => import('./components/CPSAutomation'));
 
 // 预加载所有组件的函数
 const preloadComponents = () => {
@@ -100,6 +101,7 @@ const createMenuGroups = (): MenuGroup[] => [
       { id: 'todo', label: '待办工作', icon: CheckSquare },
       { id: 'apps', label: '常用应用', icon: Grid3X3 },
       { id: 'whiteboard', label: '无限画布', icon: PenTool },
+      { id: 'cps', label: 'CPS自动化', icon: Zap },
     ],
   },
 ];
@@ -422,6 +424,7 @@ const AppContent: React.FC = () => {
       'todo': 'todo',
       'apps': 'apps',
       'whiteboard': 'whiteboard',
+      'cps': 'cps',
     };
     setActiveTab(tabMapping[id] || 'home');
     if (tabMapping[id] === 'whiteboard') {
