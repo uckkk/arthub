@@ -493,6 +493,14 @@ const AppContent: React.FC = () => {
       case 'whiteboard':
         // 画布由下方独立区块渲染，此处返回 null
         return null;
+      case 'cps':
+        return (
+          <Suspense fallback={<SkeletonScreen variant="default" />}>
+            <ContentFadeIn>
+              <CPSAutomation />
+            </ContentFadeIn>
+          </Suspense>
+        );
       default:
         return (
           <Suspense fallback={<SkeletonScreen variant="ai" />}>
