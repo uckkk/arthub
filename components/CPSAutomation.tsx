@@ -3,6 +3,7 @@ import { Download, RotateCcw, Plus } from 'lucide-react';
 import { useToast } from './Toast';
 import { invoke } from '@tauri-apps/api/tauri';
 import { open } from '@tauri-apps/api/dialog';
+import { listen } from '@tauri-apps/api/event';
 
 // 默认参数配置
 const DEFAULT_CONFIG = {
@@ -39,9 +40,11 @@ interface ImageFile {
 
 interface GeneratedImage {
   name: string;
-  dataUrl: string;
   blob: Blob;
 }
+
+// 当前等待接收文件拖拽的输入框类型
+type DropTarget = 'portrait' | 'popup' | 'appIcon' | null;
 
 const CPSAutomation: React.FC = () => {
   const { showToast } = useToast();
@@ -50,9 +53,7 @@ const CPSAutomation: React.FC = () => {
   const [popupImage, setPopupImage] = useState<ImageFile | null>(null);
   const [appIconImage, setAppIconImage] = useState<ImageFile | null>(null);
 
-  const [dragOverPortrait, setDragOverPortrait] = useState(false);
-  const [dragOverPopup, setDragOverPopup] = useState(false);
-  const [dragOverAppIcon, setDragOverAppIcon] = useState(false);
+  const [dragOverTarget, setDragOverTarget] = useState<DropTarget>(null);
 
   const [config, setConfig] = useState(DEFAULT_CONFIG);
   const [customName, setCustomName] = useState('');
@@ -62,6 +63,94 @@ const CPSAutomation: React.FC = () => {
   const portraitSmallCanvasRef = useRef<HTMLCanvasElement>(null);
   const popupCanvasRef = useRef<HTMLCanvasElement>(null);
   const appIconCanvasRef = useRef<HTMLCanvasElement>(null);
+
+  // 记录鼠标最后悬停在哪个上传区域上
+  const hoverTargetRef = useRef<DropTarget>(null);
+
+  // ---- Tauri 文件拖拽支持 ----
+  useEffect(() => {
+    let unlistenDrop: (() => void) | null = null;
+    let unlistenHover: (() => void) | null = null;
+    let unlistenCancel: (() => void) | null = null;
+
+    const setup = async () => {
+      // 监听文件拖入悬停
+      unlistenHover = await listen<string[]>('tauri://file-drop-hover', () => {
+        // 高亮当前鼠标所在的上传区域
+        if (hoverTargetRef.current) {
+          setDragOverTarget(hoverTargetRef.current);
+        }
+      });
+
+      // 监听文件放下
+      unlistenDrop = await listen<string[]>('tauri://file-drop', async (event) => {
+        setDragOverTarget(null);
+        const paths = event.payload;
+        if (!paths || paths.length === 0) return;
+
+        const filePath = paths[0];
+        const lowerPath = filePath.toLowerCase();
+
+        // 检查是否是图片文件
+        const isImage = ['.png', '.jpg', '.jpeg', '.gif', '.webp', '.bmp', '.tiff', '.svg'].some(
+          ext => lowerPath.endsWith(ext)
+        );
+        if (!isImage) {
+          showToast('请拖入图片文件', 'error');
+          return;
+        }
+
+        // 确定目标区域
+        const target = hoverTargetRef.current;
+        if (!target) {
+          showToast('请将图片拖入指定的输入框区域', 'info');
+          return;
+        }
+
+        try {
+          // 通过 Rust 读取文件内容，创建 File 对象
+          const fileBytes: number[] = await invoke('read_binary_file_with_path', { filePath });
+          const uint8Array = new Uint8Array(fileBytes);
+
+          // 根据扩展名确定 MIME 类型
+          let mimeType = 'image/png';
+          if (lowerPath.endsWith('.jpg') || lowerPath.endsWith('.jpeg')) mimeType = 'image/jpeg';
+          else if (lowerPath.endsWith('.gif')) mimeType = 'image/gif';
+          else if (lowerPath.endsWith('.webp')) mimeType = 'image/webp';
+          else if (lowerPath.endsWith('.bmp')) mimeType = 'image/bmp';
+          else if (lowerPath.endsWith('.svg')) mimeType = 'image/svg+xml';
+
+          const fileName = filePath.split(/[\\/]/).pop() || 'image.png';
+          const blob = new Blob([uint8Array], { type: mimeType });
+          const file = new File([blob], fileName, { type: mimeType });
+          const preview = URL.createObjectURL(file);
+
+          const imageFile: ImageFile = { file, preview, name: fileName };
+
+          if (target === 'portrait') setPortraitImage(imageFile);
+          else if (target === 'popup') setPopupImage(imageFile);
+          else if (target === 'appIcon') setAppIconImage(imageFile);
+
+          showToast(`已导入: ${fileName}`, 'success');
+        } catch (err) {
+          console.error('读取拖拽文件失败:', err);
+          showToast('读取文件失败', 'error');
+        }
+      });
+
+      // 监听拖拽取消
+      unlistenCancel = await listen('tauri://file-drop-cancelled', () => {
+        setDragOverTarget(null);
+      });
+    };
+
+    setup();
+    return () => {
+      unlistenDrop?.();
+      unlistenHover?.();
+      unlistenCancel?.();
+    };
+  }, [showToast]);
 
   // ---- 图片处理工具函数 ----
 
@@ -92,7 +181,6 @@ const CPSAutomation: React.FC = () => {
     ctx.closePath();
   };
 
-  // 大尺寸: 最长边撑满, 保持宽高比, 居中
   const fitBigSize = (img: HTMLImageElement, cw: number, ch: number) => {
     const ia = img.width / img.height;
     const ca = cw / ch;
@@ -102,27 +190,20 @@ const CPSAutomation: React.FC = () => {
     return { sx: 0, sy: 0, sw: img.width, sh: img.height, dx, dy, dw, dh };
   };
 
-  // 中尺寸: 从原图中央裁剪一个竖条区域，垂直方向全填满
-  // 原型图说明：绿色为中尺寸有效内容 — 竖条居中
   const fitMidSize = (img: HTMLImageElement, cw: number, ch: number) => {
     const canvasAspect = cw / ch;
     const imgAspect = img.width / img.height;
-    // 以高度为基准，计算需要裁剪的宽度
     if (imgAspect > canvasAspect) {
-      // 图片更宽 → 从中央裁剪一竖条
       const cropW = img.height * canvasAspect;
       const cropX = (img.width - cropW) / 2;
       return { sx: cropX, sy: 0, sw: cropW, sh: img.height, dx: 0, dy: 0, dw: cw, dh: ch };
     } else {
-      // 图片更窄或一样 → 宽度撑满，高度居中裁剪
       const cropH = img.width / canvasAspect;
       const cropY = (img.height - cropH) / 2;
       return { sx: 0, sy: cropY, sw: img.width, sh: cropH, dx: 0, dy: 0, dw: cw, dh: ch };
     }
   };
 
-  // 小尺寸: 从原图中央裁剪一个矩形区域
-  // 原型图说明：绿色为小尺寸有效内容 — 中央方形区域
   const fitSmallSize = (img: HTMLImageElement, cw: number, ch: number) => {
     const canvasAspect = cw / ch;
     const imgAspect = img.width / img.height;
@@ -160,7 +241,6 @@ const CPSAutomation: React.FC = () => {
                              fitSmallSize(img, canvas.width, canvas.height);
       const { sx, sy, sw, sh, dx, dy, dw, dh } = params;
 
-      // 阴影
       ctx.save();
       ctx.shadowOffsetX = config.portrait.shadow.offsetX;
       ctx.shadowOffsetY = config.portrait.shadow.offsetY;
@@ -171,7 +251,6 @@ const CPSAutomation: React.FC = () => {
       ctx.fill();
       ctx.restore();
 
-      // 圆角裁剪图片
       ctx.save();
       drawRoundedRect(ctx, dx, dy, dw, dh, config.portrait.borderRadius, config.portrait.smoothBorderRadius);
       ctx.clip();
@@ -207,7 +286,6 @@ const CPSAutomation: React.FC = () => {
     try {
       const img = await loadImage(appIconImage.file);
       ctx.clearRect(0, 0, canvas.width, canvas.height);
-      // APPicon: 最短边撑满
       const ia = img.width / img.height;
       if (ia > 1) {
         const cropW = img.height;
@@ -232,7 +310,7 @@ const CPSAutomation: React.FC = () => {
   useEffect(() => { renderPopup(); }, [popupImage, renderPopup]);
   useEffect(() => { renderAppIcon(); }, [appIconImage, renderAppIcon]);
 
-  // ---- 文件操作 ----
+  // ---- 文件选择（点击方式） ----
 
   const handleFileUpload = (file: File, type: 'portrait' | 'popup' | 'appIcon') => {
     if (!file.type.startsWith('image/')) { showToast('请上传图片文件', 'error'); return; }
@@ -242,31 +320,6 @@ const CPSAutomation: React.FC = () => {
     else setAppIconImage(imageFile);
   };
 
-  const handleDragEnter = (e: React.DragEvent, type: 'portrait' | 'popup' | 'appIcon') => {
-    e.preventDefault(); e.stopPropagation();
-    if (type === 'portrait') setDragOverPortrait(true);
-    else if (type === 'popup') setDragOverPopup(true);
-    else setDragOverAppIcon(true);
-  };
-  const handleDragLeave = (e: React.DragEvent, type: 'portrait' | 'popup' | 'appIcon') => {
-    e.preventDefault(); e.stopPropagation();
-    if (type === 'portrait') setDragOverPortrait(false);
-    else if (type === 'popup') setDragOverPopup(false);
-    else setDragOverAppIcon(false);
-  };
-  const handleDragOver = (e: React.DragEvent) => { e.preventDefault(); e.stopPropagation(); };
-  const handleDrop = (e: React.DragEvent, type: 'portrait' | 'popup' | 'appIcon') => {
-    e.preventDefault(); e.stopPropagation();
-    if (type === 'portrait') setDragOverPortrait(false);
-    else if (type === 'popup') setDragOverPopup(false);
-    else setDragOverAppIcon(false);
-    const files = e.dataTransfer.files;
-    if (files && files.length > 0) {
-      const file = files[0];
-      if (file.type.startsWith('image/')) handleFileUpload(file, type);
-      else showToast('请拖入图片文件', 'error');
-    }
-  };
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>, type: 'portrait' | 'popup' | 'appIcon') => {
     const file = e.target.files?.[0];
     if (file) handleFileUpload(file, type);
@@ -290,14 +343,14 @@ const CPSAutomation: React.FC = () => {
       const selectedDir = await open({ directory: true, multiple: false, title: '选择导出目录' });
       if (!selectedDir || typeof selectedDir !== 'string') return;
       showToast('正在生成图片...', 'info');
-      await new Promise(r => setTimeout(r, 500));
+      await new Promise(r => setTimeout(r, 300));
       const images: GeneratedImage[] = [];
 
       const canvasToBlob = (ref: React.RefObject<HTMLCanvasElement>, name: string) =>
         new Promise<void>(resolve => {
           if (!ref.current) { resolve(); return; }
           ref.current.toBlob(blob => {
-            if (blob) images.push({ name, dataUrl: ref.current!.toDataURL('image/png'), blob });
+            if (blob) images.push({ name, blob });
             resolve();
           }, 'image/png');
         });
@@ -310,12 +363,13 @@ const CPSAutomation: React.FC = () => {
         canvasToBlob(appIconCanvasRef, generateFileName(config.appIcon.namePrefix)),
       ]);
 
-      const path = await import('@tauri-apps/api/path');
-      const sep = await path.separator();
+      // 自动检测路径分隔符
+      const sep = (selectedDir as string).includes('/') ? '/' : '\\';
       for (const img of images) {
         const buf = await img.blob.arrayBuffer();
+        const filePath = `${selectedDir}${sep}${img.name}`;
         await invoke('write_binary_file_with_path', {
-          file_path: `${selectedDir}${sep}${img.name}`,
+          filePath: filePath,
           content: Array.from(new Uint8Array(buf)),
         });
       }
@@ -328,55 +382,50 @@ const CPSAutomation: React.FC = () => {
 
   const canExport = portraitImage && popupImage && appIconImage;
 
-  // ---- 上传区域组件 ----
-  const UploadArea = ({ type, image, dragOver, aspect, minH, children }: {
-    type: 'portrait' | 'popup' | 'appIcon';
-    image: ImageFile | null;
-    dragOver: boolean;
-    aspect?: string;
-    minH?: string;
-    children?: React.ReactNode;
-  }) => (
-    <div
-      className={`w-full h-full border-2 border-dashed rounded-lg flex flex-col items-center justify-center cursor-pointer transition-colors relative ${
-        dragOver ? 'border-blue-500 bg-blue-500/10' : 'border-[#444444] hover:border-[#555555]'
-      }`}
-      style={{ aspectRatio: aspect, minHeight: minH }}
-      onDragEnter={e => handleDragEnter(e, type)}
-      onDragOver={handleDragOver}
-      onDragLeave={e => handleDragLeave(e, type)}
-      onDrop={e => handleDrop(e, type)}
-    >
-      {image ? (
-        children || (
-          <div className="p-3 text-center">
-            <div className="text-xs text-[#888888] mb-1 truncate max-w-full px-2">{image.name}</div>
-            <label className="text-xs text-blue-500 cursor-pointer hover:underline">
-              更换图片
-              <input type="file" accept="image/*" onChange={e => handleFileSelect(e, type)} className="hidden" />
-            </label>
-          </div>
-        )
-      ) : (
-        <div className="flex flex-col items-center justify-center">
-          <Plus size={32} className="text-[#555555] mb-2" />
-          <label className="text-xs text-[#555555] cursor-pointer hover:text-blue-500">
-            拖入或点击
-            <input type="file" accept="image/*" onChange={e => handleFileSelect(e, type)} className="hidden" />
-          </label>
-        </div>
-      )}
-    </div>
-  );
-
   // ---- 小型输入组件 ----
-  const NumInput = ({ label, value, onChange, w = 'w-16' }: { label: string; value: number; onChange: (v: number) => void; w?: string }) => (
+  const numInput = (label: string, value: number, onChange: (v: number) => void) => (
     <div className="flex items-center gap-1.5">
       <span className="text-xs text-[#888888] shrink-0">{label}</span>
       <input type="number" value={value} onChange={e => onChange(parseInt(e.target.value) || 0)}
-        className={`${w} px-2 py-1 bg-[#2a2a2a] border border-[#3a3a3a] rounded text-white text-xs`} />
+        className="w-16 px-2 py-1 bg-[#2a2a2a] border border-[#3a3a3a] rounded text-white text-xs" />
     </div>
   );
+
+  // ---- 上传区域（内联渲染，不用子组件避免 remount） ----
+  const renderUploadBox = (
+    type: 'portrait' | 'popup' | 'appIcon',
+    image: ImageFile | null,
+    canvasRef?: React.RefObject<HTMLCanvasElement>,
+    extraStyle?: React.CSSProperties
+  ) => {
+    const isDragOver = dragOverTarget === type;
+    return (
+      <div
+        className={`w-full h-full border-2 border-dashed rounded-lg flex flex-col items-center justify-center cursor-pointer transition-colors relative overflow-hidden ${
+          isDragOver ? 'border-blue-500 bg-blue-500/10' : 'border-[#444444] hover:border-[#555555]'
+        }`}
+        style={extraStyle}
+        onMouseEnter={() => { hoverTargetRef.current = type; }}
+        onMouseLeave={() => { if (hoverTargetRef.current === type) hoverTargetRef.current = null; }}
+      >
+        {image && canvasRef ? (
+          <>
+            <canvas ref={canvasRef} className="w-full h-full" />
+            <label className="absolute bottom-2 right-2 text-xs text-blue-400 cursor-pointer hover:underline bg-black/60 px-2 py-0.5 rounded">
+              更换
+              <input type="file" accept="image/*" onChange={e => handleFileSelect(e, type)} className="hidden" />
+            </label>
+          </>
+        ) : (
+          <label className="flex flex-col items-center justify-center w-full h-full cursor-pointer">
+            <Plus size={28} className="text-[#555555] mb-1.5" />
+            <span className="text-xs text-[#555555]">拖入或点击</span>
+            <input type="file" accept="image/*" onChange={e => handleFileSelect(e, type)} className="hidden" />
+          </label>
+        )}
+      </div>
+    );
+  };
 
   // ---- 渲染 ----
   return (
@@ -396,9 +445,8 @@ const CPSAutomation: React.FC = () => {
       <div className="bg-[#1a1a1a] rounded-lg p-5 mb-4">
         <h2 className="text-base font-semibold mb-3">通用立绘</h2>
 
-        {/* 参数行: 圆角 | 平滑圆角 | 投影 | 颜色 | 资产名称 — 全部一行 */}
+        {/* 参数行 */}
         <div className="flex flex-wrap items-end gap-x-5 gap-y-3 mb-4">
-          {/* 圆角 */}
           <div>
             <div className="text-xs text-[#888888] mb-1">圆角</div>
             <input type="number" value={config.portrait.borderRadius}
@@ -406,7 +454,6 @@ const CPSAutomation: React.FC = () => {
               className="w-16 px-2 py-1 bg-[#2a2a2a] border border-[#3a3a3a] rounded text-white text-xs" />
           </div>
 
-          {/* 平滑圆角 */}
           <div>
             <div className="text-xs text-[#888888] mb-1">平滑圆角</div>
             <div className="flex items-center gap-2">
@@ -417,24 +464,18 @@ const CPSAutomation: React.FC = () => {
             </div>
           </div>
 
-          {/* 投影 */}
           <div>
             <div className="text-xs text-[#888888] mb-1">投影</div>
             <div className="flex items-center gap-2">
-              <NumInput label="X" value={config.portrait.shadow.offsetX}
-                onChange={v => setConfig({ ...config, portrait: { ...config.portrait, shadow: { ...config.portrait.shadow, offsetX: v } } })} />
-              <NumInput label="Y" value={config.portrait.shadow.offsetY}
-                onChange={v => setConfig({ ...config, portrait: { ...config.portrait, shadow: { ...config.portrait.shadow, offsetY: v } } })} />
+              {numInput('X', config.portrait.shadow.offsetX, v => setConfig({ ...config, portrait: { ...config.portrait, shadow: { ...config.portrait.shadow, offsetX: v } } }))}
+              {numInput('Y', config.portrait.shadow.offsetY, v => setConfig({ ...config, portrait: { ...config.portrait, shadow: { ...config.portrait.shadow, offsetY: v } } }))}
             </div>
             <div className="flex items-center gap-2 mt-1.5">
-              <NumInput label="B" value={config.portrait.shadow.blur}
-                onChange={v => setConfig({ ...config, portrait: { ...config.portrait, shadow: { ...config.portrait.shadow, blur: v } } })} />
-              <NumInput label="S" value={config.portrait.shadow.spread}
-                onChange={v => setConfig({ ...config, portrait: { ...config.portrait, shadow: { ...config.portrait.shadow, spread: v } } })} />
+              {numInput('B', config.portrait.shadow.blur, v => setConfig({ ...config, portrait: { ...config.portrait, shadow: { ...config.portrait.shadow, blur: v } } }))}
+              {numInput('S', config.portrait.shadow.spread, v => setConfig({ ...config, portrait: { ...config.portrait, shadow: { ...config.portrait.shadow, spread: v } } }))}
             </div>
           </div>
 
-          {/* 颜色 */}
           <div>
             <div className="text-xs text-[#888888] mb-1">颜色</div>
             <div className="flex items-center gap-1.5">
@@ -463,7 +504,6 @@ const CPSAutomation: React.FC = () => {
             </div>
           </div>
 
-          {/* 资产名称 */}
           <div className="ml-auto">
             <div className="text-xs text-[#888888] mb-1">默认资产名称</div>
             <div className="text-xs text-white bg-[#2a2a2a] border border-[#3a3a3a] rounded px-2 py-1 mb-1.5">
@@ -475,9 +515,8 @@ const CPSAutomation: React.FC = () => {
           </div>
         </div>
 
-        {/* 三张图预览区 — 并排 */}
+        {/* 三张图预览区 */}
         <div className="flex gap-3 items-end">
-          {/* 大 */}
           <div className="flex-1">
             <div className="flex items-center gap-2 mb-1">
               <span className="text-xs text-[#888888]">W</span>
@@ -487,13 +526,10 @@ const CPSAutomation: React.FC = () => {
             </div>
             <div className="text-xs text-[#555555] mb-1">{generateFileName(config.portrait.namePrefix, 'big')}</div>
             <div className="bg-[#222222] rounded-lg overflow-hidden" style={{ aspectRatio: '619/536' }}>
-              <UploadArea type="portrait" image={portraitImage} dragOver={dragOverPortrait}>
-                {portraitImage && <canvas ref={portraitBigCanvasRef} className="w-full h-full" />}
-              </UploadArea>
+              {renderUploadBox('portrait', portraitImage, portraitBigCanvasRef)}
             </div>
           </div>
 
-          {/* 中 */}
           <div className="shrink-0" style={{ width: '25%' }}>
             <div className="flex items-center gap-2 mb-1">
               <span className="text-xs text-[#888888]">W</span>
@@ -513,7 +549,6 @@ const CPSAutomation: React.FC = () => {
             </div>
           </div>
 
-          {/* 小 */}
           <div className="shrink-0" style={{ width: '25%' }}>
             <div className="flex items-center gap-2 mb-1">
               <span className="text-xs text-[#888888]">W</span>
@@ -537,7 +572,6 @@ const CPSAutomation: React.FC = () => {
 
       {/* ====== 弹窗 + APPicon 并排 ====== */}
       <div className="grid grid-cols-2 gap-4 mb-4">
-        {/* 弹窗 */}
         <div className="bg-[#1a1a1a] rounded-lg p-5">
           <h2 className="text-base font-semibold mb-3">弹窗</h2>
           <div className="mb-2">
@@ -547,14 +581,14 @@ const CPSAutomation: React.FC = () => {
             </div>
           </div>
           <div className="text-xs text-[#555555] mb-2">{generateFileName(config.popup.namePrefix)}</div>
-          <div className="bg-[#222222] rounded-lg overflow-hidden" style={{ aspectRatio: '4/3' }}>
-            <UploadArea type="popup" image={popupImage} dragOver={dragOverPopup}>
-              {popupImage && <canvas ref={popupCanvasRef} className="w-full h-full" />}
-            </UploadArea>
+          <div className="bg-[#222222] rounded-lg overflow-hidden" style={{ aspectRatio: '4/3' }}
+            onMouseEnter={() => { hoverTargetRef.current = 'popup'; }}
+            onMouseLeave={() => { if (hoverTargetRef.current === 'popup') hoverTargetRef.current = null; }}
+          >
+            {renderUploadBox('popup', popupImage, popupCanvasRef)}
           </div>
         </div>
 
-        {/* APPicon */}
         <div className="bg-[#1a1a1a] rounded-lg p-5">
           <h2 className="text-base font-semibold mb-3">APPicon</h2>
           <div className="mb-2">
@@ -564,10 +598,11 @@ const CPSAutomation: React.FC = () => {
             </div>
           </div>
           <div className="text-xs text-[#555555] mb-2">{generateFileName(config.appIcon.namePrefix)}</div>
-          <div className="bg-[#222222] rounded-lg overflow-hidden mx-auto" style={{ aspectRatio: '1/1', maxWidth: '280px' }}>
-            <UploadArea type="appIcon" image={appIconImage} dragOver={dragOverAppIcon}>
-              {appIconImage && <canvas ref={appIconCanvasRef} className="w-full h-full" />}
-            </UploadArea>
+          <div className="bg-[#222222] rounded-lg overflow-hidden mx-auto" style={{ aspectRatio: '1/1', maxWidth: '280px' }}
+            onMouseEnter={() => { hoverTargetRef.current = 'appIcon'; }}
+            onMouseLeave={() => { if (hoverTargetRef.current === 'appIcon') hoverTargetRef.current = null; }}
+          >
+            {renderUploadBox('appIcon', appIconImage, appIconCanvasRef)}
           </div>
         </div>
       </div>
