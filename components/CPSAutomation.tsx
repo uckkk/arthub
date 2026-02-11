@@ -1,5 +1,5 @@
 import React, { useState, useRef, useCallback, useEffect } from 'react';
-import { Upload, Download, RotateCcw, Plus } from 'lucide-react';
+import { Download, RotateCcw, Plus } from 'lucide-react';
 import { useToast } from './Toast';
 import { invoke } from '@tauri-apps/api/tauri';
 import { open } from '@tauri-apps/api/dialog';
@@ -51,10 +51,15 @@ interface GeneratedImage {
 const CPSAutomation: React.FC = () => {
   const { showToast } = useToast();
   
-  // 图片状态
+  // 图片状态 - 通用立绘只需要一张图
   const [portraitImage, setPortraitImage] = useState<ImageFile | null>(null);
   const [popupImage, setPopupImage] = useState<ImageFile | null>(null);
   const [appIconImage, setAppIconImage] = useState<ImageFile | null>(null);
+  
+  // 拖拽状态
+  const [dragOverPortrait, setDragOverPortrait] = useState(false);
+  const [dragOverPopup, setDragOverPopup] = useState(false);
+  const [dragOverAppIcon, setDragOverAppIcon] = useState(false);
   
   // 配置参数
   const [config, setConfig] = useState(DEFAULT_CONFIG);
@@ -101,26 +106,6 @@ const CPSAutomation: React.FC = () => {
     ctx.lineTo(x, y + smoothRadius);
     ctx.quadraticCurveTo(x, y, x + smoothRadius, y);
     ctx.closePath();
-  };
-  
-  // 绘制阴影
-  const drawShadow = (
-    ctx: CanvasRenderingContext2D,
-    x: number,
-    y: number,
-    width: number,
-    height: number,
-    shadow: typeof DEFAULT_CONFIG.portrait.shadow
-  ) => {
-    ctx.save();
-    ctx.shadowOffsetX = shadow.offsetX;
-    ctx.shadowOffsetY = shadow.offsetY;
-    ctx.shadowBlur = shadow.blur;
-    ctx.shadowColor = shadow.color;
-    ctx.shadowSpread = shadow.spread;
-    ctx.fillStyle = 'transparent';
-    ctx.fillRect(x, y, width, height);
-    ctx.restore();
   };
   
   // 处理图片：最长边撑满画布，保持宽高比
@@ -199,11 +184,10 @@ const CPSAutomation: React.FC = () => {
     return { sx, sy, sw, sh, dx, dy, dw, dh };
   };
   
-  // 渲染通用立绘预览
+  // 渲染通用立绘预览（三个尺寸）
   const renderPortraitPreview = useCallback(async (
     canvasRef: React.RefObject<HTMLCanvasElement>,
-    size: { width: number; height: number },
-    suffix: string
+    size: { width: number; height: number }
   ) => {
     if (!canvasRef.current || !portraitImage) return;
     
@@ -298,17 +282,13 @@ const CPSAutomation: React.FC = () => {
     }
   }, [appIconImage]);
   
-  // 更新预览
+  // 更新预览 - 通用立绘三个尺寸
   useEffect(() => {
-    renderPortraitPreview(portraitBigCanvasRef, config.portrait.sizes.big, 'big');
-  }, [portraitImage, config.portrait, renderPortraitPreview]);
-  
-  useEffect(() => {
-    renderPortraitPreview(portraitMidCanvasRef, config.portrait.sizes.mid, 'mid');
-  }, [portraitImage, config.portrait, renderPortraitPreview]);
-  
-  useEffect(() => {
-    renderPortraitPreview(portraitSmallCanvasRef, config.portrait.sizes.small, 'small');
+    if (portraitImage) {
+      renderPortraitPreview(portraitBigCanvasRef, config.portrait.sizes.big);
+      renderPortraitPreview(portraitMidCanvasRef, config.portrait.sizes.mid);
+      renderPortraitPreview(portraitSmallCanvasRef, config.portrait.sizes.small);
+    }
   }, [portraitImage, config.portrait, renderPortraitPreview]);
   
   useEffect(() => {
@@ -349,15 +329,56 @@ const CPSAutomation: React.FC = () => {
     }
   };
   
+  // 处理拖拽进入
+  const handleDragEnter = (
+    e: React.DragEvent,
+    type: 'portrait' | 'popup' | 'appIcon'
+  ) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (type === 'portrait') setDragOverPortrait(true);
+    else if (type === 'popup') setDragOverPopup(true);
+    else if (type === 'appIcon') setDragOverAppIcon(true);
+  };
+  
+  // 处理拖拽离开
+  const handleDragLeave = (
+    e: React.DragEvent,
+    type: 'portrait' | 'popup' | 'appIcon'
+  ) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (type === 'portrait') setDragOverPortrait(false);
+    else if (type === 'popup') setDragOverPopup(false);
+    else if (type === 'appIcon') setDragOverAppIcon(false);
+  };
+  
+  // 处理拖拽悬停
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+  };
+  
   // 处理拖放
   const handleDrop = (
     e: React.DragEvent,
     type: 'portrait' | 'popup' | 'appIcon'
   ) => {
     e.preventDefault();
-    const file = e.dataTransfer.files[0];
-    if (file) {
-      handleFileUpload(file, type);
+    e.stopPropagation();
+    
+    if (type === 'portrait') setDragOverPortrait(false);
+    else if (type === 'popup') setDragOverPopup(false);
+    else if (type === 'appIcon') setDragOverAppIcon(false);
+    
+    const files = e.dataTransfer.files;
+    if (files && files.length > 0) {
+      const file = files[0];
+      if (file.type.startsWith('image/')) {
+        handleFileUpload(file, type);
+      } else {
+        showToast('请拖入图片文件', 'error');
+      }
     }
   };
   
@@ -370,6 +391,8 @@ const CPSAutomation: React.FC = () => {
     if (file) {
       handleFileUpload(file, type);
     }
+    // 重置 input，允许重复选择同一文件
+    e.target.value = '';
   };
   
   // 恢复默认
@@ -727,7 +750,52 @@ const CPSAutomation: React.FC = () => {
           </div>
         </div>
         
-        {/* 图片预览区域 */}
+        {/* 图片上传区域 - 只有一个上传框 */}
+        <div className="mb-6">
+          <div
+            className={`w-full border-2 border-dashed rounded-lg flex items-center justify-center cursor-pointer transition-colors ${
+              dragOverPortrait 
+                ? 'border-blue-500 bg-blue-500/10' 
+                : 'border-[#444444] hover:border-blue-500'
+            }`}
+            style={{ minHeight: '200px' }}
+            onDragEnter={(e) => handleDragEnter(e, 'portrait')}
+            onDragOver={handleDragOver}
+            onDragLeave={(e) => handleDragLeave(e, 'portrait')}
+            onDrop={(e) => handleDrop(e, 'portrait')}
+          >
+            {portraitImage ? (
+              <div className="p-4 text-center">
+                <div className="text-sm text-white mb-2">已上传: {portraitImage.name}</div>
+                <label className="text-xs text-blue-500 cursor-pointer hover:underline">
+                  点击更换图片
+                  <input
+                    type="file"
+                    accept="image/*"
+                    onChange={(e) => handleFileSelect(e, 'portrait')}
+                    className="hidden"
+                  />
+                </label>
+              </div>
+            ) : (
+              <div className="flex flex-col items-center justify-center py-12">
+                <Plus size={48} className="text-[#666666] mb-3" />
+                <span className="text-sm text-[#666666] mb-2">拖入图片或点击选择</span>
+                <label className="text-xs text-blue-500 cursor-pointer hover:underline">
+                  点击选择图片
+                  <input
+                    type="file"
+                    accept="image/*"
+                    onChange={(e) => handleFileSelect(e, 'portrait')}
+                    className="hidden"
+                  />
+                </label>
+              </div>
+            )}
+          </div>
+        </div>
+        
+        {/* 图片预览区域 - 大中小三个尺寸 */}
         <div className="grid grid-cols-3 gap-4">
           {['big', 'mid', 'small'].map((size) => {
             const sizeConfig = config.portrait.sizes[size as keyof typeof config.portrait.sizes];
@@ -736,17 +804,14 @@ const CPSAutomation: React.FC = () => {
             return (
               <div key={size} className="bg-[#2a2a2a] rounded-lg p-4">
                 <div
-                  className="w-full border-2 border-dashed border-[#444444] rounded-lg flex items-center justify-center cursor-pointer hover:border-blue-500 transition-colors mb-2"
+                  className="w-full border border-[#444444] rounded-lg overflow-hidden mb-2"
                   style={{ aspectRatio: `${sizeConfig.width} / ${sizeConfig.height}` }}
-                  onDrop={(e) => handleDrop(e, 'portrait')}
-                  onDragOver={(e) => e.preventDefault()}
                 >
                   {portraitImage ? (
                     <canvas ref={canvasRef} className="w-full h-full" />
                   ) : (
-                    <div className="flex flex-col items-center justify-center py-8">
-                      <Plus size={32} className="text-[#666666] mb-2" />
-                      <span className="text-sm text-[#666666]">拖入图片</span>
+                    <div className="w-full h-full flex items-center justify-center bg-[#1a1a1a]">
+                      <span className="text-xs text-[#666666]">等待上传</span>
                     </div>
                   )}
                 </div>
@@ -756,19 +821,6 @@ const CPSAutomation: React.FC = () => {
                 <div className="text-xs text-[#666666] text-center mt-1">
                   {generateFileName(config.portrait.namePrefix, size)}
                 </div>
-                {!portraitImage && (
-                  <label className="block mt-2">
-                    <input
-                      type="file"
-                      accept="image/*"
-                      onChange={(e) => handleFileSelect(e, 'portrait')}
-                      className="hidden"
-                    />
-                    <span className="text-xs text-blue-500 cursor-pointer hover:underline text-center block">
-                      点击选择
-                    </span>
-                  </label>
-                )}
               </div>
             );
           })}
@@ -787,33 +839,46 @@ const CPSAutomation: React.FC = () => {
         
         <div className="bg-[#2a2a2a] rounded-lg p-4">
           <div
-            className="w-full border-2 border-dashed border-[#444444] rounded-lg flex items-center justify-center cursor-pointer hover:border-blue-500 transition-colors"
-            style={{ aspectRatio: '4/3' }}
+            className={`w-full border-2 border-dashed rounded-lg flex items-center justify-center cursor-pointer transition-colors ${
+              dragOverPopup 
+                ? 'border-blue-500 bg-blue-500/10' 
+                : 'border-[#444444] hover:border-blue-500'
+            }`}
+            style={{ aspectRatio: '4/3', minHeight: '300px' }}
+            onDragEnter={(e) => handleDragEnter(e, 'popup')}
+            onDragOver={handleDragOver}
+            onDragLeave={(e) => handleDragLeave(e, 'popup')}
             onDrop={(e) => handleDrop(e, 'popup')}
-            onDragOver={(e) => e.preventDefault()}
           >
             {popupImage ? (
-              <canvas ref={popupCanvasRef} className="w-full h-full" />
+              <>
+                <canvas ref={popupCanvasRef} className="w-full h-full" />
+                <label className="absolute top-2 right-2 text-xs text-blue-500 cursor-pointer hover:underline bg-[#1a1a1a] px-2 py-1 rounded">
+                  更换
+                  <input
+                    type="file"
+                    accept="image/*"
+                    onChange={(e) => handleFileSelect(e, 'popup')}
+                    className="hidden"
+                  />
+                </label>
+              </>
             ) : (
               <div className="flex flex-col items-center justify-center py-12">
-                <Plus size={32} className="text-[#666666] mb-2" />
-                <span className="text-sm text-[#666666]">拖入图片（支持透明背景）</span>
+                <Plus size={48} className="text-[#666666] mb-3" />
+                <span className="text-sm text-[#666666] mb-2">拖入图片（支持透明背景）</span>
+                <label className="text-xs text-blue-500 cursor-pointer hover:underline">
+                  点击选择图片
+                  <input
+                    type="file"
+                    accept="image/*"
+                    onChange={(e) => handleFileSelect(e, 'popup')}
+                    className="hidden"
+                  />
+                </label>
               </div>
             )}
           </div>
-          {!popupImage && (
-            <label className="block mt-2">
-              <input
-                type="file"
-                accept="image/*"
-                onChange={(e) => handleFileSelect(e, 'popup')}
-                className="hidden"
-              />
-              <span className="text-xs text-blue-500 cursor-pointer hover:underline text-center block">
-                点击选择
-              </span>
-            </label>
-          )}
         </div>
       </div>
       
@@ -829,33 +894,46 @@ const CPSAutomation: React.FC = () => {
         
         <div className="bg-[#2a2a2a] rounded-lg p-4">
           <div
-            className="w-full border-2 border-dashed border-[#444444] rounded-lg flex items-center justify-center cursor-pointer hover:border-blue-500 transition-colors"
-            style={{ aspectRatio: '1/1', maxWidth: '300px', margin: '0 auto' }}
+            className={`w-full border-2 border-dashed rounded-lg flex items-center justify-center cursor-pointer transition-colors relative ${
+              dragOverAppIcon 
+                ? 'border-blue-500 bg-blue-500/10' 
+                : 'border-[#444444] hover:border-blue-500'
+            }`}
+            style={{ aspectRatio: '1/1', maxWidth: '300px', margin: '0 auto', minHeight: '300px' }}
+            onDragEnter={(e) => handleDragEnter(e, 'appIcon')}
+            onDragOver={handleDragOver}
+            onDragLeave={(e) => handleDragLeave(e, 'appIcon')}
             onDrop={(e) => handleDrop(e, 'appIcon')}
-            onDragOver={(e) => e.preventDefault()}
           >
             {appIconImage ? (
-              <canvas ref={appIconCanvasRef} className="w-full h-full" />
+              <>
+                <canvas ref={appIconCanvasRef} className="w-full h-full" />
+                <label className="absolute top-2 right-2 text-xs text-blue-500 cursor-pointer hover:underline bg-[#1a1a1a] px-2 py-1 rounded">
+                  更换
+                  <input
+                    type="file"
+                    accept="image/*"
+                    onChange={(e) => handleFileSelect(e, 'appIcon')}
+                    className="hidden"
+                  />
+                </label>
+              </>
             ) : (
               <div className="flex flex-col items-center justify-center py-12">
-                <Plus size={32} className="text-[#666666] mb-2" />
-                <span className="text-sm text-[#666666]">拖入图片</span>
+                <Plus size={48} className="text-[#666666] mb-3" />
+                <span className="text-sm text-[#666666] mb-2">拖入图片</span>
+                <label className="text-xs text-blue-500 cursor-pointer hover:underline">
+                  点击选择图片
+                  <input
+                    type="file"
+                    accept="image/*"
+                    onChange={(e) => handleFileSelect(e, 'appIcon')}
+                    className="hidden"
+                  />
+                </label>
               </div>
             )}
           </div>
-          {!appIconImage && (
-            <label className="block mt-2">
-              <input
-                type="file"
-                accept="image/*"
-                onChange={(e) => handleFileSelect(e, 'appIcon')}
-                className="hidden"
-              />
-              <span className="text-xs text-blue-500 cursor-pointer hover:underline text-center block">
-                点击选择
-              </span>
-            </label>
-          )}
         </div>
       </div>
       
