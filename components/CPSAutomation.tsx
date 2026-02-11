@@ -171,23 +171,39 @@ const CPSAutomation: React.FC = () => {
 
   // Apple 平滑圆角 (Continuous Curvature / G2 Continuity)
   // 超椭圆算法: n=2 普通圆弧, n>2 平滑过渡
+  // 关键: 超椭圆 n>2 时角点在 45° 处向内收缩，需要补偿放大 r
+  // 使视觉圆角大小与 iOS cornerRadius 参数精确匹配
   const drawRoundedRect = (
     ctx: CanvasRenderingContext2D,
     x: number, y: number, w: number, h: number,
     radius: number, smoothPercent: number = 80
   ) => {
     const maxR = Math.min(w, h) / 2;
-    const r = Math.min(radius, maxR);
 
-    if (r <= 0) {
+    if (radius <= 0) {
       ctx.beginPath();
       ctx.rect(x, y, w, h);
       return;
     }
 
     const s = Math.max(0, Math.min(100, smoothPercent)) / 100;
-    const n = 2 + s * 3;
-    const e = 2 / n;
+    const n = 2 + s * 3; // s=0→n=2(正圆), s=0.8→n=4.4(Apple风格)
+    const e = 2 / n;     // 超椭圆参数指数
+
+    // 补偿超椭圆的视觉缩小效应
+    // 原理: 超椭圆 45° 处距角点距离 = r*(1-k)*√2, k=(1/√2)^(2/n)
+    // 正圆 45° 处距角点距离 = R*(1-1/√2)*√2
+    // 令两者相等: r = R * (1-1/√2) / (1-k) = R * scaleFactor
+    let r: number;
+    if (s > 0.01) {
+      const kCircle = Math.SQRT1_2; // 1/√2 ≈ 0.7071
+      const kSuper = Math.pow(Math.SQRT1_2, e); // (1/√2)^(2/n)
+      const scaleFactor = (1 - kCircle) / (1 - kSuper);
+      r = Math.min(radius * scaleFactor, maxR);
+    } else {
+      r = Math.min(radius, maxR);
+    }
+
     const SEG = 48;
 
     ctx.beginPath();
