@@ -184,10 +184,107 @@ const CPSAutomation: React.FC = () => {
     return { sx, sy, sw, sh, dx, dy, dw, dh };
   };
   
+  // 处理图片：中尺寸适配（垂直中央区域）
+  const fitImageMidSize = (
+    img: HTMLImageElement,
+    canvasWidth: number,
+    canvasHeight: number,
+    bigWidth: number,
+    bigHeight: number
+  ): { sx: number; sy: number; sw: number; sh: number; dx: number; dy: number; dw: number; dh: number } => {
+    // 先计算大尺寸的适配结果
+    const bigAspect = bigWidth / bigHeight;
+    const imgAspect = img.width / img.height;
+    
+    let bigDw, bigDh, bigDx, bigDy;
+    if (imgAspect > bigAspect) {
+      bigDw = bigWidth;
+      bigDh = bigWidth / imgAspect;
+      bigDx = 0;
+      bigDy = (bigHeight - bigDh) / 2;
+    } else {
+      bigDh = bigHeight;
+      bigDw = bigHeight * imgAspect;
+      bigDx = (bigWidth - bigDw) / 2;
+      bigDy = 0;
+    }
+    
+    // 计算中尺寸需要裁剪的区域（垂直中央）
+    // 中尺寸宽度较小，需要从大尺寸的中央垂直区域裁剪
+    const scaleX = bigDw / img.width;
+    const scaleY = bigDh / img.height;
+    const scale = Math.min(scaleX, scaleY);
+    
+    // 计算在大尺寸画布上的裁剪区域
+    const cropWidth = canvasWidth / scale;
+    const cropHeight = canvasHeight / scale;
+    const cropX = (img.width - cropWidth) / 2; // 水平居中
+    const cropY = (img.height - cropHeight) / 2; // 垂直居中
+    
+    return {
+      sx: cropX,
+      sy: cropY,
+      sw: cropWidth,
+      sh: cropHeight,
+      dx: 0,
+      dy: 0,
+      dw: canvasWidth,
+      dh: canvasHeight,
+    };
+  };
+  
+  // 处理图片：小尺寸适配（中央正方形区域）
+  const fitImageSmallSize = (
+    img: HTMLImageElement,
+    canvasWidth: number,
+    canvasHeight: number,
+    bigWidth: number,
+    bigHeight: number
+  ): { sx: number; sy: number; sw: number; sh: number; dx: number; dy: number; dw: number; dh: number } => {
+    // 先计算大尺寸的适配结果
+    const bigAspect = bigWidth / bigHeight;
+    const imgAspect = img.width / img.height;
+    
+    let bigDw, bigDh, bigDx, bigDy;
+    if (imgAspect > bigAspect) {
+      bigDw = bigWidth;
+      bigDh = bigWidth / imgAspect;
+      bigDx = 0;
+      bigDy = (bigHeight - bigDh) / 2;
+    } else {
+      bigDh = bigHeight;
+      bigDw = bigHeight * imgAspect;
+      bigDx = (bigWidth - bigDw) / 2;
+      bigDy = 0;
+    }
+    
+    // 计算小尺寸需要裁剪的区域（中央正方形）
+    const scaleX = bigDw / img.width;
+    const scaleY = bigDh / img.height;
+    const scale = Math.min(scaleX, scaleY);
+    
+    // 小尺寸是正方形或接近正方形，需要裁剪中央区域
+    const cropSize = Math.min(canvasWidth, canvasHeight) / scale;
+    const cropX = (img.width - cropSize) / 2;
+    const cropY = (img.height - cropSize) / 2;
+    
+    return {
+      sx: cropX,
+      sy: cropY,
+      sw: cropSize,
+      sh: cropSize,
+      dx: 0,
+      dy: 0,
+      dw: canvasWidth,
+      dh: canvasHeight,
+    };
+  };
+  
   // 渲染通用立绘预览（三个尺寸）
   const renderPortraitPreview = useCallback(async (
     canvasRef: React.RefObject<HTMLCanvasElement>,
-    size: { width: number; height: number }
+    size: { width: number; height: number },
+    sizeType: 'big' | 'mid' | 'small'
   ) => {
     if (!canvasRef.current || !portraitImage) return;
     
@@ -204,8 +301,30 @@ const CPSAutomation: React.FC = () => {
       // 清空画布
       ctx.clearRect(0, 0, canvas.width, canvas.height);
       
-      // 绘制图片（填充整个画布）
-      const { sx, sy, sw, sh, dx, dy, dw, dh } = fitImageLongestSide(img, canvas.width, canvas.height);
+      // 根据尺寸类型选择适配方案
+      let drawParams;
+      if (sizeType === 'big') {
+        drawParams = fitImageLongestSide(img, canvas.width, canvas.height);
+      } else if (sizeType === 'mid') {
+        drawParams = fitImageMidSize(
+          img,
+          canvas.width,
+          canvas.height,
+          config.portrait.sizes.big.width,
+          config.portrait.sizes.big.height
+        );
+      } else {
+        // small
+        drawParams = fitImageSmallSize(
+          img,
+          canvas.width,
+          canvas.height,
+          config.portrait.sizes.big.width,
+          config.portrait.sizes.big.height
+        );
+      }
+      
+      const { sx, sy, sw, sh, dx, dy, dw, dh } = drawParams;
       
       // 绘制阴影（先绘制阴影，再绘制图片）
       ctx.save();
@@ -285,9 +404,9 @@ const CPSAutomation: React.FC = () => {
   // 更新预览 - 通用立绘三个尺寸
   useEffect(() => {
     if (portraitImage) {
-      renderPortraitPreview(portraitBigCanvasRef, config.portrait.sizes.big);
-      renderPortraitPreview(portraitMidCanvasRef, config.portrait.sizes.mid);
-      renderPortraitPreview(portraitSmallCanvasRef, config.portrait.sizes.small);
+      renderPortraitPreview(portraitBigCanvasRef, config.portrait.sizes.big, 'big');
+      renderPortraitPreview(portraitMidCanvasRef, config.portrait.sizes.mid, 'mid');
+      renderPortraitPreview(portraitSmallCanvasRef, config.portrait.sizes.small, 'small');
     }
   }, [portraitImage, config.portrait, renderPortraitPreview]);
   
@@ -525,8 +644,8 @@ const CPSAutomation: React.FC = () => {
         const filePath = `${dir}${pathSeparator}${img.name}`;
         
         await invoke('write_binary_file_with_path', {
-          filePath,
-          data: Array.from(uint8Array),
+          file_path: filePath,
+          content: Array.from(uint8Array),
         });
       }
       
