@@ -151,9 +151,9 @@ const Whiteboard: React.FC = () => {
   // 检查并创建默认项目
   useEffect(() => {
     if (storagePath && projects.length === 0 && !currentProject) {
-      handleCreateProject();
+      handleCreateProject().catch(console.error);
     }
-  }, [storagePath, projects.length, currentProject]);
+  }, [storagePath]);
 
   // 创建新项目
   const handleCreateProject = async () => {
