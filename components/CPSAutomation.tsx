@@ -204,18 +204,37 @@ const CPSAutomation: React.FC = () => {
     }
   };
 
+  // 小尺寸：基于中尺寸裁剪结果再裁剪（参考图：紫色区域从绿色区域中截取）
+  // 1. 先计算中尺寸的裁剪区域（绿色竖条）
+  // 2. 在中尺寸裁剪区域内，保持宽度不变，高度按比例居中截短
   const fitSmallSize = (img: HTMLImageElement, cw: number, ch: number) => {
-    const canvasAspect = cw / ch;
+    const midSize = config.portrait.sizes.mid; // 290×536
+    const midAspect = midSize.width / midSize.height;
     const imgAspect = img.width / img.height;
-    if (imgAspect > canvasAspect) {
-      const cropW = img.height * canvasAspect;
-      const cropX = (img.width - cropW) / 2;
-      return { sx: cropX, sy: 0, sw: cropW, sh: img.height, dx: 0, dy: 0, dw: cw, dh: ch };
+
+    // 第一步：计算中尺寸裁剪区域（和 fitMidSize 逻辑一致）
+    let midSx: number, midSy: number, midSw: number, midSh: number;
+    if (imgAspect > midAspect) {
+      // 原图更宽 → 居中取竖条，高度全取
+      midSw = img.height * midAspect;
+      midSx = (img.width - midSw) / 2;
+      midSy = 0;
+      midSh = img.height;
     } else {
-      const cropH = img.width / canvasAspect;
-      const cropY = (img.height - cropH) / 2;
-      return { sx: 0, sy: cropY, sw: img.width, sh: cropH, dx: 0, dy: 0, dw: cw, dh: ch };
+      // 原图更窄 → 宽度全取，高度居中裁剪
+      midSw = img.width;
+      midSx = 0;
+      midSh = img.width / midAspect;
+      midSy = (img.height - midSh) / 2;
     }
+
+    // 第二步：从中尺寸区域中，按小尺寸比例垂直居中裁剪
+    // 小尺寸和中尺寸宽度相同(290)，只是高度更短(246 vs 536)
+    const heightRatio = ch / midSize.height; // 246/536 ≈ 0.459
+    const smallSh = midSh * heightRatio;
+    const smallSy = midSy + (midSh - smallSh) / 2;
+
+    return { sx: midSx, sy: smallSy, sw: midSw, sh: smallSh, dx: 0, dy: 0, dw: cw, dh: ch };
   };
 
   // ---- 渲染逻辑 ----
