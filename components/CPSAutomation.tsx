@@ -646,17 +646,30 @@ const CPSAutomation: React.FC = () => {
             <div className="flex items-center gap-3">
               <input
                 type="color"
-                value={config.portrait.shadow.color.match(/#[0-9A-Fa-f]{6}/)?.[0] || '#000000'}
+                value={(() => {
+                  const rgbaMatch = config.portrait.shadow.color.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)/);
+                  if (rgbaMatch) {
+                    const r = parseInt(rgbaMatch[1]).toString(16).padStart(2, '0');
+                    const g = parseInt(rgbaMatch[2]).toString(16).padStart(2, '0');
+                    const b = parseInt(rgbaMatch[3]).toString(16).padStart(2, '0');
+                    return `#${r}${g}${b}`;
+                  }
+                  return '#000000';
+                })()}
                 onChange={(e) => {
-                  const color = e.target.value;
-                  const opacity = config.portrait.shadow.color.match(/[\d.]+(?=\))/)?.[0] || '0.2';
+                  const hex = e.target.value;
+                  const r = parseInt(hex.slice(1, 3), 16);
+                  const g = parseInt(hex.slice(3, 5), 16);
+                  const b = parseInt(hex.slice(5, 7), 16);
+                  const opacityMatch = config.portrait.shadow.color.match(/,\s*([\d.]+)\)/);
+                  const opacity = opacityMatch ? opacityMatch[1] : '0.2';
                   setConfig({
                     ...config,
                     portrait: {
                       ...config.portrait,
                       shadow: {
                         ...config.portrait.shadow,
-                        color: color.replace('#', 'rgba(') + ', ' + opacity + ')',
+                        color: `rgba(${r}, ${g}, ${b}, ${opacity})`,
                       },
                     },
                   });
@@ -667,18 +680,21 @@ const CPSAutomation: React.FC = () => {
                 type="number"
                 min="0"
                 max="100"
-                value={Math.round(parseFloat(config.portrait.shadow.color.match(/[\d.]+(?=\))/)?.[0] || '0.2') * 100)}
+                value={(() => {
+                  const opacityMatch = config.portrait.shadow.color.match(/,\s*([\d.]+)\)/);
+                  return opacityMatch ? Math.round(parseFloat(opacityMatch[1]) * 100) : 20;
+                })()}
                 onChange={(e) => {
                   const opacity = parseInt(e.target.value) / 100;
-                  const colorMatch = config.portrait.shadow.color.match(/rgba\((\d+),\s*(\d+),\s*(\d+)/);
-                  if (colorMatch) {
+                  const rgbaMatch = config.portrait.shadow.color.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)/);
+                  if (rgbaMatch) {
                     setConfig({
                       ...config,
                       portrait: {
                         ...config.portrait,
                         shadow: {
                           ...config.portrait.shadow,
-                          color: `rgba(${colorMatch[1]}, ${colorMatch[2]}, ${colorMatch[3]}, ${opacity})`,
+                          color: `rgba(${rgbaMatch[1]}, ${rgbaMatch[2]}, ${rgbaMatch[3]}, ${opacity})`,
                         },
                       },
                     });
