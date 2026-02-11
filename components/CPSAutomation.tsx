@@ -272,12 +272,14 @@ const CPSAutomation: React.FC = () => {
     }
   };
 
-  // 小尺寸: 基于中尺寸裁剪区域再垂直居中截短
+  // 小尺寸: 基于中尺寸裁剪区域，从顶部偏移 83px 处开始裁切（非居中）
+  // 在中尺寸坐标系(290×536)中，小尺寸顶部距图片顶端 83px
   const fitSmallSize = (img: HTMLImageElement, cw: number, ch: number) => {
-    const midSize = config.portrait.sizes.mid;
+    const midSize = config.portrait.sizes.mid; // 290×536
     const midAspect = midSize.width / midSize.height;
     const imgAspect = img.width / img.height;
 
+    // 第一步：计算中尺寸裁剪区域
     let midSx: number, midSy: number, midSw: number, midSh: number;
     if (imgAspect > midAspect) {
       midSw = img.height * midAspect;
@@ -291,9 +293,12 @@ const CPSAutomation: React.FC = () => {
       midSy = (img.height - midSh) / 2;
     }
 
-    const heightRatio = ch / midSize.height;
+    // 第二步：从中尺寸区域顶部偏移 83px 处裁切（转换到原图坐标）
+    const topOffsetInMid = 83; // 中尺寸坐标系中的顶部偏移量
+    const scale = midSh / midSize.height; // 原图像素 / 中尺寸像素
+    const heightRatio = ch / midSize.height; // 246/536
     const smallSh = midSh * heightRatio;
-    const smallSy = midSy + (midSh - smallSh) / 2;
+    const smallSy = midSy + topOffsetInMid * scale;
 
     return { sx: midSx, sy: smallSy, sw: midSw, sh: smallSh, dx: 0, dy: 0, dw: cw, dh: ch };
   };
