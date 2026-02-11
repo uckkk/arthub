@@ -807,6 +807,62 @@ const Whiteboard: React.FC = () => {
                 editorRef.current = editor;
                 console.log('tldraw 画布已加载，项目:', currentProject.name);
 
+                // 隐藏 tldraw 水印
+                const hideWatermark = () => {
+                  // 方法1：通过 CSS 隐藏
+                  let style = document.getElementById('tldraw-hide-watermark');
+                  if (!style) {
+                    style = document.createElement('style');
+                    style.id = 'tldraw-hide-watermark';
+                    document.head.appendChild(style);
+                  }
+                  style.textContent = `
+                    .tlui-menu-zone [data-testid="made-with-tldraw"],
+                    .tlui-menu-zone a[href*="tldraw"],
+                    .tlui-menu-zone .tlui-menu__group:has(a[href*="tldraw"]),
+                    .tlui-menu-zone a[href*="tldraw.com"],
+                    .tlui-menu-zone .tlui-menu__group:has(a[href*="tldraw.com"]),
+                    .tlui-menu-zone a[href*="made with tldraw"],
+                    .tlui-menu-zone .tlui-menu__group:has(a[href*="made with tldraw"]) {
+                      display: none !important;
+                      visibility: hidden !important;
+                      opacity: 0 !important;
+                      height: 0 !important;
+                      width: 0 !important;
+                      pointer-events: none !important;
+                    }
+                  `;
+                  
+                  // 方法2：直接移除 DOM 元素
+                  const watermarkElements = document.querySelectorAll(
+                    '[data-testid="made-with-tldraw"], a[href*="tldraw"], a[href*="tldraw.com"]'
+                  );
+                  watermarkElements.forEach(el => {
+                    if (el.parentElement) {
+                      el.parentElement.removeChild(el);
+                    }
+                  });
+                };
+                
+                // 立即隐藏
+                hideWatermark();
+                
+                // 延迟再次隐藏（确保DOM渲染后）
+                setTimeout(hideWatermark, 100);
+                setTimeout(hideWatermark, 500);
+                setTimeout(hideWatermark, 1000);
+                setTimeout(hideWatermark, 2000);
+                
+                // 使用 MutationObserver 持续监控并移除水印
+                const watermarkObserver = new MutationObserver(() => {
+                  hideWatermark();
+                });
+                
+                watermarkObserver.observe(document.body, {
+                  childList: true,
+                  subtree: true,
+                });
+
                 const savedTheme = localStorage.getItem(THEME_STORAGE_KEY);
                 editor.user.updateUserPreferences({
                   colorScheme: savedTheme === 'light' ? 'light' : 'dark',
@@ -840,6 +896,9 @@ const Whiteboard: React.FC = () => {
 
                 return () => {
                   clearInterval(intervalId);
+                  
+                  // 清理 MutationObserver
+                  watermarkObserver.disconnect();
 
                   if (editorRef.current) {
                     try {
