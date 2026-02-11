@@ -459,6 +459,29 @@ const CPSAutomation: React.FC = () => {
     return `${fn}.png`;
   };
 
+  // 渲染带绿色高亮的文件名（@ 或被替换的自定义名称用绿色显示）
+  const renderHighlightedName = (prefix: string, suffix?: string) => {
+    const name = customName || '@';
+    const parts = prefix.split('@');
+    const suffixStr = suffix ? `_${suffix}` : '';
+    return (
+      <span>
+        {parts[0]}<span className="text-green-400">{name}</span>{parts[1] || ''}{suffixStr}.png
+      </span>
+    );
+  };
+
+  // 渲染默认资产名称（@ 用绿色高亮）
+  const renderDefaultName = (prefix: string, replacement?: string) => {
+    const parts = prefix.split('@');
+    const display = replacement || '@';
+    return (
+      <span>
+        {parts[0]}<span className="text-green-400">{display}</span>{parts[1] || ''}
+      </span>
+    );
+  };
+
   // ---- 导出 ----
 
   const handleExport = async () => {
@@ -637,7 +660,7 @@ const CPSAutomation: React.FC = () => {
           <div className="ml-auto">
             <div className="text-xs text-[#888888] mb-1">默认资产名称</div>
             <div className="text-xs text-white bg-[#2a2a2a] border border-[#3a3a3a] rounded px-2 py-1 mb-1.5">
-              {config.portrait.namePrefix.replace('@', '_mid')}
+              {renderDefaultName(config.portrait.namePrefix, '@_mid')}
             </div>
             <div className="text-xs text-[#888888] mb-1">自定义命名</div>
             <input type="text" value={customName} onChange={e => setCustomName(e.target.value)}
@@ -656,7 +679,7 @@ const CPSAutomation: React.FC = () => {
               <span className="text-xs text-white">{config.portrait.sizes.big.height}</span>
               <span className="text-xs text-[#555555] ml-1">(+投影)</span>
             </div>
-            <div className="text-xs text-[#555555] mb-1">{generateFileName(config.portrait.namePrefix, 'big')}</div>
+            <div className="text-xs text-[#555555] mb-1">{renderHighlightedName(config.portrait.namePrefix, 'big')}</div>
             <div className="bg-[#222222] rounded-lg overflow-hidden"
               style={{ aspectRatio: paddedAspect(config.portrait.sizes.big) }}>
               {renderUploadBox('portrait', portraitImage, portraitBigCanvasRef)}
@@ -671,7 +694,7 @@ const CPSAutomation: React.FC = () => {
               <span className="text-xs text-[#888888] ml-2">H</span>
               <span className="text-xs text-white">{config.portrait.sizes.mid.height}</span>
             </div>
-            <div className="text-xs text-[#555555] mb-1">{generateFileName(config.portrait.namePrefix, 'mid')}</div>
+            <div className="text-xs text-[#555555] mb-1">{renderHighlightedName(config.portrait.namePrefix, 'mid')}</div>
             <div className="bg-[#222222] rounded-lg overflow-hidden"
               style={{ aspectRatio: paddedAspect(config.portrait.sizes.mid) }}>
               {portraitImage ? (
@@ -692,7 +715,7 @@ const CPSAutomation: React.FC = () => {
               <span className="text-xs text-[#888888] ml-2">H</span>
               <span className="text-xs text-white">{config.portrait.sizes.small.height}</span>
             </div>
-            <div className="text-xs text-[#555555] mb-1">{generateFileName(config.portrait.namePrefix, 'small')}</div>
+            <div className="text-xs text-[#555555] mb-1">{renderHighlightedName(config.portrait.namePrefix, 'small')}</div>
             <div className="bg-[#222222] rounded-lg overflow-hidden"
               style={{ aspectRatio: paddedAspect(config.portrait.sizes.small) }}>
               {portraitImage ? (
@@ -715,10 +738,10 @@ const CPSAutomation: React.FC = () => {
           <div className="mb-2">
             <div className="text-xs text-[#888888] mb-1">默认资产名称</div>
             <div className="text-xs text-white bg-[#2a2a2a] border border-[#3a3a3a] rounded px-2 py-1 inline-block">
-              {config.popup.namePrefix.replace('@', '')}
+              {renderDefaultName(config.popup.namePrefix)}
             </div>
           </div>
-          <div className="text-xs text-[#555555] mb-2">{generateFileName(config.popup.namePrefix)}</div>
+          <div className="text-xs text-[#555555] mb-2">{renderHighlightedName(config.popup.namePrefix)}</div>
           <div className="bg-[#222222] rounded-lg overflow-hidden"
             style={{ aspectRatio: `${config.popup.width}/${config.popup.height}` }}
             onMouseEnter={() => { hoverTargetRef.current = 'popup'; }}
@@ -734,10 +757,10 @@ const CPSAutomation: React.FC = () => {
           <div className="mb-2">
             <div className="text-xs text-[#888888] mb-1">默认资产名称</div>
             <div className="text-xs text-white bg-[#2a2a2a] border border-[#3a3a3a] rounded px-2 py-1 inline-block">
-              {config.appIcon.namePrefix.replace('@', '')}
+              {renderDefaultName(config.appIcon.namePrefix)}
             </div>
           </div>
-          <div className="text-xs text-[#555555] mb-2">{generateFileName(config.appIcon.namePrefix)}</div>
+          <div className="text-xs text-[#555555] mb-2">{renderHighlightedName(config.appIcon.namePrefix)}</div>
           <div className="bg-[#222222] rounded-lg overflow-hidden mx-auto"
             style={{ aspectRatio: `${config.appIcon.width}/${config.appIcon.height}`, maxWidth: '200px' }}
             onMouseEnter={() => { hoverTargetRef.current = 'appIcon'; }}
