@@ -1,4 +1,4 @@
-import React, { useState, useRef, useCallback, useEffect } from 'react';
+import React, { useState, useRef, useCallback, useEffect, useMemo } from 'react';
 import { Download, RotateCcw, Plus } from 'lucide-react';
 import { useToast } from './Toast';
 import { invoke } from '@tauri-apps/api/tauri';
@@ -25,9 +25,15 @@ const DEFAULT_CONFIG = {
     namePrefix: 'cps_big_icon@',
   },
   popup: {
+    width: 1009,
+    height: 567,
+    borderRadius: 46,
     namePrefix: 'cps_image@',
   },
   appIcon: {
+    width: 72,
+    height: 72,
+    borderRadius: 18,
     namePrefix: 'ylg_cps_icon@',
   },
 };
@@ -43,7 +49,6 @@ interface GeneratedImage {
   blob: Blob;
 }
 
-// 当前等待接收文件拖拽的输入框类型
 type DropTarget = 'portrait' | 'popup' | 'appIcon' | null;
 
 const CPSAutomation: React.FC = () => {
@@ -64,8 +69,18 @@ const CPSAutomation: React.FC = () => {
   const popupCanvasRef = useRef<HTMLCanvasElement>(null);
   const appIconCanvasRef = useRef<HTMLCanvasElement>(null);
 
-  // 记录鼠标最后悬停在哪个上传区域上
   const hoverTargetRef = useRef<DropTarget>(null);
+
+  // ---- 投影 padding 计算（通用立绘专用，弹窗和icon无投影） ----
+  const shadowPadding = useMemo(() => {
+    const { offsetX, offsetY, blur } = config.portrait.shadow;
+    return {
+      left: blur + Math.max(0, -offsetX),
+      right: blur + Math.max(0, offsetX),
+      top: blur + Math.max(0, -offsetY),
+      bottom: blur + Math.max(0, offsetY),
+    };
+  }, [config.portrait.shadow]);
 
   // ---- Tauri 文件拖拽支持 ----
   useEffect(() => {
@@ -74,15 +89,12 @@ const CPSAutomation: React.FC = () => {
     let unlistenCancel: (() => void) | null = null;
 
     const setup = async () => {
-      // 监听文件拖入悬停
       unlistenHover = await listen<string[]>('tauri://file-drop-hover', () => {
-        // 高亮当前鼠标所在的上传区域
         if (hoverTargetRef.current) {
           setDragOverTarget(hoverTargetRef.current);
         }
       });
 
-      // 监听文件放下
       unlistenDrop = await listen<string[]>('tauri://file-drop', async (event) => {
         setDragOverTarget(null);
         const paths = event.payload;
@@ -91,7 +103,6 @@ const CPSAutomation: React.FC = () => {
         const filePath = paths[0];
         const lowerPath = filePath.toLowerCase();
 
-        // 检查是否是图片文件
         const isImage = ['.png', '.jpg', '.jpeg', '.gif', '.webp', '.bmp', '.tiff', '.svg'].some(
           ext => lowerPath.endsWith(ext)
         );
@@ -100,7 +111,6 @@ const CPSAutomation: React.FC = () => {
           return;
         }
 
-        // 确定目标区域
         const target = hoverTargetRef.current;
         if (!target) {
           showToast('请将图片拖入指定的输入框区域', 'info');
@@ -108,11 +118,9 @@ const CPSAutomation: React.FC = () => {
         }
 
         try {
-          // 通过 Rust 读取文件内容，创建 File 对象
           const fileBytes: number[] = await invoke('read_binary_file_with_path', { filePath });
           const uint8Array = new Uint8Array(fileBytes);
 
-          // 根据扩展名确定 MIME 类型
           let mimeType = 'image/png';
           if (lowerPath.endsWith('.jpg') || lowerPath.endsWith('.jpeg')) mimeType = 'image/jpeg';
           else if (lowerPath.endsWith('.gif')) mimeType = 'image/gif';
@@ -138,7 +146,6 @@ const CPSAutomation: React.FC = () => {
         }
       });
 
-      // 监听拖拽取消
       unlistenCancel = await listen('tauri://file-drop-cancelled', () => {
         setDragOverTarget(null);
       });
@@ -163,10 +170,7 @@ const CPSAutomation: React.FC = () => {
     });
 
   // Apple 平滑圆角 (Continuous Curvature / G2 Continuity)
-  // 使用超椭圆 (Superellipse) 算法实现曲率从 0 渐变到峰值再渐变回 0
-  // - 普通圆角 (n=2): 直线与圆弧交界处曲率突变 (G1 连续)
-  // - 平滑圆角 (n>2): 曲率平滑过渡，无断层感 (G2 连续)
-  // 参数: radius=圆角半径, smoothPercent=平滑度百分比(0=普通圆角, 100=最大平滑)
+  // 超椭圆算法: n=2 普通圆弧, n>2 平滑过渡
   const drawRoundedRect = (
     ctx: CanvasRenderingContext2D,
     x: number, y: number, w: number, h: number,
@@ -181,27 +185,15 @@ const CPSAutomation: React.FC = () => {
       return;
     }
 
-    const s = Math.max(0, Math.min(100, smoothPercent)) / 100; // 归一化到 0-1
-
-    // 将平滑度映射到超椭圆指数 n
-    // n=2: 正圆弧（标准圆角），n≈4-5: Apple 连续曲率效果
-    // s=0 → n=2 (圆弧), s=0.8 → n=4.4, s=1 → n=5
+    const s = Math.max(0, Math.min(100, smoothPercent)) / 100;
     const n = 2 + s * 3;
-    const e = 2 / n; // 超椭圆参数形式的指数
-
-    // 采样点数（每个角 48 个点，确保曲线足够平滑）
+    const e = 2 / n;
     const SEG = 48;
 
     ctx.beginPath();
-
-    // 从顶边左端（左上角弧线终点）开始
     ctx.moveTo(x + r, y);
-
-    // 顶边直线段
     ctx.lineTo(x + w - r, y);
 
-    // 右上角: 从 (x+w-r, y) 到 (x+w, y+r)
-    // 圆心 (x+w-r, y+r), 参数 t 从 π/2 递减到 0
     for (let i = SEG; i >= 0; i--) {
       const t = (i / SEG) * Math.PI / 2;
       const px = r * Math.pow(Math.abs(Math.cos(t)), e);
@@ -209,11 +201,8 @@ const CPSAutomation: React.FC = () => {
       ctx.lineTo(x + w - r + px, y + r - py);
     }
 
-    // 右边直线段
     ctx.lineTo(x + w, y + h - r);
 
-    // 右下角: 从 (x+w, y+h-r) 到 (x+w-r, y+h)
-    // 圆心 (x+w-r, y+h-r), t 从 0 递增到 π/2
     for (let i = 0; i <= SEG; i++) {
       const t = (i / SEG) * Math.PI / 2;
       const px = r * Math.pow(Math.abs(Math.cos(t)), e);
@@ -221,11 +210,8 @@ const CPSAutomation: React.FC = () => {
       ctx.lineTo(x + w - r + px, y + h - r + py);
     }
 
-    // 底边直线段
     ctx.lineTo(x + r, y + h);
 
-    // 左下角: 从 (x+r, y+h) 到 (x, y+h-r)
-    // 圆心 (x+r, y+h-r), t 从 π/2 递减到 0
     for (let i = SEG; i >= 0; i--) {
       const t = (i / SEG) * Math.PI / 2;
       const px = r * Math.pow(Math.abs(Math.cos(t)), e);
@@ -233,11 +219,8 @@ const CPSAutomation: React.FC = () => {
       ctx.lineTo(x + r - px, y + h - r + py);
     }
 
-    // 左边直线段
     ctx.lineTo(x, y + r);
 
-    // 左上角: 从 (x, y+r) 到 (x+r, y)
-    // 圆心 (x+r, y+r), t 从 0 递增到 π/2
     for (let i = 0; i <= SEG; i++) {
       const t = (i / SEG) * Math.PI / 2;
       const px = r * Math.pow(Math.abs(Math.cos(t)), e);
@@ -248,6 +231,7 @@ const CPSAutomation: React.FC = () => {
     ctx.closePath();
   };
 
+  // 大尺寸: 最长边撑满，保持宽高比，居中
   const fitBigSize = (img: HTMLImageElement, cw: number, ch: number) => {
     const ia = img.width / img.height;
     const ca = cw / ch;
@@ -257,6 +241,7 @@ const CPSAutomation: React.FC = () => {
     return { sx: 0, sy: 0, sw: img.width, sh: img.height, dx, dy, dw, dh };
   };
 
+  // 中尺寸: 从原图中央裁剪竖条
   const fitMidSize = (img: HTMLImageElement, cw: number, ch: number) => {
     const canvasAspect = cw / ch;
     const imgAspect = img.width / img.height;
@@ -271,41 +256,52 @@ const CPSAutomation: React.FC = () => {
     }
   };
 
-  // 小尺寸：基于中尺寸裁剪结果再裁剪（参考图：紫色区域从绿色区域中截取）
-  // 1. 先计算中尺寸的裁剪区域（绿色竖条）
-  // 2. 在中尺寸裁剪区域内，保持宽度不变，高度按比例居中截短
+  // 小尺寸: 基于中尺寸裁剪区域再垂直居中截短
   const fitSmallSize = (img: HTMLImageElement, cw: number, ch: number) => {
-    const midSize = config.portrait.sizes.mid; // 290×536
+    const midSize = config.portrait.sizes.mid;
     const midAspect = midSize.width / midSize.height;
     const imgAspect = img.width / img.height;
 
-    // 第一步：计算中尺寸裁剪区域（和 fitMidSize 逻辑一致）
     let midSx: number, midSy: number, midSw: number, midSh: number;
     if (imgAspect > midAspect) {
-      // 原图更宽 → 居中取竖条，高度全取
       midSw = img.height * midAspect;
       midSx = (img.width - midSw) / 2;
       midSy = 0;
       midSh = img.height;
     } else {
-      // 原图更窄 → 宽度全取，高度居中裁剪
       midSw = img.width;
       midSx = 0;
       midSh = img.width / midAspect;
       midSy = (img.height - midSh) / 2;
     }
 
-    // 第二步：从中尺寸区域中，按小尺寸比例垂直居中裁剪
-    // 小尺寸和中尺寸宽度相同(290)，只是高度更短(246 vs 536)
-    const heightRatio = ch / midSize.height; // 246/536 ≈ 0.459
+    const heightRatio = ch / midSize.height;
     const smallSh = midSh * heightRatio;
     const smallSy = midSy + (midSh - smallSh) / 2;
 
     return { sx: midSx, sy: smallSy, sw: midSw, sh: smallSh, dx: 0, dy: 0, dw: cw, dh: ch };
   };
 
+  // 最短边撑满（居中裁剪）
+  const fitShortestSide = (img: HTMLImageElement, cw: number, ch: number) => {
+    const ia = img.width / img.height;
+    const ca = cw / ch;
+    if (ia > ca) {
+      // 图片更宽 → 高度撑满，宽度居中裁剪
+      const cropW = img.height * ca;
+      const cropX = (img.width - cropW) / 2;
+      return { sx: cropX, sy: 0, sw: cropW, sh: img.height, dx: 0, dy: 0, dw: cw, dh: ch };
+    } else {
+      // 图片更高 → 宽度撑满，高度居中裁剪
+      const cropH = img.width / ca;
+      const cropY = (img.height - cropH) / 2;
+      return { sx: 0, sy: cropY, sw: img.width, sh: cropH, dx: 0, dy: 0, dw: cw, dh: ch };
+    }
+  };
+
   // ---- 渲染逻辑 ----
 
+  // 通用立绘渲染（包含投影，画布比内容大）
   const renderPortrait = useCallback(async (
     canvasRef: React.RefObject<HTMLCanvasElement>,
     size: { width: number; height: number },
@@ -315,75 +311,101 @@ const CPSAutomation: React.FC = () => {
     const canvas = canvasRef.current;
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
-    canvas.width = size.width;
-    canvas.height = size.height;
+
+    // 画布 = 内容尺寸 + 投影 padding
+    const pad = shadowPadding;
+    canvas.width = size.width + pad.left + pad.right;
+    canvas.height = size.height + pad.top + pad.bottom;
+
     try {
       const img = await loadImage(portraitImage.file);
       ctx.clearRect(0, 0, canvas.width, canvas.height);
 
+      // 计算内容区域内的图片适配
       const params =
-        sizeType === 'big' ? fitBigSize(img, canvas.width, canvas.height) :
-        sizeType === 'mid' ? fitMidSize(img, canvas.width, canvas.height) :
-                             fitSmallSize(img, canvas.width, canvas.height);
-      const { sx, sy, sw, sh, dx, dy, dw, dh } = params;
+        sizeType === 'big' ? fitBigSize(img, size.width, size.height) :
+        sizeType === 'mid' ? fitMidSize(img, size.width, size.height) :
+                             fitSmallSize(img, size.width, size.height);
 
+      // 内容绘制位置 = padding 偏移 + 适配偏移
+      const contentX = pad.left;
+      const contentY = pad.top;
+      const drawX = contentX + params.dx;
+      const drawY = contentY + params.dy;
+
+      // 1. 绘制投影：在内容区域画一个实心圆角矩形，Canvas shadow 自动在周围生成投影
       ctx.save();
       ctx.shadowOffsetX = config.portrait.shadow.offsetX;
       ctx.shadowOffsetY = config.portrait.shadow.offsetY;
       ctx.shadowBlur = config.portrait.shadow.blur;
       ctx.shadowColor = config.portrait.shadow.color;
-      ctx.fillStyle = config.portrait.shadow.color;
-      drawRoundedRect(ctx, dx, dy, dw, dh, config.portrait.borderRadius, config.portrait.smoothBorderRadius);
+      ctx.fillStyle = '#1b1b1b'; // 卡片底色 (来自 CSS: UIColor(0.106, 0.106, 0.106))
+      drawRoundedRect(ctx, contentX, contentY, size.width, size.height,
+        config.portrait.borderRadius, config.portrait.smoothBorderRadius);
       ctx.fill();
       ctx.restore();
 
+      // 2. 裁剪并绘制图片
       ctx.save();
-      drawRoundedRect(ctx, dx, dy, dw, dh, config.portrait.borderRadius, config.portrait.smoothBorderRadius);
+      drawRoundedRect(ctx, contentX, contentY, size.width, size.height,
+        config.portrait.borderRadius, config.portrait.smoothBorderRadius);
       ctx.clip();
-      ctx.drawImage(img, sx, sy, sw, sh, dx, dy, dw, dh);
+      ctx.drawImage(img, params.sx, params.sy, params.sw, params.sh, drawX, drawY, params.dw, params.dh);
       ctx.restore();
     } catch (e) {
       console.error('渲染预览失败:', e);
     }
-  }, [portraitImage, config.portrait]);
+  }, [portraitImage, config.portrait, shadowPadding]);
 
+  // 弹窗渲染（无投影，平滑圆角裁剪，最长边撑满）
   const renderPopup = useCallback(async () => {
     if (!popupCanvasRef.current || !popupImage) return;
     const canvas = popupCanvasRef.current;
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
-    canvas.width = 800;
-    canvas.height = 600;
+    canvas.width = config.popup.width;   // 1009
+    canvas.height = config.popup.height; // 567
     try {
       const img = await loadImage(popupImage.file);
       ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+      // 平滑圆角裁剪
+      ctx.save();
+      drawRoundedRect(ctx, 0, 0, canvas.width, canvas.height,
+        config.popup.borderRadius, config.portrait.smoothBorderRadius);
+      ctx.clip();
+
+      // 最长边撑满，保持比例
       const p = fitBigSize(img, canvas.width, canvas.height);
       ctx.drawImage(img, p.sx, p.sy, p.sw, p.sh, p.dx, p.dy, p.dw, p.dh);
+      ctx.restore();
     } catch (e) { console.error('渲染弹窗预览失败:', e); }
-  }, [popupImage]);
+  }, [popupImage, config.popup, config.portrait.smoothBorderRadius]);
 
+  // APPicon 渲染（无投影，平滑圆角裁剪，最短边撑满）
   const renderAppIcon = useCallback(async () => {
     if (!appIconCanvasRef.current || !appIconImage) return;
     const canvas = appIconCanvasRef.current;
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
-    canvas.width = 512;
-    canvas.height = 512;
+    canvas.width = config.appIcon.width;   // 72
+    canvas.height = config.appIcon.height; // 72
     try {
       const img = await loadImage(appIconImage.file);
       ctx.clearRect(0, 0, canvas.width, canvas.height);
-      const ia = img.width / img.height;
-      if (ia > 1) {
-        const cropW = img.height;
-        const cropX = (img.width - cropW) / 2;
-        ctx.drawImage(img, cropX, 0, cropW, img.height, 0, 0, 512, 512);
-      } else {
-        const cropH = img.width;
-        const cropY = (img.height - cropH) / 2;
-        ctx.drawImage(img, 0, cropY, img.width, cropH, 0, 0, 512, 512);
-      }
+
+      // 平滑圆角裁剪
+      ctx.save();
+      drawRoundedRect(ctx, 0, 0, canvas.width, canvas.height,
+        config.appIcon.borderRadius, config.portrait.smoothBorderRadius);
+      ctx.clip();
+
+      // 最短边撑满，居中裁剪
+      const p = fitShortestSide(img, canvas.width, canvas.height);
+      ctx.drawImage(img, p.sx, p.sy, p.sw, p.sh, p.dx, p.dy, p.dw, p.dh);
+      ctx.restore();
     } catch (e) { console.error('渲染APPicon预览失败:', e); }
-  }, [appIconImage]);
+  }, [appIconImage, config.appIcon, config.portrait.smoothBorderRadius]);
 
   useEffect(() => {
     if (portraitImage) {
@@ -396,7 +418,7 @@ const CPSAutomation: React.FC = () => {
   useEffect(() => { renderPopup(); }, [popupImage, renderPopup]);
   useEffect(() => { renderAppIcon(); }, [appIconImage, renderAppIcon]);
 
-  // ---- 文件选择（点击方式） ----
+  // ---- 文件选择 ----
 
   const handleFileUpload = (file: File, type: 'portrait' | 'popup' | 'appIcon') => {
     if (!file.type.startsWith('image/')) { showToast('请上传图片文件', 'error'); return; }
@@ -449,7 +471,6 @@ const CPSAutomation: React.FC = () => {
         canvasToBlob(appIconCanvasRef, generateFileName(config.appIcon.namePrefix)),
       ]);
 
-      // 自动检测路径分隔符
       const sep = (selectedDir as string).includes('/') ? '/' : '\\';
       for (const img of images) {
         const buf = await img.blob.arrayBuffer();
@@ -477,7 +498,7 @@ const CPSAutomation: React.FC = () => {
     </div>
   );
 
-  // ---- 上传区域（内联渲染，不用子组件避免 remount） ----
+  // ---- 上传区域 ----
   const renderUploadBox = (
     type: 'portrait' | 'popup' | 'appIcon',
     image: ImageFile | null,
@@ -513,6 +534,13 @@ const CPSAutomation: React.FC = () => {
     );
   };
 
+  // ---- 计算含投影的画布宽高比（用于预览容器） ----
+  const paddedAspect = (size: { width: number; height: number }) => {
+    const w = size.width + shadowPadding.left + shadowPadding.right;
+    const h = size.height + shadowPadding.top + shadowPadding.bottom;
+    return `${w}/${h}`;
+  };
+
   // ---- 渲染 ----
   return (
     <div className="h-full overflow-y-auto bg-[#0a0a0a] text-white p-5">
@@ -529,7 +557,7 @@ const CPSAutomation: React.FC = () => {
 
       {/* ====== 通用立绘 ====== */}
       <div className="bg-[#1a1a1a] rounded-lg p-5 mb-4">
-        <h2 className="text-base font-semibold mb-3">通用立绘</h2>
+        <h2 className="text-base font-semibold mb-3">通用立绘 <span className="text-xs text-[#666] font-normal ml-2">导出含投影</span></h2>
 
         {/* 参数行 */}
         <div className="flex flex-wrap items-end gap-x-5 gap-y-3 mb-4">
@@ -603,19 +631,23 @@ const CPSAutomation: React.FC = () => {
 
         {/* 三张图预览区 */}
         <div className="flex gap-3 items-end">
+          {/* 大 */}
           <div className="flex-1">
             <div className="flex items-center gap-2 mb-1">
               <span className="text-xs text-[#888888]">W</span>
               <span className="text-xs text-white">{config.portrait.sizes.big.width}</span>
               <span className="text-xs text-[#888888] ml-2">H</span>
               <span className="text-xs text-white">{config.portrait.sizes.big.height}</span>
+              <span className="text-xs text-[#555555] ml-1">(+投影)</span>
             </div>
             <div className="text-xs text-[#555555] mb-1">{generateFileName(config.portrait.namePrefix, 'big')}</div>
-            <div className="bg-[#222222] rounded-lg overflow-hidden" style={{ aspectRatio: '619/536' }}>
+            <div className="bg-[#222222] rounded-lg overflow-hidden"
+              style={{ aspectRatio: paddedAspect(config.portrait.sizes.big) }}>
               {renderUploadBox('portrait', portraitImage, portraitBigCanvasRef)}
             </div>
           </div>
 
+          {/* 中 */}
           <div className="shrink-0" style={{ width: '25%' }}>
             <div className="flex items-center gap-2 mb-1">
               <span className="text-xs text-[#888888]">W</span>
@@ -624,7 +656,8 @@ const CPSAutomation: React.FC = () => {
               <span className="text-xs text-white">{config.portrait.sizes.mid.height}</span>
             </div>
             <div className="text-xs text-[#555555] mb-1">{generateFileName(config.portrait.namePrefix, 'mid')}</div>
-            <div className="bg-[#222222] rounded-lg overflow-hidden" style={{ aspectRatio: '290/536' }}>
+            <div className="bg-[#222222] rounded-lg overflow-hidden"
+              style={{ aspectRatio: paddedAspect(config.portrait.sizes.mid) }}>
               {portraitImage ? (
                 <canvas ref={portraitMidCanvasRef} className="w-full h-full" />
               ) : (
@@ -635,6 +668,7 @@ const CPSAutomation: React.FC = () => {
             </div>
           </div>
 
+          {/* 小 */}
           <div className="shrink-0" style={{ width: '25%' }}>
             <div className="flex items-center gap-2 mb-1">
               <span className="text-xs text-[#888888]">W</span>
@@ -643,7 +677,8 @@ const CPSAutomation: React.FC = () => {
               <span className="text-xs text-white">{config.portrait.sizes.small.height}</span>
             </div>
             <div className="text-xs text-[#555555] mb-1">{generateFileName(config.portrait.namePrefix, 'small')}</div>
-            <div className="bg-[#222222] rounded-lg overflow-hidden" style={{ aspectRatio: '290/246' }}>
+            <div className="bg-[#222222] rounded-lg overflow-hidden"
+              style={{ aspectRatio: paddedAspect(config.portrait.sizes.small) }}>
               {portraitImage ? (
                 <canvas ref={portraitSmallCanvasRef} className="w-full h-full" />
               ) : (
@@ -658,8 +693,9 @@ const CPSAutomation: React.FC = () => {
 
       {/* ====== 弹窗 + APPicon 并排 ====== */}
       <div className="grid grid-cols-2 gap-4 mb-4">
+        {/* 弹窗 */}
         <div className="bg-[#1a1a1a] rounded-lg p-5">
-          <h2 className="text-base font-semibold mb-3">弹窗</h2>
+          <h2 className="text-base font-semibold mb-3">弹窗 <span className="text-xs text-[#666] font-normal ml-2">{config.popup.width}×{config.popup.height} R{config.popup.borderRadius}</span></h2>
           <div className="mb-2">
             <div className="text-xs text-[#888888] mb-1">默认资产名称</div>
             <div className="text-xs text-white bg-[#2a2a2a] border border-[#3a3a3a] rounded px-2 py-1 inline-block">
@@ -667,7 +703,8 @@ const CPSAutomation: React.FC = () => {
             </div>
           </div>
           <div className="text-xs text-[#555555] mb-2">{generateFileName(config.popup.namePrefix)}</div>
-          <div className="bg-[#222222] rounded-lg overflow-hidden" style={{ aspectRatio: '4/3' }}
+          <div className="bg-[#222222] rounded-lg overflow-hidden"
+            style={{ aspectRatio: `${config.popup.width}/${config.popup.height}` }}
             onMouseEnter={() => { hoverTargetRef.current = 'popup'; }}
             onMouseLeave={() => { if (hoverTargetRef.current === 'popup') hoverTargetRef.current = null; }}
           >
@@ -675,8 +712,9 @@ const CPSAutomation: React.FC = () => {
           </div>
         </div>
 
+        {/* APPicon */}
         <div className="bg-[#1a1a1a] rounded-lg p-5">
-          <h2 className="text-base font-semibold mb-3">APPicon</h2>
+          <h2 className="text-base font-semibold mb-3">APPicon <span className="text-xs text-[#666] font-normal ml-2">{config.appIcon.width}×{config.appIcon.height} R{config.appIcon.borderRadius}</span></h2>
           <div className="mb-2">
             <div className="text-xs text-[#888888] mb-1">默认资产名称</div>
             <div className="text-xs text-white bg-[#2a2a2a] border border-[#3a3a3a] rounded px-2 py-1 inline-block">
@@ -684,7 +722,8 @@ const CPSAutomation: React.FC = () => {
             </div>
           </div>
           <div className="text-xs text-[#555555] mb-2">{generateFileName(config.appIcon.namePrefix)}</div>
-          <div className="bg-[#222222] rounded-lg overflow-hidden mx-auto" style={{ aspectRatio: '1/1', maxWidth: '280px' }}
+          <div className="bg-[#222222] rounded-lg overflow-hidden mx-auto"
+            style={{ aspectRatio: `${config.appIcon.width}/${config.appIcon.height}`, maxWidth: '200px' }}
             onMouseEnter={() => { hoverTargetRef.current = 'appIcon'; }}
             onMouseLeave={() => { if (hoverTargetRef.current === 'appIcon') hoverTargetRef.current = null; }}
           >
