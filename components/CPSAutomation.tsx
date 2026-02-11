@@ -162,22 +162,89 @@ const CPSAutomation: React.FC = () => {
       img.src = URL.createObjectURL(file);
     });
 
+  // Apple 平滑圆角 (Continuous Curvature / G2 Continuity)
+  // 使用超椭圆 (Superellipse) 算法实现曲率从 0 渐变到峰值再渐变回 0
+  // - 普通圆角 (n=2): 直线与圆弧交界处曲率突变 (G1 连续)
+  // - 平滑圆角 (n>2): 曲率平滑过渡，无断层感 (G2 连续)
+  // 参数: radius=圆角半径, smoothPercent=平滑度百分比(0=普通圆角, 100=最大平滑)
   const drawRoundedRect = (
     ctx: CanvasRenderingContext2D,
     x: number, y: number, w: number, h: number,
-    radius: number, smooth: number = 100
+    radius: number, smoothPercent: number = 80
   ) => {
-    const r = radius * (smooth / 100);
+    const maxR = Math.min(w, h) / 2;
+    const r = Math.min(radius, maxR);
+
+    if (r <= 0) {
+      ctx.beginPath();
+      ctx.rect(x, y, w, h);
+      return;
+    }
+
+    const s = Math.max(0, Math.min(100, smoothPercent)) / 100; // 归一化到 0-1
+
+    // 将平滑度映射到超椭圆指数 n
+    // n=2: 正圆弧（标准圆角），n≈4-5: Apple 连续曲率效果
+    // s=0 → n=2 (圆弧), s=0.8 → n=4.4, s=1 → n=5
+    const n = 2 + s * 3;
+    const e = 2 / n; // 超椭圆参数形式的指数
+
+    // 采样点数（每个角 48 个点，确保曲线足够平滑）
+    const SEG = 48;
+
     ctx.beginPath();
+
+    // 从顶边左端（左上角弧线终点）开始
     ctx.moveTo(x + r, y);
+
+    // 顶边直线段
     ctx.lineTo(x + w - r, y);
-    ctx.quadraticCurveTo(x + w, y, x + w, y + r);
+
+    // 右上角: 从 (x+w-r, y) 到 (x+w, y+r)
+    // 圆心 (x+w-r, y+r), 参数 t 从 π/2 递减到 0
+    for (let i = SEG; i >= 0; i--) {
+      const t = (i / SEG) * Math.PI / 2;
+      const px = r * Math.pow(Math.abs(Math.cos(t)), e);
+      const py = r * Math.pow(Math.abs(Math.sin(t)), e);
+      ctx.lineTo(x + w - r + px, y + r - py);
+    }
+
+    // 右边直线段
     ctx.lineTo(x + w, y + h - r);
-    ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+
+    // 右下角: 从 (x+w, y+h-r) 到 (x+w-r, y+h)
+    // 圆心 (x+w-r, y+h-r), t 从 0 递增到 π/2
+    for (let i = 0; i <= SEG; i++) {
+      const t = (i / SEG) * Math.PI / 2;
+      const px = r * Math.pow(Math.abs(Math.cos(t)), e);
+      const py = r * Math.pow(Math.abs(Math.sin(t)), e);
+      ctx.lineTo(x + w - r + px, y + h - r + py);
+    }
+
+    // 底边直线段
     ctx.lineTo(x + r, y + h);
-    ctx.quadraticCurveTo(x, y + h, x, y + h - r);
+
+    // 左下角: 从 (x+r, y+h) 到 (x, y+h-r)
+    // 圆心 (x+r, y+h-r), t 从 π/2 递减到 0
+    for (let i = SEG; i >= 0; i--) {
+      const t = (i / SEG) * Math.PI / 2;
+      const px = r * Math.pow(Math.abs(Math.cos(t)), e);
+      const py = r * Math.pow(Math.abs(Math.sin(t)), e);
+      ctx.lineTo(x + r - px, y + h - r + py);
+    }
+
+    // 左边直线段
     ctx.lineTo(x, y + r);
-    ctx.quadraticCurveTo(x, y, x + r, y);
+
+    // 左上角: 从 (x, y+r) 到 (x+r, y)
+    // 圆心 (x+r, y+r), t 从 0 递增到 π/2
+    for (let i = 0; i <= SEG; i++) {
+      const t = (i / SEG) * Math.PI / 2;
+      const px = r * Math.pow(Math.abs(Math.cos(t)), e);
+      const py = r * Math.pow(Math.abs(Math.sin(t)), e);
+      ctx.lineTo(x + r - px, y + r - py);
+    }
+
     ctx.closePath();
   };
 
