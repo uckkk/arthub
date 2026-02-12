@@ -74,6 +74,7 @@ const CPSAutomation: React.FC = () => {
 
   const [config, setConfig] = useState(DEFAULT_CONFIG);
   const [customName, setCustomName] = useState('');
+  const [customMode, setCustomMode] = useState(false); // 自定义开关，默认关闭
 
   const portraitBigCanvasRef = useRef<HTMLCanvasElement>(null);
   const portraitMidCanvasRef = useRef<HTMLCanvasElement>(null);
@@ -640,12 +641,16 @@ const CPSAutomation: React.FC = () => {
 
   const canExport = portraitImage && popupImage && appIconImage;
 
+  // ---- 参数禁用状态 ----
+  const paramDisabled = !customMode;
+
   // ---- 小型输入组件 ----
-  const numInput = (label: string, value: number, onChange: (v: number) => void) => (
-    <div className="flex items-center gap-1.5">
+  const numInput = (label: string, value: number, onChange: (v: number) => void, disabled = false) => (
+    <div className={`flex items-center gap-1.5 transition-opacity ${disabled ? 'opacity-40 pointer-events-none' : ''}`}>
       <span className="text-xs text-[#888888] shrink-0">{label}</span>
       <input type="number" value={value} onChange={e => onChange(parseInt(e.target.value) || 0)}
-        className="w-16 px-2 py-1 bg-[#2a2a2a] border border-[#3a3a3a] rounded text-white text-xs" />
+        disabled={disabled}
+        className="w-16 px-2 py-1 bg-[#2a2a2a] border border-[#3a3a3a] rounded text-white text-xs disabled:cursor-not-allowed" />
     </div>
   );
 
@@ -706,8 +711,31 @@ const CPSAutomation: React.FC = () => {
   // ---- 渲染 ----
   return (
     <div className="h-full overflow-y-auto bg-[#0a0a0a] text-white p-5">
-      {/* 顶部恢复默认 */}
-      <div className="flex items-center justify-end mb-4">
+      {/* 顶部操作栏 */}
+      <div className="flex items-center justify-between mb-4">
+        {/* iOS 风格"自定义"开关 */}
+        <div className="flex items-center gap-2.5">
+          <span className="text-sm text-[#a0a0a0] select-none">自定义</span>
+          <label className="relative inline-flex items-center cursor-pointer">
+            <input
+              type="checkbox"
+              checked={customMode}
+              onChange={(e) => setCustomMode(e.target.checked)}
+              className="sr-only peer"
+            />
+            <div className="
+              w-[51px] h-[31px] rounded-full
+              bg-[#39393d] peer-checked:bg-[#34c759]
+              after:content-[''] after:absolute after:top-[2px] after:left-[2px]
+              after:bg-white after:rounded-full after:h-[27px] after:w-[27px]
+              after:shadow-[0_3px_8px_rgba(0,0,0,0.15),0_3px_1px_rgba(0,0,0,0.06)]
+              after:transition-all after:duration-200
+              peer-checked:after:translate-x-5
+              transition-colors duration-200
+            "></div>
+          </label>
+        </div>
+
         <button onClick={handleReset}
           className="px-3 py-1.5 rounded bg-[#2a2a2a] hover:bg-[#3a3a3a] text-xs text-white transition-colors flex items-center gap-1.5 shrink-0">
           <RotateCcw size={12} /> 恢复默认
@@ -720,39 +748,46 @@ const CPSAutomation: React.FC = () => {
 
         {/* 参数行 */}
         <div className="flex flex-wrap items-end gap-x-5 gap-y-3 mb-4">
-          <div>
+          {/* 圆角（可禁用） */}
+          <div className={`transition-opacity ${paramDisabled ? 'opacity-40 pointer-events-none' : ''}`}>
             <div className="text-xs text-[#888888] mb-1">圆角</div>
             <input type="number" value={config.portrait.borderRadius}
+              disabled={paramDisabled}
               onChange={e => setConfig({ ...config, portrait: { ...config.portrait, borderRadius: parseInt(e.target.value) || 0 } })}
-              className="w-16 px-2 py-1 bg-[#2a2a2a] border border-[#3a3a3a] rounded text-white text-xs" />
+              className="w-16 px-2 py-1 bg-[#2a2a2a] border border-[#3a3a3a] rounded text-white text-xs disabled:cursor-not-allowed" />
           </div>
 
-          <div>
+          {/* 平滑圆角（可禁用） */}
+          <div className={`transition-opacity ${paramDisabled ? 'opacity-40 pointer-events-none' : ''}`}>
             <div className="text-xs text-[#888888] mb-1">平滑圆角</div>
             <div className="flex items-center gap-2">
               <input type="range" min="0" max="100" value={config.portrait.smoothBorderRadius}
+                disabled={paramDisabled}
                 onChange={e => setConfig({ ...config, portrait: { ...config.portrait, smoothBorderRadius: parseInt(e.target.value) } })}
-                className="w-24 accent-blue-500 appearance-none h-1 rounded-full bg-[#333333] [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-3 [&::-webkit-slider-thumb]:h-3 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-blue-500 [&::-webkit-slider-thumb]:cursor-pointer" />
+                className="w-24 accent-blue-500 appearance-none h-1 rounded-full bg-[#333333] [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-3 [&::-webkit-slider-thumb]:h-3 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-blue-500 [&::-webkit-slider-thumb]:cursor-pointer disabled:cursor-not-allowed" />
               <span className="text-xs text-white w-8">{config.portrait.smoothBorderRadius}%</span>
             </div>
           </div>
 
-          <div>
+          {/* 投影（可禁用） */}
+          <div className={`transition-opacity ${paramDisabled ? 'opacity-40 pointer-events-none' : ''}`}>
             <div className="text-xs text-[#888888] mb-1">投影</div>
             <div className="flex items-center gap-2">
-              {numInput('X', config.portrait.shadow.offsetX, v => setConfig({ ...config, portrait: { ...config.portrait, shadow: { ...config.portrait.shadow, offsetX: v } } }))}
-              {numInput('Y', config.portrait.shadow.offsetY, v => setConfig({ ...config, portrait: { ...config.portrait, shadow: { ...config.portrait.shadow, offsetY: v } } }))}
+              {numInput('X', config.portrait.shadow.offsetX, v => setConfig({ ...config, portrait: { ...config.portrait, shadow: { ...config.portrait.shadow, offsetX: v } } }), paramDisabled)}
+              {numInput('Y', config.portrait.shadow.offsetY, v => setConfig({ ...config, portrait: { ...config.portrait, shadow: { ...config.portrait.shadow, offsetY: v } } }), paramDisabled)}
             </div>
             <div className="flex items-center gap-2 mt-1.5">
-              {numInput('B', config.portrait.shadow.blur, v => setConfig({ ...config, portrait: { ...config.portrait, shadow: { ...config.portrait.shadow, blur: v } } }))}
-              {numInput('S', config.portrait.shadow.spread, v => setConfig({ ...config, portrait: { ...config.portrait, shadow: { ...config.portrait.shadow, spread: v } } }))}
+              {numInput('B', config.portrait.shadow.blur, v => setConfig({ ...config, portrait: { ...config.portrait, shadow: { ...config.portrait.shadow, blur: v } } }), paramDisabled)}
+              {numInput('S', config.portrait.shadow.spread, v => setConfig({ ...config, portrait: { ...config.portrait, shadow: { ...config.portrait.shadow, spread: v } } }), paramDisabled)}
             </div>
           </div>
 
-          <div>
+          {/* 颜色（可禁用） */}
+          <div className={`transition-opacity ${paramDisabled ? 'opacity-40 pointer-events-none' : ''}`}>
             <div className="text-xs text-[#888888] mb-1">颜色</div>
             <div className="flex items-center gap-1.5">
               <input type="color"
+                disabled={paramDisabled}
                 value={(() => {
                   const m = config.portrait.shadow.color.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)/);
                   if (m) return `#${parseInt(m[1]).toString(16).padStart(2,'0')}${parseInt(m[2]).toString(16).padStart(2,'0')}${parseInt(m[3]).toString(16).padStart(2,'0')}`;
@@ -764,19 +799,21 @@ const CPSAutomation: React.FC = () => {
                   const op = config.portrait.shadow.color.match(/,\s*([\d.]+)\)/)?.[1] || '0.2';
                   setConfig({ ...config, portrait: { ...config.portrait, shadow: { ...config.portrait.shadow, color: `rgba(${r}, ${g}, ${b}, ${op})` } } });
                 }}
-                className="w-8 h-7 bg-[#2a2a2a] border border-[#3a3a3a] rounded cursor-pointer" />
+                className="w-8 h-7 bg-[#2a2a2a] border border-[#3a3a3a] rounded cursor-pointer disabled:cursor-not-allowed" />
               <input type="number" min="0" max="100"
+                disabled={paramDisabled}
                 value={Math.round(parseFloat(config.portrait.shadow.color.match(/,\s*([\d.]+)\)/)?.[1] || '0.2') * 100)}
                 onChange={e => {
                   const op = parseInt(e.target.value) / 100;
                   const m = config.portrait.shadow.color.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)/);
                   if (m) setConfig({ ...config, portrait: { ...config.portrait, shadow: { ...config.portrait.shadow, color: `rgba(${m[1]}, ${m[2]}, ${m[3]}, ${op})` } } });
                 }}
-                className="w-12 px-1.5 py-1 bg-[#2a2a2a] border border-[#3a3a3a] rounded text-white text-xs" />
+                className="w-12 px-1.5 py-1 bg-[#2a2a2a] border border-[#3a3a3a] rounded text-white text-xs disabled:cursor-not-allowed" />
               <span className="text-xs text-[#666666]">%</span>
             </div>
           </div>
 
+          {/* 命名区域（始终可用） */}
           <div className="ml-auto">
             <div className="text-xs text-[#888888] mb-1">默认资产名称</div>
             <div className="text-xs text-white bg-[#2a2a2a] border border-[#3a3a3a] rounded px-2 py-1 mb-1.5">
@@ -884,20 +921,22 @@ const CPSAutomation: React.FC = () => {
             <span className="text-xs text-[#555555] ml-1">R{config.appIcon.borderRadius}</span>
           </div>
 
-          {/* 圆角参数 */}
-          <div className="flex flex-wrap items-end gap-x-4 gap-y-2 mb-2">
+          {/* 圆角参数（可禁用） */}
+          <div className={`flex flex-wrap items-end gap-x-4 gap-y-2 mb-2 transition-opacity ${paramDisabled ? 'opacity-40 pointer-events-none' : ''}`}>
             <div>
               <div className="text-xs text-[#888888] mb-1">圆角</div>
               <input type="number" value={config.appIcon.borderRadius}
+                disabled={paramDisabled}
                 onChange={e => setConfig({ ...config, appIcon: { ...config.appIcon, borderRadius: parseInt(e.target.value) || 0 } })}
-                className="w-14 px-2 py-1 bg-[#2a2a2a] border border-[#3a3a3a] rounded text-white text-xs" />
+                className="w-14 px-2 py-1 bg-[#2a2a2a] border border-[#3a3a3a] rounded text-white text-xs disabled:cursor-not-allowed" />
             </div>
             <div>
               <div className="text-xs text-[#888888] mb-1">平滑</div>
               <div className="flex items-center gap-1.5">
                 <input type="range" min="0" max="100" value={config.appIcon.smoothBorderRadius}
+                  disabled={paramDisabled}
                   onChange={e => setConfig({ ...config, appIcon: { ...config.appIcon, smoothBorderRadius: parseInt(e.target.value) } })}
-                  className="w-16 accent-blue-500 appearance-none h-1 rounded-full bg-[#333333] [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-3 [&::-webkit-slider-thumb]:h-3 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-blue-500 [&::-webkit-slider-thumb]:cursor-pointer" />
+                  className="w-16 accent-blue-500 appearance-none h-1 rounded-full bg-[#333333] [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-3 [&::-webkit-slider-thumb]:h-3 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-blue-500 [&::-webkit-slider-thumb]:cursor-pointer disabled:cursor-not-allowed" />
                 <span className="text-xs text-white w-7">{config.appIcon.smoothBorderRadius}%</span>
               </div>
             </div>
