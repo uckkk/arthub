@@ -1243,13 +1243,17 @@ function drawMiniProgramOverlay(
   sw: number, sh: number,
 ) {
   const platform = getDevicePlatform(device);
+  const safeArea = orientation === 'portrait'
+    ? device.safeArea.portrait
+    : device.safeArea.landscape;
   const statusBarH = orientation === 'portrait'
     ? device.statusBarHeight.portrait
     : device.statusBarHeight.landscape;
   const navH = platform === 'ios' ? mp.navBarHeight.ios : mp.navBarHeight.android;
 
   if (orientation === 'portrait') {
-    // 导航栏 (状态栏下方)
+    // ---- 竖屏 ----
+    // 导航栏 (状态栏下方, 全宽)
     ctx.fillStyle = mp.color;
     ctx.fillRect(ox, oy + statusBarH, sw, navH);
 
@@ -1258,18 +1262,35 @@ function drawMiniProgramOverlay(
       const cap = mp.capsule;
       const capTop = oy + statusBarH + cap.top;
       const capLeft = ox + sw - cap.right - cap.width;
-      ctx.fillStyle = mp.color.replace(/[\d.]+\)$/, '0.45)'); // 更深一点
+      ctx.fillStyle = mp.color.replace(/[\d.]+\)$/, '0.45)');
       simpleRoundRect(ctx, capLeft, capTop, cap.width, cap.height, cap.borderRadius);
       ctx.fill();
-      // 胶囊边框
       ctx.strokeStyle = mp.color.replace(/[\d.]+\)$/, '0.6)');
       ctx.lineWidth = 1;
       ctx.stroke();
     }
   } else {
-    // 横屏: 左侧导航栏
+    // ---- 横屏 ----
+    // 横屏时小程序导航栏仍在顶部，但需避开左右安全区
+    const navLeft = ox + safeArea.left;
+    const navWidth = sw - safeArea.left - safeArea.right;
+    const navTop = oy + (statusBarH > 0 ? statusBarH : safeArea.top);
+
     ctx.fillStyle = mp.color;
-    ctx.fillRect(ox + statusBarH, oy, navH, sh);
+    ctx.fillRect(navLeft, navTop, navWidth, navH);
+
+    // 胶囊按钮 (横屏时贴右侧安全区内边缘)
+    if (mp.capsule) {
+      const cap = mp.capsule;
+      const capTop = navTop + cap.top;
+      const capLeft = navLeft + navWidth - cap.right - cap.width;
+      ctx.fillStyle = mp.color.replace(/[\d.]+\)$/, '0.45)');
+      simpleRoundRect(ctx, capLeft, capTop, cap.width, cap.height, cap.borderRadius);
+      ctx.fill();
+      ctx.strokeStyle = mp.color.replace(/[\d.]+\)$/, '0.6)');
+      ctx.lineWidth = 1;
+      ctx.stroke();
+    }
   }
 }
 
