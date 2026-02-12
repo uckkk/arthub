@@ -381,7 +381,7 @@ const UIAudit: React.FC = () => {
     if (!image) return;
     setHeatmapLoading(true);
     try {
-      const result = await analyzeSaliency(image, 250);
+      const result = await analyzeSaliency(image, 400);
       setSaliencyData(result);
       setShowHeatmap(true);
     } catch (err) {
