@@ -235,7 +235,17 @@ const Console: React.FC<ConsoleProps> = ({ isOpen, onClose, logs, onClear }) => 
                       <div key={idx} className="mt-1">
                         {typeof arg === 'object' ? (
                           <pre className="text-xs overflow-x-auto">
-                            {JSON.stringify(arg, null, 2)}
+                            {(() => {
+                              try {
+                                return JSON.stringify(arg, (key, value) => {
+                                  if (value instanceof HTMLElement) return `<${value.tagName.toLowerCase()} class="${value.className || ''}">`;
+                                  if (value instanceof Node) return `[${value.nodeName}]`;
+                                  return value;
+                                }, 2);
+                              } catch {
+                                return String(arg);
+                              }
+                            })()}
                           </pre>
                         ) : (
                           <span>{String(arg)}</span>
