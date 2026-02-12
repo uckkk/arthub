@@ -419,7 +419,9 @@ const UIAudit: React.FC = () => {
         newWarnings.push({
           id: 'safe-bottom', level: 'warn',
           message: `底部安全区 ${safeArea.bottom}pt`,
-          rect: { x: 0, y: sh - safeArea.bottom, w: sw, h: safeArea.bottom }, side: 'right',
+          rect: { x: 0, y: sh - safeArea.bottom, w: sw, h: safeArea.bottom },
+          // 横屏时放左侧, 与右侧标注分散; 竖屏放左侧与顶部(右侧)形成对称
+          side: 'left',
         });
       }
 
@@ -448,27 +450,37 @@ const UIAudit: React.FC = () => {
         const crease = device.foldCrease;
         ctx.fillStyle = OVERLAY_COLORS.foldCrease;
         let creaseRect: OverlayWarning['rect'];
+        let creaseSide: 'left' | 'right';
+        const halfW = crease.width / 2;
         if (orientation === 'portrait') {
           if (crease.position === 'vertical') {
-            ctx.fillRect(ox + crease.offset - crease.width / 2, oy, crease.width, sh);
-            creaseRect = { x: crease.offset - crease.width / 2, y: sh * 0.5, w: crease.width, h: 10 };
+            // 竖屏 + 垂直折痕 → 竖线
+            ctx.fillRect(ox + crease.offset - halfW, oy, crease.width, sh);
+            creaseRect = { x: crease.offset - halfW, y: sh * 0.5, w: crease.width, h: 10 };
+            creaseSide = crease.offset < sw / 2 ? 'left' : 'right';
           } else {
-            ctx.fillRect(ox, oy + crease.offset - crease.width / 2, sw, crease.width);
-            creaseRect = { x: 0, y: crease.offset, w: sw, h: crease.width };
+            // 竖屏 + 水平折痕 → 横线
+            ctx.fillRect(ox, oy + crease.offset - halfW, sw, crease.width);
+            creaseRect = { x: 0, y: crease.offset - halfW, w: sw, h: crease.width };
+            creaseSide = 'left';
           }
         } else {
           if (crease.position === 'vertical') {
-            ctx.fillRect(ox, oy + crease.offset - crease.width / 2, sw, crease.width);
-            creaseRect = { x: 0, y: crease.offset, w: sw, h: crease.width };
+            // 横屏 + 垂直折痕 → 转为横线
+            ctx.fillRect(ox, oy + crease.offset - halfW, sw, crease.width);
+            creaseRect = { x: 0, y: crease.offset - halfW, w: sw, h: crease.width };
+            creaseSide = 'left';
           } else {
-            ctx.fillRect(ox + crease.offset - crease.width / 2, oy, crease.width, sh);
-            creaseRect = { x: crease.offset, y: sh * 0.5, w: crease.width, h: 10 };
+            // 横屏 + 水平折痕 → 转为竖线
+            ctx.fillRect(ox + crease.offset - halfW, oy, crease.width, sh);
+            creaseRect = { x: crease.offset - halfW, y: sh * 0.5, w: crease.width, h: 10 };
+            creaseSide = crease.offset < sw / 2 ? 'left' : 'right';
           }
         }
         newWarnings.push({
           id: 'fold-crease', level: 'warn',
           message: '折叠屏折痕',
-          rect: creaseRect, side: 'left',
+          rect: creaseRect, side: creaseSide,
         });
       }
 
@@ -502,13 +514,27 @@ const UIAudit: React.FC = () => {
         const mpPlatform = getDevicePlatform(device);
         const navH = mpPlatform === 'ios' ? mp.navBarHeight.ios : mp.navBarHeight.android;
         const statusH = orientation === 'portrait' ? device.statusBarHeight.portrait : device.statusBarHeight.landscape;
+
+        let mpRect: OverlayWarning['rect'];
+        let mpSide: 'left' | 'right';
+        if (orientation === 'portrait') {
+          // 竖屏: 导航栏在状态栏下方, 全宽
+          mpRect = { x: 0, y: statusH, w: sw, h: navH };
+          // 交替左右分布以避免标注重叠
+          mpSide = mpIndex % 2 === 0 ? 'left' : 'right';
+        } else {
+          // 横屏: 导航栏在顶部, 避开左右安全区
+          const navTop = statusH > 0 ? statusH : safeArea.top;
+          const navW = sw - safeArea.left - safeArea.right;
+          mpRect = { x: safeArea.left, y: navTop, w: navW, h: navH };
+          // 横屏导航栏在顶部 — 全部放右侧, 用 Y 错开即可
+          mpSide = 'right';
+        }
+
         newWarnings.push({
           id: `mp-${mpId}`, level: 'warn',
           message: mp.name.replace('小程序', ''),
-          rect: orientation === 'portrait'
-            ? { x: 0, y: statusH, w: sw, h: navH }
-            : { x: safeArea.left, y: statusH > 0 ? statusH : safeArea.top, w: sw * 0.3, h: navH },
-          side: mpIndex % 2 === 0 ? 'left' : 'right',
+          rect: mpRect, side: mpSide,
         });
         mpIndex++;
       });
