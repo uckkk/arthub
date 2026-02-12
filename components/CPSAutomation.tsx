@@ -35,7 +35,7 @@ const DEFAULT_CONFIG = {
     width: 72,
     height: 72,
     borderRadius: 18,
-    smoothBorderRadius: 80,
+    smoothBorderRadius: 60,
     namePrefix: 'ylg_cps_icon@',
   },
 };
@@ -824,6 +824,26 @@ const CPSAutomation: React.FC = () => {
         {/* APPicon */}
         <div className="bg-[#1a1a1a] rounded-lg p-5">
           <h2 className="text-base font-semibold mb-3">APPicon <span className="text-xs text-[#666] font-normal ml-2">{config.appIcon.width}×{config.appIcon.height} R{config.appIcon.borderRadius}</span></h2>
+
+          {/* 圆角参数 */}
+          <div className="flex flex-wrap items-end gap-x-5 gap-y-2 mb-3">
+            <div>
+              <div className="text-xs text-[#888888] mb-1">圆角</div>
+              <input type="number" value={config.appIcon.borderRadius}
+                onChange={e => setConfig({ ...config, appIcon: { ...config.appIcon, borderRadius: parseInt(e.target.value) || 0 } })}
+                className="w-16 px-2 py-1 bg-[#2a2a2a] border border-[#3a3a3a] rounded text-white text-xs" />
+            </div>
+            <div>
+              <div className="text-xs text-[#888888] mb-1">平滑圆角</div>
+              <div className="flex items-center gap-2">
+                <input type="range" min="0" max="100" value={config.appIcon.smoothBorderRadius}
+                  onChange={e => setConfig({ ...config, appIcon: { ...config.appIcon, smoothBorderRadius: parseInt(e.target.value) } })}
+                  className="w-24 accent-blue-500" />
+                <span className="text-xs text-white w-8">{config.appIcon.smoothBorderRadius}%</span>
+              </div>
+            </div>
+          </div>
+
           <div className="mb-2">
             <div className="text-xs text-[#888888] mb-1">默认资产名称</div>
             <div className="text-xs text-white bg-[#2a2a2a] border border-[#3a3a3a] rounded px-2 py-1 inline-block">
