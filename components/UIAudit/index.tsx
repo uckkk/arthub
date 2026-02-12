@@ -2,7 +2,9 @@ import React, { useState, useRef, useCallback, useEffect, useMemo } from 'react'
 import {
   Monitor, Smartphone, Tablet, FoldVertical,
   Upload, ChevronDown, Keyboard, LayoutGrid, AlertTriangle,
-  Shield, Eye, EyeOff, Info, X, Maximize
+  Shield, Eye, EyeOff, Info, X, Maximize,
+  Flame, Crosshair, MousePointer, BarChart3, Target, Pipette,
+  Hand, Loader2, RefreshCw, Zap,
 } from 'lucide-react';
 import {
   DEVICE_PRESETS, MINIPROGRAM_PRESETS, KEYBOARD_HEIGHTS,
@@ -10,6 +12,24 @@ import {
   getDevicePlatform, getScreenSize, getSafeArea,
   CutoutType,
 } from './devicePresets';
+import {
+  analyzeSaliency, saliencyToHeatmap, terminateWorker,
+  type SaliencyResult,
+} from './saliencyWorker';
+import {
+  contrastRatio, getWCAGLevel, getWCAGColor,
+  pickAreaColor, rgbToHex, hexToRgb,
+  type WCAGLevel,
+} from './contrastUtils';
+import {
+  drawReachabilityOverlay, drawFittsOverlay, calculateFitts,
+  type FittsResult,
+} from './reachability';
+import {
+  generateReport, GRADE_COLORS,
+  type AuditReport, type PlatformAdaptInput, type SaliencyInput,
+  type ReadabilityInput, type EfficiencyInput,
+} from './auditScore';
 
 /* ============================================================
    类型
@@ -27,6 +47,9 @@ interface OverlayWarning {
 type Orientation = 'portrait' | 'landscape';
 type AndroidNav = 'gesture' | 'threeButton';
 type AspectMode = 'device' | 'preset' | 'custom';
+
+/** P1 分析工具的交互模式 */
+type AnalysisMode = 'none' | 'contrast' | 'fitts';
 
 /* ============================================================
    宽高比预设
@@ -135,7 +158,7 @@ function drawRoundedRect(
    组件
    ============================================================ */
 const UIAudit: React.FC = () => {
-  /* ---------- 状态 ---------- */
+  /* ---------- P0 状态 ---------- */
   const [image, setImage] = useState<HTMLImageElement | null>(null);
   const [imageName, setImageName] = useState<string>('');
   const [selectedDeviceId, setSelectedDeviceId] = useState<string>('iphone15pro');
@@ -154,6 +177,35 @@ const UIAudit: React.FC = () => {
   const [selectedAspectId, setSelectedAspectId] = useState<string>('9:21');
   const [customWidth, setCustomWidth] = useState<number>(393);
   const [customHeight, setCustomHeight] = useState<number>(852);
+
+  /* ---------- P1 状态 ---------- */
+  // 视觉显著性热力图
+  const [showHeatmap, setShowHeatmap] = useState(false);
+  const [heatmapLoading, setHeatmapLoading] = useState(false);
+  const [saliencyData, setSaliencyData] = useState<SaliencyResult | null>(null);
+  const [heatmapOpacity, setHeatmapOpacity] = useState(0.5);
+
+  // 拇指热区
+  const [showReachability, setShowReachability] = useState(false);
+
+  // 分析交互模式 (对比度取色 / Fitts 测量)
+  const [analysisMode, setAnalysisMode] = useState<AnalysisMode>('none');
+
+  // WCAG 对比度
+  const [contrastFg, setContrastFg] = useState<[number, number, number] | null>(null);
+  const [contrastBg, setContrastBg] = useState<[number, number, number] | null>(null);
+  const [contrastPickStep, setContrastPickStep] = useState<'fg' | 'bg'>('fg');
+  const [manualFgHex, setManualFgHex] = useState('#FFFFFF');
+  const [manualBgHex, setManualBgHex] = useState('#000000');
+
+  // Fitts's Law
+  const [fittsFrom, setFittsFrom] = useState<{ x: number; y: number } | null>(null);
+  const [fittsTo, setFittsTo] = useState<{ x: number; y: number } | null>(null);
+  const [fittsTargetSize, setFittsTargetSize] = useState(44);
+  const [fittsResult, setFittsResult] = useState<FittsResult | null>(null);
+
+  // 审计报告
+  const [auditReport, setAuditReport] = useState<AuditReport | null>(null);
 
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const canvasAreaRef = useRef<HTMLDivElement>(null);
@@ -226,7 +278,17 @@ const UIAudit: React.FC = () => {
     const reader = new FileReader();
     reader.onload = () => {
       const img = new Image();
-      img.onload = () => setImage(img);
+      img.onload = () => {
+        setImage(img);
+        // 重置 P1 分析数据
+        setSaliencyData(null);
+        setContrastFg(null);
+        setContrastBg(null);
+        setFittsFrom(null);
+        setFittsTo(null);
+        setFittsResult(null);
+        setAuditReport(null);
+      };
       img.src = reader.result as string;
     };
     reader.readAsDataURL(file);
@@ -298,6 +360,8 @@ const UIAudit: React.FC = () => {
             img.onload = () => {
               setImage(img);
               setImageName(filePath.split(/[\\/]/).pop() || 'image');
+              setSaliencyData(null);
+              setAuditReport(null);
             };
             img.src = url;
           } catch (err) {
@@ -311,6 +375,41 @@ const UIAudit: React.FC = () => {
 
     return () => { unlisten?.(); };
   }, []);
+
+  /* ---------- P1: 视觉显著性分析 ---------- */
+  const runSaliencyAnalysis = useCallback(async () => {
+    if (!image) return;
+    setHeatmapLoading(true);
+    try {
+      const result = await analyzeSaliency(image, 250);
+      setSaliencyData(result);
+      setShowHeatmap(true);
+    } catch (err) {
+      console.error('Saliency analysis failed:', err);
+    } finally {
+      setHeatmapLoading(false);
+    }
+  }, [image]);
+
+  // 清理 Worker
+  useEffect(() => {
+    return () => terminateWorker();
+  }, []);
+
+  // 图片变更时自动清除旧热力图
+  useEffect(() => {
+    setSaliencyData(null);
+    setShowHeatmap(false);
+  }, [image]);
+
+  /* ---------- P1: WCAG 对比度计算结果 ---------- */
+  const contrastResult = useMemo(() => {
+    if (!contrastFg || !contrastBg) return null;
+    const ratio = contrastRatio(contrastFg, contrastBg);
+    const level = getWCAGLevel(ratio);
+    const levelLarge = getWCAGLevel(ratio, true);
+    return { ratio, level, levelLarge };
+  }, [contrastFg, contrastBg]);
 
   /* ---------- 画布渲染 ---------- */
   const ANNOTATION_MARGIN = 200; // 标注区域宽度 (设备两侧)
@@ -376,6 +475,28 @@ const UIAudit: React.FC = () => {
       ctx.drawImage(image, dx, dy, dw, dh);
     }
 
+    // 2c. 热力图叠加
+    if (showHeatmap && saliencyData && image) {
+      const heatmap = saliencyToHeatmap(
+        saliencyData.saliencyMap,
+        saliencyData.width,
+        saliencyData.height,
+        heatmapOpacity,
+      );
+      // 将热力图绘制到临时画布再缩放
+      const tmpCanvas = document.createElement('canvas');
+      tmpCanvas.width = saliencyData.width;
+      tmpCanvas.height = saliencyData.height;
+      const tmpCtx = tmpCanvas.getContext('2d')!;
+      tmpCtx.putImageData(heatmap, 0, 0);
+      ctx.drawImage(tmpCanvas, screenX, screenY, sw, sh);
+    }
+
+    // 2d. 拇指热区遮罩
+    if (showReachability) {
+      drawReachabilityOverlay(ctx, screenX, screenY, sw, sh, orientation);
+    }
+
     // ---------- 遮罩层 + 收集标注 ----------
     const newWarnings: OverlayWarning[] = [];
 
@@ -419,7 +540,6 @@ const UIAudit: React.FC = () => {
           id: 'safe-bottom', level: 'warn',
           message: `底部安全区 ${safeArea.bottom}pt`,
           rect: { x: 0, y: sh - safeArea.bottom, w: sw, h: safeArea.bottom },
-          // 横屏时放左侧, 与右侧标注分散; 竖屏放左侧与顶部(右侧)形成对称
           side: 'left',
         });
       }
@@ -453,24 +573,20 @@ const UIAudit: React.FC = () => {
         const halfW = crease.width / 2;
         if (orientation === 'portrait') {
           if (crease.position === 'vertical') {
-            // 竖屏 + 垂直折痕 → 竖线
             ctx.fillRect(ox + crease.offset - halfW, oy, crease.width, sh);
             creaseRect = { x: crease.offset - halfW, y: sh * 0.5, w: crease.width, h: 10 };
             creaseSide = crease.offset < sw / 2 ? 'left' : 'right';
           } else {
-            // 竖屏 + 水平折痕 → 横线
             ctx.fillRect(ox, oy + crease.offset - halfW, sw, crease.width);
             creaseRect = { x: 0, y: crease.offset - halfW, w: sw, h: crease.width };
             creaseSide = 'left';
           }
         } else {
           if (crease.position === 'vertical') {
-            // 横屏 + 垂直折痕 → 转为横线
             ctx.fillRect(ox, oy + crease.offset - halfW, sw, crease.width);
             creaseRect = { x: 0, y: crease.offset - halfW, w: sw, h: crease.width };
             creaseSide = 'left';
           } else {
-            // 横屏 + 水平折痕 → 转为竖线
             ctx.fillRect(ox + crease.offset - halfW, oy, crease.width, sh);
             creaseRect = { x: crease.offset - halfW, y: sh * 0.5, w: crease.width, h: 10 };
             creaseSide = crease.offset < sw / 2 ? 'left' : 'right';
@@ -517,16 +633,12 @@ const UIAudit: React.FC = () => {
         let mpRect: OverlayWarning['rect'];
         let mpSide: 'left' | 'right';
         if (orientation === 'portrait') {
-          // 竖屏: 导航栏在状态栏下方, 全宽
           mpRect = { x: 0, y: statusH, w: sw, h: navH };
-          // 交替左右分布以避免标注重叠
           mpSide = mpIndex % 2 === 0 ? 'left' : 'right';
         } else {
-          // 横屏: 导航栏在顶部, 避开左右安全区
           const navTop = statusH > 0 ? statusH : safeArea.top;
           const navW = sw - safeArea.left - safeArea.right;
           mpRect = { x: safeArea.left, y: navTop, w: navW, h: navH };
-          // 横屏导航栏在顶部 — 全部放右侧, 用 Y 错开即可
           mpSide = 'right';
         }
 
@@ -575,6 +687,27 @@ const UIAudit: React.FC = () => {
       }
     }
 
+    // P1: Fitts's Law 绘制
+    if (fittsResult) {
+      drawFittsOverlay(ctx, fittsResult, screenX, screenY);
+    } else if (fittsFrom && !fittsTo) {
+      // 绘制起点标记
+      ctx.save();
+      ctx.fillStyle = '#3b82f6';
+      ctx.beginPath();
+      ctx.arc(screenX + fittsFrom.x, screenY + fittsFrom.y, 6, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.strokeStyle = '#fff';
+      ctx.lineWidth = 2;
+      ctx.stroke();
+      // 脉冲圈
+      ctx.globalAlpha = 0.3;
+      ctx.beginPath();
+      ctx.arc(screenX + fittsFrom.x, screenY + fittsFrom.y, 12, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+    }
+
     setWarnings(newWarnings);
     ctx.restore(); // 结束屏幕裁剪
 
@@ -610,7 +743,10 @@ const UIAudit: React.FC = () => {
       drawAnnotations(ctx, newWarnings, screenX, screenY, sw, sh, deviceX, deviceW, cw, ch);
     }
 
-  }, [image, screenSize, device, orientation, safeArea, androidNav, selectedMiniPrograms, showKeyboard, showTabBar, showOverlays, platform]);
+  }, [image, screenSize, device, orientation, safeArea, androidNav, selectedMiniPrograms,
+      showKeyboard, showTabBar, showOverlays, platform,
+      showHeatmap, saliencyData, heatmapOpacity, showReachability,
+      fittsFrom, fittsTo, fittsResult]);
 
   useEffect(() => { renderCanvas(); }, [renderCanvas]);
 
@@ -720,6 +856,99 @@ const UIAudit: React.FC = () => {
     setPan({ x: 0, y: 0 });
   }, []);
 
+  /* ---------- P1: 画布点击 (对比度取色 / Fitts 测量) ---------- */
+  const handleCanvasClick = useCallback((e: React.MouseEvent) => {
+    if (analysisMode === 'none' || !image) return;
+    if (e.button !== 0) return; // 仅左键
+
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+
+    // 将鼠标坐标转换为画布逻辑坐标
+    const rect = canvas.getBoundingClientRect();
+    const scaleX = canvas.width / rect.width;
+    const scaleY = canvas.height / rect.height;
+    const canvasX = (e.clientX - rect.left) * scaleX;
+    const canvasY = (e.clientY - rect.top) * scaleY;
+
+    // 转换为屏幕坐标 (减去标注区域偏移)
+    const screenX = canvasX - ANNOTATION_MARGIN;
+    const screenY_logical = canvasY - 20;
+
+    // 确保点击在屏幕区域内
+    if (screenX < 0 || screenX > screenSize.width || screenY_logical < 0 || screenY_logical > screenSize.height) return;
+
+    if (analysisMode === 'contrast') {
+      // 从画布取色
+      const ctx = canvas.getContext('2d');
+      if (!ctx) return;
+      const color = pickAreaColor(ctx, canvasX, canvasY, 2);
+
+      if (contrastPickStep === 'fg') {
+        setContrastFg(color);
+        setManualFgHex(rgbToHex(...color));
+        setContrastPickStep('bg');
+      } else {
+        setContrastBg(color);
+        setManualBgHex(rgbToHex(...color));
+        setContrastPickStep('fg');
+      }
+    } else if (analysisMode === 'fitts') {
+      if (!fittsFrom || fittsResult) {
+        // 设置起点 (或重置后的新起点)
+        setFittsFrom({ x: screenX, y: screenY_logical });
+        setFittsTo(null);
+        setFittsResult(null);
+      } else {
+        // 设置终点并计算
+        const to = { x: screenX, y: screenY_logical };
+        setFittsTo(to);
+        const result = calculateFitts(fittsFrom, to, fittsTargetSize);
+        setFittsResult(result);
+      }
+    }
+  }, [analysisMode, image, screenSize, contrastPickStep, fittsFrom, fittsResult, fittsTargetSize]);
+
+  /* ---------- P1: 生成审计报告 ---------- */
+  const generateAuditReport = useCallback(() => {
+    // A: 平台适配
+    const platformInput: PlatformAdaptInput = {
+      overlayWarnings: warnings.filter(w => w.level === 'error' || w.level === 'warn').length,
+      hasCutoutConflict: warnings.some(w => w.id === 'cutout'),
+      hasSafeAreaConflict: false, // 基础检测
+      miniProgramCount: selectedMiniPrograms.size,
+    };
+
+    // B: 视觉显著性
+    let focusConcentration: number | undefined;
+    if (saliencyData) {
+      // 计算高显著区域的集中度 (>0.5 阈值的像素占比)
+      const highCount = saliencyData.saliencyMap.reduce((s, v) => s + (v > 0.5 ? 1 : 0), 0);
+      focusConcentration = 1 - (highCount / saliencyData.saliencyMap.length); // 集中度 = 1 - 分散度
+    }
+    const saliencyInput: SaliencyInput = {
+      analyzed: !!saliencyData,
+      focusConcentration,
+      focusInSafeArea: undefined,
+    };
+
+    // C: 可读性
+    const readabilityInput: ReadabilityInput = {
+      contrastResults: contrastResult ? [{ ratio: contrastResult.ratio, pass: contrastResult.level !== 'Fail' }] : [],
+      textSizeResults: [],
+      touchTargetResults: [],
+    };
+
+    // D: 操作效率
+    const efficiencyInput: EfficiencyInput = {
+      fittsResults: fittsResult ? [{ indexOfDifficulty: fittsResult.indexOfDifficulty, rating: fittsResult.rating }] : [],
+      criticalInEasyZone: undefined,
+    };
+
+    const report = generateReport(platformInput, saliencyInput, readabilityInput, efficiencyInput);
+    setAuditReport(report);
+  }, [warnings, selectedMiniPrograms, saliencyData, contrastResult, fittsResult]);
+
   /* ---------- 小程序切换 ---------- */
   const toggleMiniProgram = useCallback((id: string) => {
     setSelectedMiniPrograms(prev => {
@@ -760,7 +989,12 @@ const UIAudit: React.FC = () => {
         onDrop={handleDrop}
         onDragOver={handleDragOver}
         onDragLeave={handleDragLeave}
-        style={{ cursor: isPanningRef.current ? 'grabbing' : 'default' }}
+        style={{
+          cursor: isPanningRef.current ? 'grabbing'
+            : analysisMode === 'contrast' ? 'crosshair'
+            : analysisMode === 'fitts' ? 'crosshair'
+            : 'default',
+        }}
       >
         {/* 可平移+缩放的内容层 — 用 absolute 脱离 flex, 避免被压缩变形 */}
         <div
@@ -811,10 +1045,12 @@ const UIAudit: React.FC = () => {
             >
               <canvas
                 ref={canvasRef}
+                onClick={handleCanvasClick}
                 style={{
                   width: canvasStyle.width,
                   height: canvasStyle.height,
                   imageRendering: 'auto',
+                  cursor: analysisMode !== 'none' ? 'crosshair' : 'default',
                 }}
               />
               {isDragging && (
@@ -848,6 +1084,14 @@ const UIAudit: React.FC = () => {
             )}
             <span>·</span>
             <span>{Math.round(zoom * baseScale * 100)}%</span>
+            {analysisMode !== 'none' && (
+              <>
+                <span>·</span>
+                <span className="text-amber-400">
+                  {analysisMode === 'contrast' ? `取色模式 (${contrastPickStep === 'fg' ? '点击选前景色' : '点击选背景色'})` : '点击画面标记起/终点'}
+                </span>
+              </>
+            )}
             {image && (
               <button
                 className="ml-2 px-2 py-1 rounded bg-[#222] hover:bg-[#333] text-[#aaa] transition-colors"
@@ -874,6 +1118,7 @@ const UIAudit: React.FC = () => {
         <div className="p-4 border-b border-[#222] flex items-center gap-2">
           <Shield size={16} className="text-blue-400" />
           <span className="font-medium text-sm">UI 审计助手</span>
+          <span className="text-[10px] text-[#555] ml-auto">P0 + P1</span>
         </div>
 
         {/* == 设备选择 == */}
@@ -1128,6 +1373,389 @@ const UIAudit: React.FC = () => {
           </label>
         </PanelSection>
 
+        {/* ====== P1 分析工具 ====== */}
+        <div className="border-b border-[#1e1e1e] px-4 py-2 mt-1">
+          <div className="flex items-center gap-2 text-[10px] text-[#555] uppercase tracking-wider">
+            <Zap size={10} />
+            <span>P1 分析工具</span>
+          </div>
+        </div>
+
+        {/* == 视觉显著性热力图 == */}
+        <PanelSection title="视觉显著性" icon={<Flame size={14} />}>
+          <div className="space-y-3">
+            <div className="flex items-center justify-between">
+              <label className="flex items-center gap-2 cursor-pointer">
+                <ToggleSwitch checked={showHeatmap} onChange={(v) => {
+                  setShowHeatmap(v);
+                  if (v && !saliencyData && image) runSaliencyAnalysis();
+                }} />
+                <span className="text-xs text-[#aaa]">热力图</span>
+              </label>
+              {heatmapLoading && (
+                <Loader2 size={14} className="text-amber-400 animate-spin" />
+              )}
+            </div>
+
+            {showHeatmap && (
+              <>
+                <div className="flex items-center gap-2">
+                  <span className="text-[10px] text-[#666]">透明度</span>
+                  <input
+                    type="range"
+                    min={0.1}
+                    max={1}
+                    step={0.05}
+                    value={heatmapOpacity}
+                    onChange={e => setHeatmapOpacity(parseFloat(e.target.value))}
+                    className="flex-1 h-1 accent-amber-500"
+                  />
+                  <span className="text-[10px] text-[#666] w-8 text-right">{Math.round(heatmapOpacity * 100)}%</span>
+                </div>
+                {!saliencyData && !heatmapLoading && image && (
+                  <button
+                    className="w-full py-1.5 bg-amber-500/15 text-amber-400 text-xs rounded-lg hover:bg-amber-500/25 transition-colors"
+                    onClick={runSaliencyAnalysis}
+                  >
+                    开始分析
+                  </button>
+                )}
+                {saliencyData && (
+                  <button
+                    className="flex items-center gap-1 text-[10px] text-[#666] hover:text-[#999] transition-colors"
+                    onClick={runSaliencyAnalysis}
+                  >
+                    <RefreshCw size={10} />
+                    重新分析
+                  </button>
+                )}
+              </>
+            )}
+
+            {/* 色阶图例 */}
+            {showHeatmap && saliencyData && (
+              <div className="flex items-center gap-1.5">
+                <span className="text-[9px] text-[#555]">低</span>
+                <div className="flex-1 h-2 rounded-sm overflow-hidden" style={{
+                  background: 'linear-gradient(to right, #0000ff, #00ffff, #00ff00, #ffff00, #ff0000)',
+                }} />
+                <span className="text-[9px] text-[#555]">高</span>
+              </div>
+            )}
+          </div>
+        </PanelSection>
+
+        {/* == 拇指热区 == */}
+        <PanelSection title="拇指热区" icon={<Hand size={14} />}>
+          <div className="space-y-2">
+            <label className="flex items-center gap-2 cursor-pointer">
+              <ToggleSwitch checked={showReachability} onChange={setShowReachability} />
+              <span className="text-xs text-[#aaa]">
+                {orientation === 'portrait' ? '单手操作热区' : '双手操作热区'}
+              </span>
+            </label>
+            {showReachability && (
+              <div className="flex items-center gap-3 text-[10px]">
+                <div className="flex items-center gap-1">
+                  <div className="w-2.5 h-2.5 rounded-sm bg-green-500/40" />
+                  <span className="text-[#888]">舒适</span>
+                </div>
+                <div className="flex items-center gap-1">
+                  <div className="w-2.5 h-2.5 rounded-sm bg-yellow-400/40" />
+                  <span className="text-[#888]">可达</span>
+                </div>
+                <div className="flex items-center gap-1">
+                  <div className="w-2.5 h-2.5 rounded-sm bg-red-500/40" />
+                  <span className="text-[#888]">困难</span>
+                </div>
+              </div>
+            )}
+          </div>
+        </PanelSection>
+
+        {/* == WCAG 对比度 == */}
+        <PanelSection title="对比度检测" icon={<Pipette size={14} />}>
+          <div className="space-y-3">
+            {/* 取色模式切换 */}
+            <div className="flex items-center justify-between">
+              <button
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs transition-colors ${
+                  analysisMode === 'contrast'
+                    ? 'bg-violet-500/20 text-violet-400 ring-1 ring-violet-500/30'
+                    : 'bg-[#1e1e1e] text-[#aaa] hover:bg-[#252525]'
+                }`}
+                onClick={() => {
+                  setAnalysisMode(analysisMode === 'contrast' ? 'none' : 'contrast');
+                  setContrastPickStep('fg');
+                }}
+              >
+                <Crosshair size={12} />
+                {analysisMode === 'contrast' ? '取色中...' : '画面取色'}
+              </button>
+              {contrastFg && contrastBg && (
+                <button
+                  className="text-[10px] text-[#666] hover:text-[#999] transition-colors"
+                  onClick={() => { setContrastFg(null); setContrastBg(null); }}
+                >
+                  重置
+                </button>
+              )}
+            </div>
+
+            {/* 颜色输入 */}
+            <div className="grid grid-cols-2 gap-2">
+              <div>
+                <span className="text-[10px] text-[#666] mb-1 block">前景色</span>
+                <div className="flex items-center gap-1.5">
+                  <div
+                    className="w-6 h-6 rounded border border-[#333] shrink-0"
+                    style={{ backgroundColor: contrastFg ? rgbToHex(...contrastFg) : manualFgHex }}
+                  />
+                  <input
+                    type="text"
+                    value={contrastFg ? rgbToHex(...contrastFg) : manualFgHex}
+                    onChange={e => {
+                      setManualFgHex(e.target.value);
+                      if (/^#[0-9a-fA-F]{6}$/.test(e.target.value)) {
+                        setContrastFg(hexToRgb(e.target.value));
+                      }
+                    }}
+                    className="w-full px-2 py-1 bg-[#1e1e1e] border border-[#333] rounded text-[10px] text-white font-mono focus:border-violet-500 focus:outline-none"
+                    placeholder="#FFFFFF"
+                  />
+                </div>
+              </div>
+              <div>
+                <span className="text-[10px] text-[#666] mb-1 block">背景色</span>
+                <div className="flex items-center gap-1.5">
+                  <div
+                    className="w-6 h-6 rounded border border-[#333] shrink-0"
+                    style={{ backgroundColor: contrastBg ? rgbToHex(...contrastBg) : manualBgHex }}
+                  />
+                  <input
+                    type="text"
+                    value={contrastBg ? rgbToHex(...contrastBg) : manualBgHex}
+                    onChange={e => {
+                      setManualBgHex(e.target.value);
+                      if (/^#[0-9a-fA-F]{6}$/.test(e.target.value)) {
+                        setContrastBg(hexToRgb(e.target.value));
+                      }
+                    }}
+                    className="w-full px-2 py-1 bg-[#1e1e1e] border border-[#333] rounded text-[10px] text-white font-mono focus:border-violet-500 focus:outline-none"
+                    placeholder="#000000"
+                  />
+                </div>
+              </div>
+            </div>
+
+            {/* 对比度结果 */}
+            {contrastResult && (
+              <div className="bg-[#1a1a1a] rounded-lg p-3 space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs text-[#888]">对比度</span>
+                  <span className="text-sm font-bold" style={{ color: getWCAGColor(contrastResult.level) }}>
+                    {contrastResult.ratio.toFixed(2)}:1
+                  </span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <WCAGBadge level={contrastResult.level} label="正文" />
+                  <WCAGBadge level={contrastResult.levelLarge} label="大文本" />
+                </div>
+                {/* 预览条 */}
+                <div className="flex gap-2 mt-1">
+                  <div
+                    className="flex-1 rounded px-2 py-1 text-[10px] text-center"
+                    style={{
+                      backgroundColor: contrastBg ? rgbToHex(...contrastBg) : '#000',
+                      color: contrastFg ? rgbToHex(...contrastFg) : '#fff',
+                    }}
+                  >
+                    示例文本 Aa
+                  </div>
+                  <div
+                    className="flex-1 rounded px-2 py-1 text-[10px] text-center"
+                    style={{
+                      backgroundColor: contrastFg ? rgbToHex(...contrastFg) : '#fff',
+                      color: contrastBg ? rgbToHex(...contrastBg) : '#000',
+                    }}
+                  >
+                    示例文本 Aa
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+        </PanelSection>
+
+        {/* == Fitts's Law == */}
+        <PanelSection title="操作效率" icon={<Target size={14} />}>
+          <div className="space-y-3">
+            <div className="flex items-center justify-between">
+              <button
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs transition-colors ${
+                  analysisMode === 'fitts'
+                    ? 'bg-emerald-500/20 text-emerald-400 ring-1 ring-emerald-500/30'
+                    : 'bg-[#1e1e1e] text-[#aaa] hover:bg-[#252525]'
+                }`}
+                onClick={() => {
+                  setAnalysisMode(analysisMode === 'fitts' ? 'none' : 'fitts');
+                  setFittsFrom(null);
+                  setFittsTo(null);
+                  setFittsResult(null);
+                }}
+              >
+                <MousePointer size={12} />
+                {analysisMode === 'fitts' ? '测量中...' : 'Fitts 测量'}
+              </button>
+              {fittsResult && (
+                <button
+                  className="text-[10px] text-[#666] hover:text-[#999] transition-colors"
+                  onClick={() => { setFittsFrom(null); setFittsTo(null); setFittsResult(null); }}
+                >
+                  重置
+                </button>
+              )}
+            </div>
+
+            {/* 目标宽度 */}
+            <div className="flex items-center gap-2">
+              <span className="text-[10px] text-[#666]">目标宽度</span>
+              <input
+                type="number"
+                value={fittsTargetSize}
+                onChange={e => setFittsTargetSize(Math.max(8, parseInt(e.target.value) || 44))}
+                className="w-14 px-2 py-1 bg-[#1e1e1e] border border-[#333] rounded text-xs text-white text-center focus:border-emerald-500 focus:outline-none"
+              />
+              <span className="text-[10px] text-[#666]">px</span>
+            </div>
+
+            {/* 状态提示 */}
+            {analysisMode === 'fitts' && !fittsFrom && (
+              <div className="text-[10px] text-[#666] flex items-center gap-1">
+                <MousePointer size={10} />
+                点击画面设置起点
+              </div>
+            )}
+            {analysisMode === 'fitts' && fittsFrom && !fittsTo && (
+              <div className="text-[10px] text-emerald-400 flex items-center gap-1">
+                <MousePointer size={10} />
+                点击画面设置终点
+              </div>
+            )}
+
+            {/* 结果面板 */}
+            {fittsResult && (
+              <div className="bg-[#1a1a1a] rounded-lg p-3 space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs text-[#888]">难度指数 (ID)</span>
+                  <span className={`text-sm font-bold ${
+                    fittsResult.rating === 'easy' ? 'text-green-400'
+                    : fittsResult.rating === 'moderate' ? 'text-amber-400'
+                    : 'text-red-400'
+                  }`}>
+                    {fittsResult.indexOfDifficulty} bits
+                  </span>
+                </div>
+                <div className="grid grid-cols-2 gap-2 text-[10px]">
+                  <div className="flex justify-between">
+                    <span className="text-[#666]">距离</span>
+                    <span className="text-[#aaa]">{fittsResult.distance}px</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-[#666]">时间</span>
+                    <span className="text-[#aaa]">~{fittsResult.estimatedTime}ms</span>
+                  </div>
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <span className="text-[10px] text-[#666]">评级</span>
+                  <span className={`text-xs px-2 py-0.5 rounded ${
+                    fittsResult.rating === 'easy' ? 'bg-green-500/15 text-green-400'
+                    : fittsResult.rating === 'moderate' ? 'bg-amber-500/15 text-amber-400'
+                    : 'bg-red-500/15 text-red-400'
+                  }`}>
+                    {fittsResult.rating === 'easy' ? '轻松' : fittsResult.rating === 'moderate' ? '中等' : '困难'}
+                  </span>
+                </div>
+                <div className="text-[9px] text-[#555] mt-1 leading-relaxed">
+                  Fitts's Law: ID = log₂(D/W + 1) = log₂({fittsResult.distance}/{fittsTargetSize} + 1)
+                </div>
+              </div>
+            )}
+          </div>
+        </PanelSection>
+
+        {/* == 综合审计报告 == */}
+        <PanelSection title="审计报告" icon={<BarChart3 size={14} />}>
+          <div className="space-y-3">
+            <button
+              className="w-full py-2 bg-blue-500/15 text-blue-400 text-xs rounded-lg hover:bg-blue-500/25 transition-colors flex items-center justify-center gap-2"
+              onClick={generateAuditReport}
+            >
+              <BarChart3 size={14} />
+              生成综合报告
+            </button>
+
+            {auditReport && (
+              <div className="space-y-3">
+                {/* 总分大数字 */}
+                <div className="flex items-center justify-center gap-4 py-3">
+                  <div className="text-center">
+                    <div
+                      className="text-4xl font-bold tabular-nums"
+                      style={{ color: GRADE_COLORS[auditReport.grade] }}
+                    >
+                      {auditReport.totalScore}
+                    </div>
+                    <div className="text-[10px] text-[#666] mt-1">总分</div>
+                  </div>
+                  <div
+                    className="text-5xl font-bold opacity-80"
+                    style={{ color: GRADE_COLORS[auditReport.grade] }}
+                  >
+                    {auditReport.grade}
+                  </div>
+                </div>
+
+                {/* 维度条形图 */}
+                <div className="space-y-2">
+                  {auditReport.dimensions.map(dim => (
+                    <div key={dim.id} className="space-y-1">
+                      <div className="flex items-center justify-between text-[10px]">
+                        <span className="text-[#aaa]">{dim.icon} {dim.name}</span>
+                        <span style={{ color: GRADE_COLORS[dim.grade] }}>
+                          {dim.score} ({dim.grade})
+                        </span>
+                      </div>
+                      <div className="h-1.5 bg-[#1e1e1e] rounded-full overflow-hidden">
+                        <div
+                          className="h-full rounded-full transition-all duration-500"
+                          style={{
+                            width: `${dim.score}%`,
+                            backgroundColor: GRADE_COLORS[dim.grade],
+                          }}
+                        />
+                      </div>
+                      {dim.details.length > 0 && (
+                        <div className="text-[9px] text-[#555] leading-relaxed pl-4">
+                          {dim.details.map((d, i) => <div key={i}>{d}</div>)}
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+
+                {/* 建议 */}
+                <div className="border-t border-[#1e1e1e] pt-2 space-y-1">
+                  <div className="text-[10px] text-[#666] mb-1">改进建议</div>
+                  {auditReport.suggestions.map((s, i) => (
+                    <div key={i} className="text-[10px] text-[#aaa] leading-relaxed">{s}</div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        </PanelSection>
+
         {/* == 检测结果 == */}
         <PanelSection title="检测结果" icon={<AlertTriangle size={14} />}>
           {warnings.length === 0 ? (
@@ -1168,6 +1796,13 @@ const UIAudit: React.FC = () => {
             <Legend color={OVERLAY_COLORS.keyboard} label="键盘区域" />
             <Legend color={OVERLAY_COLORS.tabBar} label="TabBar" />
             <Legend color={OVERLAY_COLORS.foldCrease} label="折叠屏折痕" />
+            {showReachability && (
+              <>
+                <Legend color="rgba(34, 197, 94, 0.25)" label="拇指舒适区" />
+                <Legend color="rgba(250, 204, 21, 0.25)" label="拇指可达区" />
+                <Legend color="rgba(239, 68, 68, 0.25)" label="拇指困难区" />
+              </>
+            )}
           </div>
         </PanelSection>
       </div>
@@ -1236,6 +1871,24 @@ function Legend({ color, label }: { color: string; label: string }) {
     <div className="flex items-center gap-2 text-xs text-[#888]">
       <div className="w-3 h-3 rounded-sm shrink-0" style={{ backgroundColor: color }} />
       <span>{label}</span>
+    </div>
+  );
+}
+
+/** WCAG 等级徽章 */
+function WCAGBadge({ level, label }: { level: WCAGLevel; label: string }) {
+  return (
+    <div className="flex items-center gap-1">
+      <span
+        className="text-[10px] px-1.5 py-0.5 rounded font-medium"
+        style={{
+          backgroundColor: getWCAGColor(level) + '20',
+          color: getWCAGColor(level),
+        }}
+      >
+        {level}
+      </span>
+      <span className="text-[9px] text-[#666]">{label}</span>
     </div>
   );
 }
