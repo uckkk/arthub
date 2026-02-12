@@ -539,13 +539,12 @@ const CPSAutomation: React.FC = () => {
     );
   };
 
-  // 渲染默认资产名称（@ 用绿色高亮）
-  const renderDefaultName = (prefix: string, replacement?: string) => {
+  // 渲染默认资产名称（仅 @ 字符用绿色高亮，后缀保持普通颜色）
+  const renderDefaultName = (prefix: string, suffix?: string) => {
     const parts = prefix.split('@');
-    const display = replacement || '@';
     return (
       <span>
-        {parts[0]}<span className="text-green-400">{display}</span>{parts[1] || ''}
+        {parts[0]}<span className="text-green-400">@</span>{suffix || ''}{parts[1] || ''}
       </span>
     );
   };
@@ -729,7 +728,7 @@ const CPSAutomation: React.FC = () => {
           <div className="ml-auto">
             <div className="text-xs text-[#888888] mb-1">默认资产名称</div>
             <div className="text-xs text-white bg-[#2a2a2a] border border-[#3a3a3a] rounded px-2 py-1 mb-1.5">
-              {renderDefaultName(config.portrait.namePrefix, '@_mid')}
+              {renderDefaultName(config.portrait.namePrefix, '_mid')}
             </div>
             <div className="text-xs text-[#888888] mb-1">自定义命名</div>
             <input type="text" value={customName} onChange={e => setCustomName(e.target.value)}
