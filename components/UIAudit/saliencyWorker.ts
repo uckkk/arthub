@@ -1,12 +1,20 @@
 /**
- * 视觉显著性分析 — Frequency-tuned Saliency (Achanta et al. 2009)
+ * 视觉显著性分析 — 多尺度中心-环绕对比 (适合游戏 UI)
  *
- * 核心公式: S(x,y) = ||I_μ − I_ω(x,y)||
- *   I_μ  = 全图 Lab 均值
- *   I_ω  = 大核高斯模糊后的 Lab 值 (σ ≈ imageSize/4)
+ * 算法原理:
+ *   S(x,y) = Σ_k w_k × ||I(x,y) − I_σk(x,y)||  +  saturation_boost
  *
- * 实现: 3 轮迭代 box blur 逼近高斯 (Kovesi 快速近似)
- * 全部在主线程运行 (200×200 下采样图 < 100ms, 无需 Worker)
+ * 其中 σk 是不同尺度的高斯模糊, 检测不同层级的视觉特征:
+ *   - 小尺度 (σ=2~4):  精细文本、小图标边缘
+ *   - 中尺度 (σ=8~16): 按钮、角色细节、UI 元素
+ *   - 大尺度 (σ=30+):  大面积色块差异、整体构图
+ *
+ * 优于 FT Saliency 的原因:
+ *   1. 局部对比 (不依赖全局均值) → 不受边界效应影响
+ *   2. 多尺度融合 → 同时检测粗细粒度的显著特征
+ *   3. 饱和度加权 → 游戏 UI 中高饱和色 = 设计意图上的焦点
+ *
+ * 全部主线程执行 (200×200 下采样 ≈ 80-150ms)
  */
 
 export interface SaliencyResult {
@@ -17,7 +25,7 @@ export interface SaliencyResult {
 }
 
 // ============================================================
-// CIE Lab 色彩空间转换
+// CIE Lab 色彩空间
 // ============================================================
 function sRGBtoLinear(c: number): number {
   c /= 255;
@@ -36,64 +44,61 @@ function rgbToLab(r: number, g: number, b: number): [number, number, number] {
 }
 
 // ============================================================
-// 快速高斯模糊 (3 轮 box blur, O(n) 复杂度)
-// 参考: Ivan Googleman 线性时间 box blur
+// 快速高斯模糊 — 3 轮 box blur, 镜像边界填充
 // ============================================================
+
+/** 安全取值: 镜像边界 */
+function mirrorIdx(i: number, max: number): number {
+  if (i < 0) return -i;
+  if (i >= max) return 2 * max - 2 - i;
+  return i;
+}
+
+/** 水平 box blur (镜像边界, 避免 clamp 造成的边缘假显著) */
 function boxBlurH(src: Float32Array, dst: Float32Array, w: number, h: number, r: number) {
-  const iarr = 1.0 / (r + r + 1);
-  for (let i = 0; i < h; i++) {
-    const ti = i * w;
-    let ri2 = ti + r, li2 = ti;
-    const fv = src[ti], lv = src[ti + w - 1];
-    let val = (r + 1) * fv;
-    for (let j = 0; j < r; j++) val += src[ti + Math.min(j, w - 1)];
-    for (let j = 0; j <= r; j++) {
-      val += (ri2 < ti + w ? src[ri2] : lv) - fv;
-      dst[ti + j] = val * iarr;
-      ri2++;
+  if (r <= 0) { dst.set(src); return; }
+  const d = r + r + 1;
+  const iarr = 1.0 / d;
+
+  for (let row = 0; row < h; row++) {
+    const base = row * w;
+    // 初始化窗口和
+    let sum = 0;
+    for (let k = -r; k <= r; k++) {
+      sum += src[base + mirrorIdx(k, w)];
     }
-    for (let j = r + 1; j < w - r; j++) {
-      val += src[ri2] - src[li2];
-      dst[ti + j] = val * iarr;
-      ri2++;
-      li2++;
-    }
-    for (let j = w - r; j < w; j++) {
-      val += lv - src[li2];
-      dst[ti + j] = val * iarr;
-      li2++;
+    for (let col = 0; col < w; col++) {
+      dst[base + col] = sum * iarr;
+      // 滑动: 去掉最左, 加上最右
+      sum -= src[base + mirrorIdx(col - r, w)];
+      sum += src[base + mirrorIdx(col + r + 1, w)];
     }
   }
 }
 
+/** 垂直 box blur (镜像边界) */
 function boxBlurV(src: Float32Array, dst: Float32Array, w: number, h: number, r: number) {
-  const iarr = 1.0 / (r + r + 1);
-  for (let i = 0; i < w; i++) {
-    let ri2 = i + r * w, li2 = i;
-    const fv = src[i], lv = src[i + w * (h - 1)];
-    let val = (r + 1) * fv;
-    for (let j = 0; j < r; j++) val += src[i + Math.min(j, h - 1) * w];
-    for (let j = 0; j <= r; j++) {
-      val += (ri2 < i + h * w ? src[ri2] : lv) - fv;
-      dst[i + j * w] = val * iarr;
-      ri2 += w;
+  if (r <= 0) { dst.set(src); return; }
+  const d = r + r + 1;
+  const iarr = 1.0 / d;
+
+  for (let col = 0; col < w; col++) {
+    let sum = 0;
+    for (let k = -r; k <= r; k++) {
+      sum += src[mirrorIdx(k, h) * w + col];
     }
-    for (let j = r + 1; j < h - r; j++) {
-      val += src[ri2] - src[li2];
-      dst[i + j * w] = val * iarr;
-      ri2 += w;
-      li2 += w;
-    }
-    for (let j = h - r; j < h; j++) {
-      val += lv - src[li2];
-      dst[i + j * w] = val * iarr;
-      li2 += w;
+    for (let row = 0; row < h; row++) {
+      dst[row * w + col] = sum * iarr;
+      sum -= src[mirrorIdx(row - r, h) * w + col];
+      sum += src[mirrorIdx(row + r + 1, h) * w + col];
     }
   }
 }
 
-/** 3 轮 box blur ≈ 高斯模糊 (Kovesi 快速近似) */
+/** 3 轮 box blur ≈ 高斯模糊 (Kovesi 核大小计算) */
 function gaussBlur(ch: Float32Array, w: number, h: number, sigma: number) {
+  if (sigma < 0.5) return;
+
   const wIdeal = Math.sqrt(12.0 * sigma * sigma / 3 + 1);
   let wl = Math.floor(wIdeal);
   if (wl % 2 === 0) wl--;
@@ -102,9 +107,10 @@ function gaussBlur(ch: Float32Array, w: number, h: number, sigma: number) {
   const m = Math.round(mIdeal);
   const tmp = new Float32Array(ch.length);
   const radii: number[] = [];
-  for (let i = 0; i < 3; i++) radii.push(i < m ? (wl - 1) / 2 : (wu - 1) / 2);
-  // 确保半径 >= 1
-  for (let i = 0; i < 3; i++) radii[i] = Math.max(1, radii[i]);
+  for (let i = 0; i < 3; i++) {
+    const r = i < m ? (wl - 1) / 2 : (wu - 1) / 2;
+    radii.push(Math.max(1, Math.min(r, Math.floor(Math.min(w, h) / 2) - 1)));
+  }
 
   for (let p = 0; p < 3; p++) {
     boxBlurH(ch, tmp, w, h, radii[p]);
@@ -113,75 +119,104 @@ function gaussBlur(ch: Float32Array, w: number, h: number, sigma: number) {
 }
 
 // ============================================================
-// 核心显著性计算
+// 核心: 多尺度中心-环绕显著性
 // ============================================================
 function computeSaliency(data: Uint8ClampedArray, w: number, h: number): Float32Array {
   const n = w * h;
+  const minDim = Math.min(w, h);
+
+  // 1. RGB → Lab + 饱和度
   const labL = new Float32Array(n);
   const labA = new Float32Array(n);
   const labB = new Float32Array(n);
-  let avgL = 0, avgA = 0, avgB = 0;
+  const saturation = new Float32Array(n);
 
-  // 1. RGB → Lab + 全图均值
   for (let i = 0; i < n; i++) {
     const idx = i * 4;
-    const [l, a, b] = rgbToLab(data[idx], data[idx + 1], data[idx + 2]);
+    const R = data[idx], G = data[idx + 1], B = data[idx + 2];
+
+    const [l, a, b] = rgbToLab(R, G, B);
     labL[i] = l;
     labA[i] = a;
     labB[i] = b;
-    avgL += l;
-    avgA += a;
-    avgB += b;
+
+    // 计算 HSL 饱和度
+    const rr = R / 255, gg = G / 255, bb = B / 255;
+    const cMax = Math.max(rr, gg, bb), cMin = Math.min(rr, gg, bb);
+    const delta = cMax - cMin;
+    const light = (cMax + cMin) / 2;
+    saturation[i] = delta === 0 ? 0 : delta / (1 - Math.abs(2 * light - 1) + 0.001);
   }
-  avgL /= n;
-  avgA /= n;
-  avgB /= n;
 
-  // 2. 大核高斯模糊 (σ ≈ min(w,h)/4, 论文推荐)
-  const sigma = Math.max(Math.min(w, h) / 4, 3);
-  const blurL = labL.slice();
-  const blurA2 = labA.slice();
-  const blurB2 = labB.slice();
-  gaussBlur(blurL, w, h, sigma);
-  gaussBlur(blurA2, w, h, sigma);
-  gaussBlur(blurB2, w, h, sigma);
+  // 2. 多尺度中心-环绕: 在 3 个尺度计算 ||original − blurred||
+  const scales = [
+    { sigma: Math.max(1.5, minDim * 0.015), weight: 0.25 },  // 精细 (文字/小图标)
+    { sigma: Math.max(4, minDim * 0.06),    weight: 0.40 },  // 中等 (按钮/角色)
+    { sigma: Math.max(10, minDim * 0.15),   weight: 0.35 },  // 粗略 (大面积区别)
+  ];
 
-  // 3. 显著性 = ||I_μ − I_ω|| (CIE Lab 欧氏距离)
   const saliency = new Float32Array(n);
+
+  for (const { sigma, weight } of scales) {
+    const blurL = labL.slice();
+    const blurA = labA.slice();
+    const blurB = labB.slice();
+    gaussBlur(blurL, w, h, sigma);
+    gaussBlur(blurA, w, h, sigma);
+    gaussBlur(blurB, w, h, sigma);
+
+    for (let i = 0; i < n; i++) {
+      const dL = labL[i] - blurL[i];
+      const dA = labA[i] - blurA[i];
+      const dB = labB[i] - blurB[i];
+      saliency[i] += weight * Math.sqrt(dL * dL + dA * dA + dB * dB);
+    }
+  }
+
+  // 3. 饱和度加权 (游戏 UI 中高饱和 = 设计焦点)
+  for (let i = 0; i < n; i++) {
+    // 饱和度 boost: 饱和度 0→×0.7, 饱和度 1→×1.3
+    saliency[i] *= (0.7 + 0.6 * Math.min(saturation[i], 1));
+  }
+
+  // 4. 归一化到 [0, 1]
   let maxS = 0;
   for (let i = 0; i < n; i++) {
-    const dL = avgL - blurL[i];
-    const dA = avgA - blurA2[i];
-    const dB = avgB - blurB2[i];
-    const s = Math.sqrt(dL * dL + dA * dA + dB * dB);
-    saliency[i] = s;
-    if (s > maxS) maxS = s;
+    if (saliency[i] > maxS) maxS = saliency[i];
   }
-
-  // 4. 归一化 + sigmoid 对比度增强
   if (maxS > 0) {
     for (let i = 0; i < n; i++) saliency[i] /= maxS;
+  }
 
-    // 自适应 sigmoid: 以均值为中心增强对比度
-    let mean = 0;
-    for (let i = 0; i < n; i++) mean += saliency[i];
-    mean /= n;
+  // 5. 自适应 sigmoid 对比度增强
+  let mean = 0;
+  for (let i = 0; i < n; i++) mean += saliency[i];
+  mean /= n;
 
-    const k = 8; // sigmoid 陡峭度
-    for (let i = 0; i < n; i++) {
-      saliency[i] = 1.0 / (1.0 + Math.exp(-k * (saliency[i] - mean)));
-    }
+  // sigmoid 中心 = 均值, 斜率自适应 (方差小→陡峭, 方差大→平缓)
+  let variance = 0;
+  for (let i = 0; i < n; i++) {
+    const d = saliency[i] - mean;
+    variance += d * d;
+  }
+  variance /= n;
+  const stddev = Math.sqrt(variance);
+  // k 取值: stddev 小时 k 大 (对比度增强更强)
+  const k = stddev > 0 ? Math.min(12, Math.max(4, 1.5 / stddev)) : 8;
 
-    // 再次归一化到 [0, 1]
-    let minS = Infinity, maxS2 = -Infinity;
-    for (let i = 0; i < n; i++) {
-      if (saliency[i] < minS) minS = saliency[i];
-      if (saliency[i] > maxS2) maxS2 = saliency[i];
-    }
-    const range = maxS2 - minS;
-    if (range > 0) {
-      for (let i = 0; i < n; i++) saliency[i] = (saliency[i] - minS) / range;
-    }
+  for (let i = 0; i < n; i++) {
+    saliency[i] = 1.0 / (1.0 + Math.exp(-k * (saliency[i] - mean)));
+  }
+
+  // 6. 再次归一化到 [0, 1]
+  let minS = Infinity, maxS2 = -Infinity;
+  for (let i = 0; i < n; i++) {
+    if (saliency[i] < minS) minS = saliency[i];
+    if (saliency[i] > maxS2) maxS2 = saliency[i];
+  }
+  const range = maxS2 - minS;
+  if (range > 0) {
+    for (let i = 0; i < n; i++) saliency[i] = (saliency[i] - minS) / range;
   }
 
   return saliency;
@@ -193,18 +228,16 @@ function computeSaliency(data: Uint8ClampedArray, w: number, h: number): Float32
 
 /**
  * 对图片执行视觉显著性分析
- * 在主线程异步执行 (用 rAF 让出渲染帧避免卡顿)
+ * 主线程 + requestAnimationFrame (200×200 ≈ 80-150ms, 不会阻塞 UI)
  */
 export function analyzeSaliency(
   image: HTMLImageElement,
   maxDim: number = 200,
 ): Promise<SaliencyResult> {
   return new Promise((resolve) => {
-    // 用 requestAnimationFrame 让 UI 先渲染 loading 状态
     requestAnimationFrame(() => {
       const t0 = performance.now();
 
-      // 下采样
       const ratio = Math.min(maxDim / image.naturalWidth, maxDim / image.naturalHeight, 1);
       const w = Math.round(image.naturalWidth * ratio);
       const h = Math.round(image.naturalHeight * ratio);
@@ -218,7 +251,12 @@ export function analyzeSaliency(
 
       const saliencyMap = computeSaliency(imageData.data, w, h);
 
-      console.log(`Saliency 分析完成: ${(performance.now() - t0).toFixed(0)}ms (${w}×${h}, σ=${Math.max(Math.min(w, h) / 4, 3).toFixed(0)})`);
+      const elapsed = (performance.now() - t0).toFixed(0);
+      const minDim = Math.min(w, h);
+      console.log(
+        `Saliency 分析完成: ${elapsed}ms (${w}×${h}) ` +
+        `scales=[${(minDim * 0.015).toFixed(1)}, ${(minDim * 0.06).toFixed(1)}, ${(minDim * 0.15).toFixed(1)}]`,
+      );
 
       resolve({ type: 'result', saliencyMap, width: w, height: h });
     });
@@ -242,37 +280,40 @@ export function saliencyToHeatmap(
 
     // 7 段色谱: 深蓝 → 蓝 → 青 → 绿 → 黄 → 橙 → 红
     let r = 0, g = 0, b = 0;
-    if (v < 0.2) {
-      const t = v / 0.2;
-      r = 0; g = 0; b = Math.round(128 + t * 127);
-    } else if (v < 0.35) {
-      const t = (v - 0.2) / 0.15;
-      r = 0; g = Math.round(t * 255); b = 255;
-    } else if (v < 0.5) {
-      const t = (v - 0.35) / 0.15;
-      r = 0; g = 255; b = Math.round((1 - t) * 255);
-    } else if (v < 0.7) {
-      const t = (v - 0.5) / 0.2;
-      r = Math.round(t * 255); g = 255; b = 0;
-    } else if (v < 0.85) {
-      const t = (v - 0.7) / 0.15;
-      r = 255; g = Math.round((1 - t) * 200 + 55); b = 0;
+    if (v < 0.15) {
+      const t = v / 0.15;
+      r = 0; g = 0; b = Math.round(80 + t * 100);
+    } else if (v < 0.3) {
+      const t = (v - 0.15) / 0.15;
+      r = 0; g = Math.round(t * 200); b = Math.round(180 + t * 75);
+    } else if (v < 0.45) {
+      const t = (v - 0.3) / 0.15;
+      r = 0; g = Math.round(200 + t * 55); b = Math.round(255 * (1 - t));
+    } else if (v < 0.6) {
+      const t = (v - 0.45) / 0.15;
+      r = Math.round(t * 200); g = 255; b = 0;
+    } else if (v < 0.75) {
+      const t = (v - 0.6) / 0.15;
+      r = Math.round(200 + t * 55); g = Math.round(255 * (1 - t * 0.5)); b = 0;
+    } else if (v < 0.9) {
+      const t = (v - 0.75) / 0.15;
+      r = 255; g = Math.round(128 * (1 - t)); b = 0;
     } else {
-      const t = (v - 0.85) / 0.15;
-      r = 255; g = Math.round(55 * (1 - t)); b = 0;
+      const t = (v - 0.9) / 0.1;
+      r = 255; g = 0; b = Math.round(t * 80); // 红→品红高亮
     }
 
     data[idx] = r;
     data[idx + 1] = g;
     data[idx + 2] = b;
-    // 最低 alpha 12%, 保证低显著区也可见
-    data[idx + 3] = Math.round((0.12 + v * 0.88) * opacity * 255);
+    // 最低 alpha 8%, 高显著区更不透明
+    data[idx + 3] = Math.round((0.08 + v * 0.92) * opacity * 255);
   }
 
   return new ImageData(data, width, height);
 }
 
-/** 兼容旧接口, 实际无 Worker 需要清理 */
+/** 兼容旧接口 */
 export function terminateWorker() {
-  // no-op: 已移除 Worker, 保留接口兼容
+  // no-op
 }
