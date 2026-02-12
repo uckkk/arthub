@@ -56,6 +56,13 @@ class ConsoleService {
 
     // 拦截 console.warn（警告日志）- 警告也可能表示潜在问题
     console.warn = (...args: any[]) => {
+      // 过滤 tldraw 内部 Radix UI ToggleGroup 的 controlled/uncontrolled 警告
+      const firstArg = args[0];
+      if (typeof firstArg === 'string' && firstArg.includes('ToggleGroup is changing from')) {
+        // 仅输出到原始控制台，不记录到应用日志
+        this.originalConsole.warn(...args);
+        return;
+      }
       this.addLog('warn', args, this.getStackTrace());
       this.originalConsole.warn(...args);
     };

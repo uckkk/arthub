@@ -5,7 +5,7 @@ import {
 } from 'lucide-react';
 import { getStorageConfig, formatSyncTime } from './services/fileStorageService';
 import { getUserInfo, clearUserInfo, UserInfo, verifyUser, rustLogout } from './services/userAuthService';
-import { initAutoSync } from './utils/autoSync';
+import { initAutoSync, setAutoSyncAuthReady } from './utils/autoSync';
 import { preloadAllData } from './services/preloadService';
 import { initHotkey } from './services/hotkeyService';
 import { ToastProvider, useToast } from './components/Toast';
@@ -416,6 +416,7 @@ const AppContent: React.FC = () => {
 
   const handleLogout = async () => {
     try {
+      setAutoSyncAuthReady(false); // 立即停止自动同步，防止登出后写文件失败
       clearUserInfo();
       await rustLogout(); // 重置 Rust 端认证状态，所有受保护命令立即失效
       setUserInfo(null);
