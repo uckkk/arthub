@@ -712,7 +712,7 @@ const CPSAutomation: React.FC = () => {
   return (
     <div className="h-full overflow-y-auto bg-[#0a0a0a] text-white p-5">
       {/* 顶部操作栏 */}
-      <div className="flex items-center justify-end gap-3 mb-4">
+      <div className="flex items-center justify-end gap-8 mb-4">
         {/* "自定义参数"开关 */}
         <div className="flex items-center gap-2">
           <span className="text-xs text-[#a0a0a0] select-none">自定义参数</span>
