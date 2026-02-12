@@ -426,7 +426,7 @@ const AppContent: React.FC = () => {
     }
   };
 
-  // 处理菜单选择
+  // 处理菜单选择 —— 切换永远是瞬时的
   const handleMenuSelect = (id: string) => {
     // 将菜单 ID 映射到实际的标签
     const tabMapping: Record<string, string> = {
@@ -440,13 +440,22 @@ const AppContent: React.FC = () => {
       'cps': 'cps',
     };
     const tab = tabMapping[id] || 'home';
+
+    // 1. 立即切换 activeTab（仅影响 CSS display/visibility，零延迟）
     setActiveTab(tab);
-    setVisitedTabs(prev => {
-      if (prev.has(tab)) return prev;
-      const next = new Set(prev);
-      next.add(tab);
-      return next;
-    });
+
+    // 2. 如果是首次访问，延迟一帧再标记"已访问"并触发 lazy 组件加载
+    //    这样骨架屏会先在当前帧渲染出来，lazy chunk 的下载和 JS 解析不会阻塞切换
+    if (!visitedTabs.has(tab)) {
+      requestAnimationFrame(() => {
+        setVisitedTabs(prev => {
+          if (prev.has(tab)) return prev;
+          const next = new Set(prev);
+          next.add(tab);
+          return next;
+        });
+      });
+    }
   };
 
   if (!isUserVerified) {
@@ -476,11 +485,15 @@ const AppContent: React.FC = () => {
     ai:         { node: <AITool />,         skeleton: 'ai' },
   };
 
-  // 渲染所有已访问的 tab（保持挂载），当前 tab 可见，其余隐藏
+  // 渲染所有 tab —— 已访问的保持挂载，首次激活但未加载的显示骨架屏
   const renderAllTabs = () =>
     Object.entries(tabPanels).map(([key, { node, skeleton, absolute }]) => {
-      if (!visitedTabs.has(key)) return null;
       const isActive = activeTab === key;
+      const isVisited = visitedTabs.has(key);
+
+      // 不活跃且从未访问 → 完全不渲染
+      if (!isActive && !isVisited) return null;
+
       return (
         <div
           key={key}
@@ -489,9 +502,15 @@ const AppContent: React.FC = () => {
           }`}
           aria-hidden={!isActive}
         >
-          <Suspense fallback={<SkeletonScreen variant={skeleton} />}>
-            <ContentFadeIn>{node}</ContentFadeIn>
-          </Suspense>
+          {isVisited ? (
+            // 已访问：挂载 lazy 组件，Suspense 兜底骨架屏
+            <Suspense fallback={<SkeletonScreen variant={skeleton} />}>
+              <ContentFadeIn>{node}</ContentFadeIn>
+            </Suspense>
+          ) : (
+            // 首次激活但 lazy 组件还没开始加载：先显示骨架屏（下一帧才触发加载）
+            <SkeletonScreen variant={skeleton} />
+          )}
         </div>
       );
     });
