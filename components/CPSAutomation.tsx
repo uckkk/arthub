@@ -726,7 +726,7 @@ const CPSAutomation: React.FC = () => {
             <div className="flex items-center gap-2">
               <input type="range" min="0" max="100" value={config.portrait.smoothBorderRadius}
                 onChange={e => setConfig({ ...config, portrait: { ...config.portrait, smoothBorderRadius: parseInt(e.target.value) } })}
-                className="w-24 accent-blue-500" />
+                className="w-24 accent-blue-500 appearance-none h-1 rounded-full bg-[#333333] [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-3 [&::-webkit-slider-thumb]:h-3 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-blue-500 [&::-webkit-slider-thumb]:cursor-pointer" />
               <span className="text-xs text-white w-8">{config.portrait.smoothBorderRadius}%</span>
             </div>
           </div>
@@ -848,8 +848,15 @@ const CPSAutomation: React.FC = () => {
       <div className="flex gap-4 mb-4 items-start">
         {/* 弹窗 */}
         <div className="bg-[#1a1a1a] rounded-lg p-4">
-          <h2 className="text-sm font-semibold mb-2">弹窗 <span className="text-xs text-[#666] font-normal ml-2">{config.popup.width}×{config.popup.height} R{config.portrait.borderRadius}</span></h2>
-          <div className="text-xs text-[#555555] mb-2">{renderHighlightedName(config.popup.namePrefix)}</div>
+          <h2 className="text-sm font-semibold mb-2">弹窗</h2>
+          <div className="flex items-center gap-2 mb-1">
+            <span className="text-xs text-[#888888]">W</span>
+            <span className="text-xs text-white">{config.popup.width}</span>
+            <span className="text-xs text-[#888888] ml-2">H</span>
+            <span className="text-xs text-white">{config.popup.height}</span>
+            <span className="text-xs text-[#555555] ml-1">R{config.portrait.borderRadius}</span>
+          </div>
+          <div className="text-xs text-[#555555] mb-1">{renderHighlightedName(config.popup.namePrefix)}</div>
           <div className="bg-[#222222] rounded-lg overflow-hidden"
             data-drop-target="popup"
             style={{ height: `${POPUP_PREVIEW_H}px`, aspectRatio: `${config.popup.width}/${config.popup.height}` }}
@@ -862,7 +869,14 @@ const CPSAutomation: React.FC = () => {
 
         {/* APPicon */}
         <div className="bg-[#1a1a1a] rounded-lg p-4">
-          <h2 className="text-sm font-semibold mb-2">APPicon <span className="text-xs text-[#666] font-normal ml-2">{config.appIcon.width}×{config.appIcon.height} R{config.appIcon.borderRadius}</span></h2>
+          <h2 className="text-sm font-semibold mb-2">APPicon</h2>
+          <div className="flex items-center gap-2 mb-1">
+            <span className="text-xs text-[#888888]">W</span>
+            <span className="text-xs text-white">{config.appIcon.width}</span>
+            <span className="text-xs text-[#888888] ml-2">H</span>
+            <span className="text-xs text-white">{config.appIcon.height}</span>
+            <span className="text-xs text-[#555555] ml-1">R{config.appIcon.borderRadius}</span>
+          </div>
 
           {/* 圆角参数 */}
           <div className="flex flex-wrap items-end gap-x-4 gap-y-2 mb-2">
@@ -877,7 +891,7 @@ const CPSAutomation: React.FC = () => {
               <div className="flex items-center gap-1.5">
                 <input type="range" min="0" max="100" value={config.appIcon.smoothBorderRadius}
                   onChange={e => setConfig({ ...config, appIcon: { ...config.appIcon, smoothBorderRadius: parseInt(e.target.value) } })}
-                  className="w-16 accent-blue-500" />
+                  className="w-16 accent-blue-500 appearance-none h-1 rounded-full bg-[#333333] [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-3 [&::-webkit-slider-thumb]:h-3 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-blue-500 [&::-webkit-slider-thumb]:cursor-pointer" />
                 <span className="text-xs text-white w-7">{config.appIcon.smoothBorderRadius}%</span>
               </div>
             </div>
