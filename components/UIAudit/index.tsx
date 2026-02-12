@@ -595,12 +595,10 @@ const UIAudit: React.FC = () => {
     setZoom(newZoom);
   }, [zoom]);
 
-  // 左键按住拖动
+  // 中键按住拖动
   const handlePanStart = useCallback((e: React.MouseEvent) => {
-    // 仅左键, 且不在 input / button 上
-    if (e.button !== 0) return;
-    const tag = (e.target as HTMLElement).tagName;
-    if (tag === 'INPUT' || tag === 'BUTTON') return;
+    // 仅中键 (button === 1)
+    if (e.button !== 1) return;
 
     isPanningRef.current = true;
     panStartRef.current = { x: e.clientX, y: e.clientY, panX: pan.x, panY: pan.y };
@@ -661,8 +659,9 @@ const UIAudit: React.FC = () => {
         onMouseMove={handlePanMove}
         onMouseUp={handlePanEnd}
         onMouseLeave={handlePanEnd}
+        onAuxClick={e => e.preventDefault()}
         onDoubleClick={handleDoubleClick}
-        style={{ cursor: isPanningRef.current ? 'grabbing' : 'grab' }}
+        style={{ cursor: isPanningRef.current ? 'grabbing' : 'default' }}
       >
         {/* 可平移+缩放的内容层 */}
         <div
