@@ -3,11 +3,7 @@ import ReactDOM from 'react-dom/client';
 import App from './App';
 // 初始化控制台服务（必须在最早导入，以便拦截所有日志）
 import './services/consoleService';
-// 初始化自动同步（必须在最早导入，以便拦截所有 localStorage 操作）
-import { initAutoSync } from './utils/autoSync';
-
-// 初始化自动同步机制（必须在应用启动前初始化）
-initAutoSync();
+// 注意：initAutoSync 已移至 App.tsx 中认证成功后调用，避免未认证时写文件失败
 
 const rootElement = document.getElementById('root');
 if (!rootElement) {
