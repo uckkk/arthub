@@ -203,10 +203,12 @@ class ConsoleService {
         }
       });
 
-      // 检测2: h-full 但高度为0的元素
+      // 检测2: h-full 但高度为0的元素（跳过不可见元素）
       const fullHeightElements = document.querySelectorAll('[class*="h-full"]');
       fullHeightElements.forEach((el) => {
         const element = el as HTMLElement;
+        // 跳过不可见元素
+        if (element.offsetParent === null && window.getComputedStyle(element).position !== 'fixed') return;
         const height = element.clientHeight;
         const parent = element.parentElement;
         
@@ -229,13 +231,19 @@ class ConsoleService {
         }
       });
 
-      // 检测3: flex-1 但高度异常的容器
+      // 检测3: flex-1 但高度异常的容器（跳过不可见元素，避免隐藏 tab 误报）
       const flex1Elements = document.querySelectorAll('[class*="flex-1"]');
       flex1Elements.forEach((el) => {
         const element = el as HTMLElement;
         const parent = element.parentElement;
         
         if (parent) {
+          // 跳过不可见元素（display:none 或 hidden 的 tab 内容）
+          const elStyle = window.getComputedStyle(element);
+          if (elStyle.display === 'none' || elStyle.visibility === 'hidden') return;
+          // 跳过祖先不可见的元素
+          if (element.offsetParent === null && elStyle.position !== 'fixed') return;
+
           const parentStyle = window.getComputedStyle(parent);
           const isFlex = parentStyle.display === 'flex';
           const elementHeight = element.clientHeight;
