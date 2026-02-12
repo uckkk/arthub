@@ -399,13 +399,16 @@ const UIAudit: React.FC = () => {
       if (device.cutout) {
         drawCutout(ctx, device, orientation, ox, oy, sw);
         const c = device.cutout;
+        const cutoutRect = orientation === 'portrait'
+          ? { x: c.x, y: c.y, w: c.width, h: c.height }
+          : { x: 0, y: c.x, w: c.height, h: c.width };
+        // 横屏时凹口在左侧，标注放左边；竖屏时在顶部，标注放右边
+        const cutoutSide = orientation === 'landscape' ? 'left' as const : 'right' as const;
         newWarnings.push({
           id: 'cutout', level: 'error',
           message: getCutoutName(c.type),
-          rect: orientation === 'portrait'
-            ? { x: c.x, y: c.y, w: c.width, h: c.height }
-            : { x: 0, y: c.x, w: c.height, h: c.width },
-          side: 'right',
+          rect: cutoutRect,
+          side: cutoutSide,
         });
       }
 
@@ -1277,14 +1280,16 @@ function drawAnnotations(
     layout.forEach(({ item, labelY }) => {
       const colors = ANNOTATION_COLORS[item.level] || ANNOTATION_COLORS.info;
 
-      // 源点: 遮罩区域边缘中点
+      // 源点: 遮罩区域靠近标注侧的边缘中点
       let srcX: number, srcY: number;
       srcY = screenY + item.rect.y + item.rect.h / 2;
 
       if (side === 'left') {
-        srcX = screenX + Math.min(item.rect.x + 10, sw * 0.3);
+        // 左侧标注 → 源点取 rect 的左边缘
+        srcX = screenX + item.rect.x + Math.min(10, item.rect.w / 2);
       } else {
-        srcX = screenX + Math.max(item.rect.x + item.rect.w - 10, sw * 0.7);
+        // 右侧标注 → 源点取 rect 的右边缘
+        srcX = screenX + item.rect.x + item.rect.w - Math.min(10, item.rect.w / 2);
       }
 
       // 标签位置
