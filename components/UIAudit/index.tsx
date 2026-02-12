@@ -1,8 +1,8 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from 'react';
 import {
-  Monitor, Smartphone, Tablet, FoldVertical, RotateCw,
+  Monitor, Smartphone, Tablet, FoldVertical,
   Upload, ChevronDown, Keyboard, LayoutGrid, AlertTriangle,
-  Shield, Eye, EyeOff, Info, X
+  Shield, Eye, EyeOff, Info, X, Maximize
 } from 'lucide-react';
 import {
   DEVICE_PRESETS, MINIPROGRAM_PRESETS, KEYBOARD_HEIGHTS,
@@ -24,6 +24,31 @@ interface OverlayWarning {
 
 type Orientation = 'portrait' | 'landscape';
 type AndroidNav = 'gesture' | 'threeButton';
+type AspectMode = 'device' | 'preset' | 'custom';
+
+/* ============================================================
+   宽高比预设
+   ============================================================ */
+interface AspectRatioPreset {
+  id: string;
+  label: string;
+  /** 宽:高 (portrait 方向) */
+  w: number;
+  h: number;
+  desc: string;
+}
+
+const ASPECT_RATIO_PRESETS: AspectRatioPreset[] = [
+  { id: '9:16',   label: '9:16',   w: 9,  h: 16,   desc: '经典 (iPhone 8)' },
+  { id: '9:19.5', label: '9:19.5', w: 9,  h: 19.5, desc: 'iPhone X ~ 15' },
+  { id: '9:20',   label: '9:20',   w: 9,  h: 20,   desc: 'Samsung S/OnePlus' },
+  { id: '9:21',   label: '9:21',   w: 9,  h: 21,   desc: '超长屏 (Sony)' },
+  { id: '3:4',    label: '3:4',    w: 3,  h: 4,    desc: 'iPad 经典' },
+  { id: '2:3',    label: '2:3',    w: 2,  h: 3,    desc: 'iPad Pro' },
+  { id: '10:16',  label: '10:16',  w: 10, h: 16,   desc: 'Android 平板' },
+  { id: '16:9',   label: '16:9',   w: 16, h: 9,    desc: '横屏通用' },
+  { id: '1:1',    label: '1:1',    w: 1,  h: 1,    desc: '正方形' },
+];
 
 /* ============================================================
    常量
@@ -122,8 +147,14 @@ const UIAudit: React.FC = () => {
   const [deviceDropdown, setDeviceDropdown] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
 
+  // 宽高比
+  const [aspectMode, setAspectMode] = useState<AspectMode>('device');
+  const [selectedAspectId, setSelectedAspectId] = useState<string>('9:19.5');
+  const [customWidth, setCustomWidth] = useState<number>(393);
+  const [customHeight, setCustomHeight] = useState<number>(852);
+
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const containerRef = useRef<HTMLDivElement>(null);
+  const canvasAreaRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
@@ -133,7 +164,43 @@ const UIAudit: React.FC = () => {
     [selectedDeviceId],
   );
   const platform = useMemo(() => getDevicePlatform(device), [device]);
-  const screenSize = useMemo(() => getScreenSize(device, orientation), [device, orientation]);
+
+  // 设备原始尺寸
+  const deviceScreenSize = useMemo(() => getScreenSize(device, orientation), [device, orientation]);
+
+  // 最终画布逻辑尺寸 (可被宽高比覆盖)
+  const screenSize = useMemo(() => {
+    if (aspectMode === 'device') {
+      return deviceScreenSize;
+    }
+
+    let ratioW: number, ratioH: number;
+    if (aspectMode === 'preset') {
+      const preset = ASPECT_RATIO_PRESETS.find(p => p.id === selectedAspectId);
+      if (!preset) return deviceScreenSize;
+      // 预设的 w:h 是 portrait 方向
+      if (orientation === 'portrait') {
+        ratioW = preset.w;
+        ratioH = preset.h;
+      } else {
+        ratioW = preset.h;
+        ratioH = preset.w;
+      }
+    } else {
+      // 自定义: 使用用户输入的绝对像素值
+      if (orientation === 'portrait') {
+        return { width: Math.max(customWidth, 100), height: Math.max(customHeight, 100) };
+      } else {
+        return { width: Math.max(customHeight, 100), height: Math.max(customWidth, 100) };
+      }
+    }
+
+    // 按比例生成逻辑像素: 以设备宽度为基准
+    const baseW = deviceScreenSize.width;
+    const h = Math.round(baseW * ratioH / ratioW);
+    return { width: baseW, height: h };
+  }, [aspectMode, selectedAspectId, customWidth, customHeight, deviceScreenSize, orientation]);
+
   const safeArea = useMemo(
     () => getSafeArea(device, orientation, androidNav),
     [device, orientation, androidNav],
@@ -460,21 +527,36 @@ const UIAudit: React.FC = () => {
 
   useEffect(() => { renderCanvas(); }, [renderCanvas]);
 
-  /* ---------- 画布自适应缩放 ---------- */
+  /* ---------- 画布自适应缩放 (填满可用空间) ---------- */
+  const [containerSize, setContainerSize] = useState({ w: 600, h: 700 });
+
+  useEffect(() => {
+    const el = canvasAreaRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver(entries => {
+      for (const entry of entries) {
+        const { width, height } = entry.contentRect;
+        if (width > 0 && height > 0) {
+          setContainerSize({ w: width, h: height });
+        }
+      }
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+
   const canvasStyle = useMemo(() => {
-    const cw = screenSize.width + 40;
+    const cw = screenSize.width + 40;  // 画布逻辑宽 (含 padding)
     const ch = screenSize.height + 40;
-    // 限制预览最大高度
-    const maxH = 600;
-    const maxW = 500;
-    let scale = 1;
-    if (ch > maxH) scale = Math.min(scale, maxH / ch);
-    if (cw > maxW) scale = Math.min(scale, maxW / cw);
+    // 可用空间 (减去底部文字区域留 60px)
+    const availW = Math.max(containerSize.w - 32, 200);
+    const availH = Math.max(containerSize.h - 80, 200);
+    const scale = Math.min(1, availW / cw, availH / ch);
     return {
       width: cw * scale,
       height: ch * scale,
     };
-  }, [screenSize]);
+  }, [screenSize, containerSize]);
 
   /* ---------- 小程序切换 ---------- */
   const toggleMiniProgram = useCallback((id: string) => {
@@ -503,7 +585,7 @@ const UIAudit: React.FC = () => {
   return (
     <div className="flex h-full bg-[#0e0e0e] text-white overflow-hidden">
       {/* ---- 左侧: 画布区 ---- */}
-      <div className="flex-1 flex flex-col items-center justify-center p-6 min-w-0 overflow-auto">
+      <div ref={canvasAreaRef} className="flex-1 flex flex-col items-center justify-center p-4 min-w-0 overflow-auto">
         {/* 上传区 / 画布 */}
         {!image ? (
           <div
@@ -550,12 +632,20 @@ const UIAudit: React.FC = () => {
                 </div>
               )}
             </div>
-            <div className="flex items-center gap-3 text-xs text-[#888]">
+            <div className="flex items-center gap-3 text-xs text-[#888] flex-wrap justify-center">
               <span>{imageName}</span>
               <span>·</span>
               <span>{device.name}</span>
               <span>·</span>
               <span>{screenSize.width}×{screenSize.height}pt</span>
+              {aspectMode !== 'device' && (
+                <>
+                  <span>·</span>
+                  <span className="text-blue-400">
+                    {aspectMode === 'preset' ? selectedAspectId : `${customWidth}:${customHeight}`}
+                  </span>
+                </>
+              )}
               <button
                 className="ml-2 px-2 py-1 rounded bg-[#222] hover:bg-[#333] text-[#aaa] transition-colors"
                 onClick={() => { setImage(null); setImageName(''); }}
@@ -661,6 +751,98 @@ const UIAudit: React.FC = () => {
               </div>
             </div>
           )}
+        </PanelSection>
+
+        {/* == 宽高比 == */}
+        <PanelSection title="宽高比" icon={<Maximize size={14} />}>
+          {/* 模式切换 */}
+          <div className="flex bg-[#1e1e1e] rounded-lg overflow-hidden mb-3">
+            <button
+              className={`flex-1 px-2 py-1.5 text-xs transition-colors ${
+                aspectMode === 'device' ? 'bg-blue-500/20 text-blue-400' : 'text-[#888] hover:text-white'
+              }`}
+              onClick={() => setAspectMode('device')}
+            >
+              跟随设备
+            </button>
+            <button
+              className={`flex-1 px-2 py-1.5 text-xs transition-colors ${
+                aspectMode === 'preset' ? 'bg-blue-500/20 text-blue-400' : 'text-[#888] hover:text-white'
+              }`}
+              onClick={() => setAspectMode('preset')}
+            >
+              预设
+            </button>
+            <button
+              className={`flex-1 px-2 py-1.5 text-xs transition-colors ${
+                aspectMode === 'custom' ? 'bg-blue-500/20 text-blue-400' : 'text-[#888] hover:text-white'
+              }`}
+              onClick={() => setAspectMode('custom')}
+            >
+              自定义
+            </button>
+          </div>
+
+          {/* 预设列表 */}
+          {aspectMode === 'preset' && (
+            <div className="grid grid-cols-3 gap-1.5 mb-2">
+              {ASPECT_RATIO_PRESETS.map(p => (
+                <button
+                  key={p.id}
+                  className={`px-2 py-2 rounded-lg text-center transition-colors ${
+                    selectedAspectId === p.id
+                      ? 'bg-blue-500/15 text-blue-400 ring-1 ring-blue-500/30'
+                      : 'bg-[#1e1e1e] text-[#aaa] hover:bg-[#252525]'
+                  }`}
+                  onClick={() => setSelectedAspectId(p.id)}
+                  title={p.desc}
+                >
+                  <div className="text-xs font-medium">{p.label}</div>
+                  <div className="text-[10px] text-[#666] mt-0.5 truncate">{p.desc}</div>
+                </button>
+              ))}
+            </div>
+          )}
+
+          {/* 自定义输入 */}
+          {aspectMode === 'custom' && (
+            <div className="flex items-center gap-2">
+              <div className="flex items-center gap-1.5">
+                <span className="text-[10px] text-[#666]">W</span>
+                <input
+                  type="number"
+                  value={customWidth}
+                  onChange={e => setCustomWidth(parseInt(e.target.value) || 100)}
+                  className="w-16 px-2 py-1 bg-[#1e1e1e] border border-[#333] rounded text-xs text-white text-center focus:border-blue-500 focus:outline-none"
+                  min={100}
+                  max={3000}
+                />
+              </div>
+              <X size={10} className="text-[#555]" />
+              <div className="flex items-center gap-1.5">
+                <span className="text-[10px] text-[#666]">H</span>
+                <input
+                  type="number"
+                  value={customHeight}
+                  onChange={e => setCustomHeight(parseInt(e.target.value) || 100)}
+                  className="w-16 px-2 py-1 bg-[#1e1e1e] border border-[#333] rounded text-xs text-white text-center focus:border-blue-500 focus:outline-none"
+                  min={100}
+                  max={3000}
+                />
+              </div>
+              <span className="text-[10px] text-[#555]">pt</span>
+            </div>
+          )}
+
+          {/* 当前比例显示 */}
+          <div className="mt-2 text-[10px] text-[#555]">
+            当前: {screenSize.width}×{screenSize.height}pt
+            {aspectMode !== 'device' && (
+              <span className="ml-1">
+                ({(screenSize.width / screenSize.height).toFixed(2)})
+              </span>
+            )}
+          </div>
         </PanelSection>
 
         {/* == 异形屏 == */}
