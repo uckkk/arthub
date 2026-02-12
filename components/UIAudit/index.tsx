@@ -731,24 +731,28 @@ const UIAudit: React.FC = () => {
         onDoubleClick={handleDoubleClick}
         style={{ cursor: isPanningRef.current ? 'grabbing' : 'default' }}
       >
-        {/* 可平移+缩放的内容层 */}
+        {/* 可平移+缩放的内容层 — 用 absolute 脱离 flex, 避免被压缩变形 */}
         <div
-          className="flex-1 flex items-center justify-center"
+          className="absolute inset-0 flex items-center justify-center pointer-events-none"
           style={{
             transform: `translate(${pan.x}px, ${pan.y}px)`,
-            transition: isPanningRef.current ? 'none' : undefined,
           }}
         >
-          {/* 上传区 / 画布 */}
+          {/* 上传区 / 画布 — 用固定尺寸, 不参与 flex 收缩 */}
           {!image ? (
             <div
               data-drop-target="ui-audit"
-              className={`rounded-2xl border-2 border-dashed transition-colors flex flex-col items-center justify-center cursor-pointer select-none ${
+              className={`pointer-events-auto rounded-2xl border-2 border-dashed transition-colors flex flex-col items-center justify-center cursor-pointer select-none shrink-0 ${
                 isDragging
                   ? 'border-blue-400 bg-blue-400/10'
                   : 'border-[#333] hover:border-[#555] bg-[#161616]'
               }`}
-              style={{ width: canvasStyle.width, height: canvasStyle.height }}
+              style={{
+                width: canvasStyle.width,
+                height: canvasStyle.height,
+                minWidth: canvasStyle.width,
+                minHeight: canvasStyle.height,
+              }}
               onDrop={handleDrop}
               onDragOver={handleDragOver}
               onDragLeave={handleDragLeave}
@@ -769,16 +773,18 @@ const UIAudit: React.FC = () => {
           ) : (
             <div
               data-drop-target="ui-audit"
-              className="relative"
+              className="pointer-events-auto relative shrink-0"
               onDrop={handleDrop}
               onDragOver={handleDragOver}
               onDragLeave={handleDragLeave}
-              style={{ width: canvasStyle.width, height: canvasStyle.height }}
             >
               <canvas
                 ref={canvasRef}
-                className="w-full h-full"
-                style={{ imageRendering: 'auto' }}
+                style={{
+                  width: canvasStyle.width,
+                  height: canvasStyle.height,
+                  imageRendering: 'auto',
+                }}
               />
               {isDragging && (
                 <div className="absolute inset-0 bg-blue-400/10 border-2 border-blue-400 rounded-2xl flex items-center justify-center">
