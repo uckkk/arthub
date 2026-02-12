@@ -724,13 +724,13 @@ const CPSAutomation: React.FC = () => {
               className="sr-only peer"
             />
             <div className="
-              w-[51px] h-[31px] rounded-full
-              bg-[#39393d] peer-checked:bg-[#34c759]
+              w-9 h-5 rounded-full
+              bg-[#39393d] peer-checked:bg-blue-500
               after:content-[''] after:absolute after:top-[2px] after:left-[2px]
-              after:bg-white after:rounded-full after:h-[27px] after:w-[27px]
-              after:shadow-[0_3px_8px_rgba(0,0,0,0.15),0_3px_1px_rgba(0,0,0,0.06)]
+              after:bg-white after:rounded-full after:h-4 after:w-4
+              after:shadow-sm
               after:transition-all after:duration-200
-              peer-checked:after:translate-x-5
+              peer-checked:after:translate-x-4
               transition-colors duration-200
             "></div>
           </label>
