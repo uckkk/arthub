@@ -93,16 +93,16 @@ const CPSAutomation: React.FC = () => {
     };
   }, [config.portrait.shadow]);
 
-  // ---- 通过操作系统光标位置查找拖放目标（根治方案） ----
-  // 核心原理：Tauri 在 OS 层面拦截了文件拖拽，DOM 的 mouseenter/dragover 等事件不触发。
-  // 因此通过 Rust 调用 GetCursorPos 获取屏幕坐标，再转换为页面坐标，
-  // 用 document.elementFromPoint 配合 data-drop-target 属性定位目标组件。
+  // ---- 环境检测 ----
+  const isTauri = typeof window !== 'undefined' && !!(window as any).__TAURI_IPC__;
+
+  // ---- 通过操作系统光标位置查找拖放目标（Tauri 专用） ----
   const findDropTargetUnderCursor = useCallback(async (): Promise<DropTarget> => {
+    if (!isTauri) return null;
     try {
       const [screenX, screenY] = await invoke<[number, number]>('get_cursor_position');
       const windowPos = await appWindow.innerPosition();
       const scale = window.devicePixelRatio || 1;
-      // 屏幕物理像素 → 页面 CSS 像素
       const cssX = (screenX - windowPos.x) / scale;
       const cssY = (screenY - windowPos.y) / scale;
       const el = document.elementFromPoint(cssX, cssY);
@@ -113,34 +113,45 @@ const CPSAutomation: React.FC = () => {
         }
       }
     } catch (err) {
-      // get_cursor_position 在非 Windows 平台可能不可用，静默处理
-      console.debug('[CPS] findDropTargetUnderCursor 回退:', err);
+      console.debug('[CPS] findDropTargetUnderCursor fallback:', err);
     }
     return null;
-  }, []);
+  }, [isTauri]);
 
-  // ---- Tauri 文件拖拽支持 ----
+  // ---- 处理拖入的文件（Tauri 和浏览器通用） ----
+  const handleDroppedFile = useCallback((file: File, target: DropTarget) => {
+    if (!target || !file.type.startsWith('image/')) {
+      if (!file.type.startsWith('image/')) showToast('请拖入图片文件', 'error');
+      return;
+    }
+    const preview = URL.createObjectURL(file);
+    const imageFile: ImageFile = { file, preview, name: file.name };
+    if (target === 'portrait') setPortraitImage(imageFile);
+    else if (target === 'popup') setPopupImage(imageFile);
+    else if (target === 'appIcon') setAppIconImage(imageFile);
+    showToast(`已导入: ${file.name}`, 'success');
+  }, [showToast]);
+
+  // ---- Tauri 文件拖拽支持（仅在 Tauri 环境中注册） ----
   useEffect(() => {
+    if (!isTauri) return;
+
     let unlistenDrop: (() => void) | null = null;
     let unlistenHover: (() => void) | null = null;
     let unlistenCancel: (() => void) | null = null;
 
     const setup = async () => {
-      // file-drop-hover: 文件在窗口上方悬停时持续触发
-      // 通过 OS 光标位置实时更新拖放目标，提供视觉反馈
       unlistenHover = await listen<string[]>('tauri://file-drop-hover', async () => {
         const target = await findDropTargetUnderCursor();
         if (target) {
           hoverTargetRef.current = target;
           setDragOverTarget(target);
         } else {
-          // 光标不在任何上传区域上
           hoverTargetRef.current = null;
           setDragOverTarget(null);
         }
       });
 
-      // file-drop: 文件被释放时触发
       unlistenDrop = await listen<string[]>('tauri://file-drop', async (event) => {
         setDragOverTarget(null);
         const paths = event.payload;
@@ -152,35 +163,22 @@ const CPSAutomation: React.FC = () => {
         const isImage = ['.png', '.jpg', '.jpeg', '.gif', '.webp', '.bmp', '.tiff', '.svg'].some(
           ext => lowerPath.endsWith(ext)
         );
-        if (!isImage) {
-          showToast('请拖入图片文件', 'error');
-          return;
-        }
+        if (!isImage) { showToast('请拖入图片文件', 'error'); return; }
 
-        // 优先使用已缓存的目标，如果为空再尝试一次实时查询
         let target = hoverTargetRef.current;
+        if (!target) target = await findDropTargetUnderCursor();
         if (!target) {
-          target = await findDropTargetUnderCursor();
-        }
-
-        if (!target) {
-          // 最终回退：如果只有一个区域为空，自动分配到该区域
           const emptySlots: DropTarget[] = [];
           if (!portraitImageRef.current) emptySlots.push('portrait');
           if (!popupImageRef.current) emptySlots.push('popup');
           if (!appIconImageRef.current) emptySlots.push('appIcon');
-          if (emptySlots.length === 1) {
-            target = emptySlots[0];
-          } else {
-            showToast('请将图片拖入指定的输入框区域', 'info');
-            return;
-          }
+          if (emptySlots.length === 1) target = emptySlots[0];
+          else { showToast('请将图片拖入指定的输入框区域', 'info'); return; }
         }
 
         try {
           const fileBytes: number[] = await invoke('read_binary_file_with_path', { filePath });
           const uint8Array = new Uint8Array(fileBytes);
-
           let mimeType = 'image/png';
           if (lowerPath.endsWith('.jpg') || lowerPath.endsWith('.jpeg')) mimeType = 'image/jpeg';
           else if (lowerPath.endsWith('.gif')) mimeType = 'image/gif';
@@ -191,20 +189,11 @@ const CPSAutomation: React.FC = () => {
           const fileName = filePath.split(/[\\/]/).pop() || 'image.png';
           const blob = new Blob([uint8Array], { type: mimeType });
           const file = new File([blob], fileName, { type: mimeType });
-          const preview = URL.createObjectURL(file);
-
-          const imageFile: ImageFile = { file, preview, name: fileName };
-
-          if (target === 'portrait') setPortraitImage(imageFile);
-          else if (target === 'popup') setPopupImage(imageFile);
-          else if (target === 'appIcon') setAppIconImage(imageFile);
-
-          showToast(`已导入: ${fileName}`, 'success');
+          handleDroppedFile(file, target);
         } catch (err) {
           console.error('读取拖拽文件失败:', err);
           showToast('读取文件失败', 'error');
         }
-
         hoverTargetRef.current = null;
       });
 
@@ -215,12 +204,47 @@ const CPSAutomation: React.FC = () => {
     };
 
     setup();
-    return () => {
-      unlistenDrop?.();
-      unlistenHover?.();
-      unlistenCancel?.();
+    return () => { unlistenDrop?.(); unlistenHover?.(); unlistenCancel?.(); };
+  }, [isTauri, showToast, findDropTargetUnderCursor, handleDroppedFile]);
+
+  // ---- 浏览器 HTML5 拖拽回退（非 Tauri 环境） ----
+  useEffect(() => {
+    if (isTauri) return;
+
+    const onDragOver = (e: DragEvent) => {
+      e.preventDefault();
+      const el = document.elementFromPoint(e.clientX, e.clientY);
+      const area = el?.closest('[data-drop-target]');
+      const target = (area?.getAttribute('data-drop-target') || null) as DropTarget;
+      hoverTargetRef.current = target;
+      setDragOverTarget(target);
     };
-  }, [showToast, findDropTargetUnderCursor]);
+
+    const onDragLeave = (e: DragEvent) => {
+      if (e.relatedTarget === null) {
+        hoverTargetRef.current = null;
+        setDragOverTarget(null);
+      }
+    };
+
+    const onDrop = (e: DragEvent) => {
+      e.preventDefault();
+      setDragOverTarget(null);
+      const file = e.dataTransfer?.files?.[0];
+      const target = hoverTargetRef.current;
+      hoverTargetRef.current = null;
+      if (file && target) handleDroppedFile(file, target);
+    };
+
+    document.addEventListener('dragover', onDragOver);
+    document.addEventListener('dragleave', onDragLeave);
+    document.addEventListener('drop', onDrop);
+    return () => {
+      document.removeEventListener('dragover', onDragOver);
+      document.removeEventListener('dragleave', onDragLeave);
+      document.removeEventListener('drop', onDrop);
+    };
+  }, [isTauri, handleDroppedFile]);
 
   // ---- 图片处理工具函数 ----
 
@@ -554,8 +578,6 @@ const CPSAutomation: React.FC = () => {
   const handleExport = async () => {
     if (!portraitImage || !popupImage || !appIconImage) { showToast('请先上传所有三张图片', 'error'); return; }
     try {
-      const selectedDir = await open({ directory: true, multiple: false, title: '选择导出目录' });
-      if (!selectedDir || typeof selectedDir !== 'string') return;
       showToast('正在生成图片...', 'info');
       await new Promise(r => setTimeout(r, 300));
       const images: GeneratedImage[] = [];
@@ -577,14 +599,29 @@ const CPSAutomation: React.FC = () => {
         canvasToBlob(appIconCanvasRef, generateFileName(config.appIcon.namePrefix)),
       ]);
 
-      const sep = (selectedDir as string).includes('/') ? '/' : '\\';
-      for (const img of images) {
-        const buf = await img.blob.arrayBuffer();
-        const filePath = `${selectedDir}${sep}${img.name}`;
-        await invoke('write_binary_file_with_path', {
-          filePath: filePath,
-          content: Array.from(new Uint8Array(buf)),
-        });
+      if (isTauri) {
+        // Tauri 环境：选择目录后保存到本地文件系统
+        const selectedDir = await open({ directory: true, multiple: false, title: '选择导出目录' });
+        if (!selectedDir || typeof selectedDir !== 'string') return;
+        const sep = (selectedDir as string).includes('/') ? '/' : '\\';
+        for (const img of images) {
+          const buf = await img.blob.arrayBuffer();
+          const filePath = `${selectedDir}${sep}${img.name}`;
+          await invoke('write_binary_file_with_path', {
+            filePath: filePath,
+            content: Array.from(new Uint8Array(buf)),
+          });
+        }
+      } else {
+        // 浏览器环境：逐个下载文件
+        for (const img of images) {
+          const url = URL.createObjectURL(img.blob);
+          const a = document.createElement('a');
+          a.href = url;
+          a.download = img.name;
+          a.click();
+          URL.revokeObjectURL(url);
+        }
       }
       showToast(`成功导出 ${images.length} 张图片`, 'success');
     } catch (error) {
