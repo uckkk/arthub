@@ -35,6 +35,7 @@ const DEFAULT_CONFIG = {
     width: 72,
     height: 72,
     borderRadius: 18,
+    smoothBorderRadius: 80,
     namePrefix: 'ylg_cps_icon@',
   },
 };
@@ -480,7 +481,7 @@ const CPSAutomation: React.FC = () => {
       // 平滑圆角裁剪
       ctx.save();
       drawRoundedRect(ctx, 0, 0, canvas.width, canvas.height,
-        config.appIcon.borderRadius, config.portrait.smoothBorderRadius);
+        config.appIcon.borderRadius, config.appIcon.smoothBorderRadius);
       ctx.clip();
 
       // 最短边撑满，居中裁剪
@@ -488,7 +489,7 @@ const CPSAutomation: React.FC = () => {
       ctx.drawImage(img, p.sx, p.sy, p.sw, p.sh, p.dx, p.dy, p.dw, p.dh);
       ctx.restore();
     } catch (e) { console.error('渲染APPicon预览失败:', e); }
-  }, [appIconImage, config.appIcon, config.portrait.smoothBorderRadius]);
+  }, [appIconImage, config.appIcon]);
 
   useEffect(() => {
     if (portraitImage) {
