@@ -139,7 +139,7 @@ const UIAudit: React.FC = () => {
   const [image, setImage] = useState<HTMLImageElement | null>(null);
   const [imageName, setImageName] = useState<string>('');
   const [selectedDeviceId, setSelectedDeviceId] = useState<string>('iphone15pro');
-  const [orientation, setOrientation] = useState<Orientation>('portrait');
+  const [orientation, setOrientation] = useState<Orientation>('landscape');
   const [androidNav, setAndroidNav] = useState<AndroidNav>('gesture');
   const [selectedMiniPrograms, setSelectedMiniPrograms] = useState<Set<string>>(new Set());
   const [showKeyboard, setShowKeyboard] = useState(false);
@@ -150,8 +150,8 @@ const UIAudit: React.FC = () => {
   const [isDragging, setIsDragging] = useState(false);
 
   // 宽高比
-  const [aspectMode, setAspectMode] = useState<AspectMode>('device');
-  const [selectedAspectId, setSelectedAspectId] = useState<string>('9:19.5');
+  const [aspectMode, setAspectMode] = useState<AspectMode>('preset');
+  const [selectedAspectId, setSelectedAspectId] = useState<string>('9:21');
   const [customWidth, setCustomWidth] = useState<number>(393);
   const [customHeight, setCustomHeight] = useState<number>(852);
 
@@ -757,6 +757,9 @@ const UIAudit: React.FC = () => {
         onMouseLeave={handlePanEnd}
         onAuxClick={e => e.preventDefault()}
         onDoubleClick={handleDoubleClick}
+        onDrop={handleDrop}
+        onDragOver={handleDragOver}
+        onDragLeave={handleDragLeave}
         style={{ cursor: isPanningRef.current ? 'grabbing' : 'default' }}
       >
         {/* 可平移+缩放的内容层 — 用 absolute 脱离 flex, 避免被压缩变形 */}
