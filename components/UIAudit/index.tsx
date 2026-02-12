@@ -590,11 +590,12 @@ const UIAudit: React.FC = () => {
         {!image ? (
           <div
             data-drop-target="ui-audit"
-            className={`w-full max-w-lg aspect-[9/16] rounded-2xl border-2 border-dashed transition-colors flex flex-col items-center justify-center cursor-pointer select-none ${
+            className={`rounded-2xl border-2 border-dashed transition-all flex flex-col items-center justify-center cursor-pointer select-none ${
               isDragging
                 ? 'border-blue-400 bg-blue-400/10'
                 : 'border-[#333] hover:border-[#555] bg-[#161616]'
             }`}
+            style={{ width: canvasStyle.width, height: canvasStyle.height }}
             onDrop={handleDrop}
             onDragOver={handleDragOver}
             onDragLeave={handleDragLeave}
@@ -603,6 +604,7 @@ const UIAudit: React.FC = () => {
             <Upload size={40} className="text-[#555] mb-3" />
             <p className="text-sm text-[#888]">拖放或点击上传游戏截图</p>
             <p className="text-xs text-[#555] mt-1">支持 PNG / JPG / WebP</p>
+            <p className="text-[10px] text-[#444] mt-2">{screenSize.width}×{screenSize.height}pt</p>
             <input
               ref={fileInputRef}
               type="file"
