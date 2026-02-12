@@ -651,11 +651,8 @@ const CPSAutomation: React.FC = () => {
   // ---- 渲染 ----
   return (
     <div className="h-full overflow-y-auto bg-[#0a0a0a] text-white p-5">
-      {/* 顶部提示 + 恢复默认 */}
-      <div className="flex items-center justify-between mb-4">
-        <div className="text-xs text-[#888888]">
-          用户共输入3张图片，输入一次自定义名称，自动生成五张不同规范的图片，一键导出
-        </div>
+      {/* 顶部恢复默认 */}
+      <div className="flex items-center justify-end mb-4">
         <button onClick={handleReset}
           className="px-3 py-1.5 rounded bg-[#2a2a2a] hover:bg-[#3a3a3a] text-xs text-white transition-colors flex items-center gap-1.5 shrink-0">
           <RotateCcw size={12} /> 恢复默认
