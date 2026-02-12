@@ -648,6 +648,18 @@ const CPSAutomation: React.FC = () => {
     return `${w}/${h}`;
   };
 
+  // ---- 预览布局（紧凑模式：固定高度 + 等比宽度，仅影响显示，不影响导出） ----
+  const PORTRAIT_PREVIEW_H = 220;  // 通用立绘大/中预览高度 (px)
+  const POPUP_PREVIEW_H = 140;     // 弹窗预览高度 (px)
+  const ICON_PREVIEW_H = 80;       // APPicon 预览高度 (px)
+
+  // 小尺寸立绘预览高度（与大/中保持同一缩放比例）
+  const smallPreviewH = useMemo(() => {
+    const bigH = config.portrait.sizes.big.height + shadowPadding.top + shadowPadding.bottom;
+    const smallH = config.portrait.sizes.small.height + shadowPadding.top + shadowPadding.bottom;
+    return Math.round(PORTRAIT_PREVIEW_H * smallH / bigH);
+  }, [config.portrait.sizes, shadowPadding]);
+
   // ---- 渲染 ----
   return (
     <div className="h-full overflow-y-auto bg-[#0a0a0a] text-white p-5">
@@ -733,10 +745,10 @@ const CPSAutomation: React.FC = () => {
           </div>
         </div>
 
-        {/* 三张图预览区 */}
+        {/* 三张图预览区 - 紧凑等比布局：固定高度 + aspect-ratio 自动算宽度 */}
         <div className="flex gap-3 items-end">
           {/* 大 */}
-          <div className="flex-1">
+          <div className="shrink-0">
             <div className="flex items-center gap-2 mb-1">
               <span className="text-xs text-[#888888]">W</span>
               <span className="text-xs text-white">{config.portrait.sizes.big.width}</span>
@@ -746,13 +758,13 @@ const CPSAutomation: React.FC = () => {
             </div>
             <div className="text-xs text-[#555555] mb-1">{renderHighlightedName(config.portrait.namePrefix, 'big')}</div>
             <div className="bg-[#222222] rounded-lg overflow-hidden"
-              style={{ aspectRatio: paddedAspect(config.portrait.sizes.big) }}>
+              style={{ height: `${PORTRAIT_PREVIEW_H}px`, aspectRatio: paddedAspect(config.portrait.sizes.big) }}>
               {renderUploadBox('portrait', portraitImage, portraitBigCanvasRef)}
             </div>
           </div>
 
           {/* 中 */}
-          <div className="shrink-0" style={{ width: '25%' }}>
+          <div className="shrink-0">
             <div className="flex items-center gap-2 mb-1">
               <span className="text-xs text-[#888888]">W</span>
               <span className="text-xs text-white">{config.portrait.sizes.mid.width}</span>
@@ -761,7 +773,7 @@ const CPSAutomation: React.FC = () => {
             </div>
             <div className="text-xs text-[#555555] mb-1">{renderHighlightedName(config.portrait.namePrefix, 'mid')}</div>
             <div className="bg-[#222222] rounded-lg overflow-hidden"
-              style={{ aspectRatio: paddedAspect(config.portrait.sizes.mid) }}>
+              style={{ height: `${PORTRAIT_PREVIEW_H}px`, aspectRatio: paddedAspect(config.portrait.sizes.mid) }}>
               {portraitImage ? (
                 <canvas ref={portraitMidCanvasRef} className="w-full h-full" />
               ) : (
@@ -773,7 +785,7 @@ const CPSAutomation: React.FC = () => {
           </div>
 
           {/* 小 */}
-          <div className="shrink-0" style={{ width: '25%' }}>
+          <div className="shrink-0">
             <div className="flex items-center gap-2 mb-1">
               <span className="text-xs text-[#888888]">W</span>
               <span className="text-xs text-white">{config.portrait.sizes.small.width}</span>
@@ -782,7 +794,7 @@ const CPSAutomation: React.FC = () => {
             </div>
             <div className="text-xs text-[#555555] mb-1">{renderHighlightedName(config.portrait.namePrefix, 'small')}</div>
             <div className="bg-[#222222] rounded-lg overflow-hidden"
-              style={{ aspectRatio: paddedAspect(config.portrait.sizes.small) }}>
+              style={{ height: `${smallPreviewH}px`, aspectRatio: paddedAspect(config.portrait.sizes.small) }}>
               {portraitImage ? (
                 <canvas ref={portraitSmallCanvasRef} className="w-full h-full" />
               ) : (
@@ -796,14 +808,14 @@ const CPSAutomation: React.FC = () => {
       </div>
 
       {/* ====== 弹窗 + APPicon 并排 ====== */}
-      <div className="grid grid-cols-2 gap-4 mb-4">
+      <div className="flex gap-4 mb-4 items-start">
         {/* 弹窗 */}
-        <div className="bg-[#1a1a1a] rounded-lg p-5">
-          <h2 className="text-base font-semibold mb-3">弹窗 <span className="text-xs text-[#666] font-normal ml-2">{config.popup.width}×{config.popup.height} R{config.portrait.borderRadius}</span></h2>
+        <div className="bg-[#1a1a1a] rounded-lg p-4">
+          <h2 className="text-sm font-semibold mb-2">弹窗 <span className="text-xs text-[#666] font-normal ml-2">{config.popup.width}×{config.popup.height} R{config.portrait.borderRadius}</span></h2>
           <div className="text-xs text-[#555555] mb-2">{renderHighlightedName(config.popup.namePrefix)}</div>
           <div className="bg-[#222222] rounded-lg overflow-hidden"
             data-drop-target="popup"
-            style={{ aspectRatio: `${config.popup.width}/${config.popup.height}` }}
+            style={{ height: `${POPUP_PREVIEW_H}px`, aspectRatio: `${config.popup.width}/${config.popup.height}` }}
             onMouseEnter={() => { hoverTargetRef.current = 'popup'; }}
             onMouseLeave={() => { if (hoverTargetRef.current === 'popup') hoverTargetRef.current = null; }}
           >
@@ -812,32 +824,32 @@ const CPSAutomation: React.FC = () => {
         </div>
 
         {/* APPicon */}
-        <div className="bg-[#1a1a1a] rounded-lg p-5">
-          <h2 className="text-base font-semibold mb-3">APPicon <span className="text-xs text-[#666] font-normal ml-2">{config.appIcon.width}×{config.appIcon.height} R{config.appIcon.borderRadius}</span></h2>
+        <div className="bg-[#1a1a1a] rounded-lg p-4">
+          <h2 className="text-sm font-semibold mb-2">APPicon <span className="text-xs text-[#666] font-normal ml-2">{config.appIcon.width}×{config.appIcon.height} R{config.appIcon.borderRadius}</span></h2>
 
           {/* 圆角参数 */}
-          <div className="flex flex-wrap items-end gap-x-5 gap-y-2 mb-3">
+          <div className="flex flex-wrap items-end gap-x-4 gap-y-2 mb-2">
             <div>
               <div className="text-xs text-[#888888] mb-1">圆角</div>
               <input type="number" value={config.appIcon.borderRadius}
                 onChange={e => setConfig({ ...config, appIcon: { ...config.appIcon, borderRadius: parseInt(e.target.value) || 0 } })}
-                className="w-16 px-2 py-1 bg-[#2a2a2a] border border-[#3a3a3a] rounded text-white text-xs" />
+                className="w-14 px-2 py-1 bg-[#2a2a2a] border border-[#3a3a3a] rounded text-white text-xs" />
             </div>
             <div>
-              <div className="text-xs text-[#888888] mb-1">平滑圆角</div>
-              <div className="flex items-center gap-2">
+              <div className="text-xs text-[#888888] mb-1">平滑</div>
+              <div className="flex items-center gap-1.5">
                 <input type="range" min="0" max="100" value={config.appIcon.smoothBorderRadius}
                   onChange={e => setConfig({ ...config, appIcon: { ...config.appIcon, smoothBorderRadius: parseInt(e.target.value) } })}
-                  className="w-24 accent-blue-500" />
-                <span className="text-xs text-white w-8">{config.appIcon.smoothBorderRadius}%</span>
+                  className="w-16 accent-blue-500" />
+                <span className="text-xs text-white w-7">{config.appIcon.smoothBorderRadius}%</span>
               </div>
             </div>
           </div>
 
           <div className="text-xs text-[#555555] mb-2">{renderHighlightedName(config.appIcon.namePrefix)}</div>
-          <div className="bg-[#222222] rounded-lg overflow-hidden mx-auto"
+          <div className="bg-[#222222] rounded-lg overflow-hidden"
             data-drop-target="appIcon"
-            style={{ aspectRatio: `${config.appIcon.width}/${config.appIcon.height}`, maxWidth: '200px' }}
+            style={{ height: `${ICON_PREVIEW_H}px`, aspectRatio: `${config.appIcon.width}/${config.appIcon.height}` }}
             onMouseEnter={() => { hoverTargetRef.current = 'appIcon'; }}
             onMouseLeave={() => { if (hoverTargetRef.current === 'appIcon') hoverTargetRef.current = null; }}
           >
