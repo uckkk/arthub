@@ -4,6 +4,7 @@ import { useToast } from './Toast';
 import { invoke } from '@tauri-apps/api/tauri';
 import { open } from '@tauri-apps/api/dialog';
 import { listen } from '@tauri-apps/api/event';
+import { appWindow } from '@tauri-apps/api/window';
 
 // 默认参数配置
 const DEFAULT_CONFIG = {
@@ -71,6 +72,15 @@ const CPSAutomation: React.FC = () => {
 
   const hoverTargetRef = useRef<DropTarget>(null);
 
+  // 用 ref 跟踪最新的图片状态，这样 Tauri 事件监听器的 useEffect 不需要
+  // 依赖 portraitImage/popupImage/appIconImage，避免每次上传图片后重新注册监听器
+  const portraitImageRef = useRef(portraitImage);
+  const popupImageRef = useRef(popupImage);
+  const appIconImageRef = useRef(appIconImage);
+  useEffect(() => { portraitImageRef.current = portraitImage; }, [portraitImage]);
+  useEffect(() => { popupImageRef.current = popupImage; }, [popupImage]);
+  useEffect(() => { appIconImageRef.current = appIconImage; }, [appIconImage]);
+
   // ---- 投影 padding 计算（通用立绘专用，弹窗和icon无投影） ----
   const shadowPadding = useMemo(() => {
     const { offsetX, offsetY, blur } = config.portrait.shadow;
@@ -82,6 +92,32 @@ const CPSAutomation: React.FC = () => {
     };
   }, [config.portrait.shadow]);
 
+  // ---- 通过操作系统光标位置查找拖放目标（根治方案） ----
+  // 核心原理：Tauri 在 OS 层面拦截了文件拖拽，DOM 的 mouseenter/dragover 等事件不触发。
+  // 因此通过 Rust 调用 GetCursorPos 获取屏幕坐标，再转换为页面坐标，
+  // 用 document.elementFromPoint 配合 data-drop-target 属性定位目标组件。
+  const findDropTargetUnderCursor = useCallback(async (): Promise<DropTarget> => {
+    try {
+      const [screenX, screenY] = await invoke<[number, number]>('get_cursor_position');
+      const windowPos = await appWindow.innerPosition();
+      const scale = window.devicePixelRatio || 1;
+      // 屏幕物理像素 → 页面 CSS 像素
+      const cssX = (screenX - windowPos.x) / scale;
+      const cssY = (screenY - windowPos.y) / scale;
+      const el = document.elementFromPoint(cssX, cssY);
+      if (el) {
+        const dropArea = el.closest('[data-drop-target]');
+        if (dropArea) {
+          return dropArea.getAttribute('data-drop-target') as DropTarget;
+        }
+      }
+    } catch (err) {
+      // get_cursor_position 在非 Windows 平台可能不可用，静默处理
+      console.debug('[CPS] findDropTargetUnderCursor 回退:', err);
+    }
+    return null;
+  }, []);
+
   // ---- Tauri 文件拖拽支持 ----
   useEffect(() => {
     let unlistenDrop: (() => void) | null = null;
@@ -89,12 +125,21 @@ const CPSAutomation: React.FC = () => {
     let unlistenCancel: (() => void) | null = null;
 
     const setup = async () => {
-      unlistenHover = await listen<string[]>('tauri://file-drop-hover', () => {
-        if (hoverTargetRef.current) {
-          setDragOverTarget(hoverTargetRef.current);
+      // file-drop-hover: 文件在窗口上方悬停时持续触发
+      // 通过 OS 光标位置实时更新拖放目标，提供视觉反馈
+      unlistenHover = await listen<string[]>('tauri://file-drop-hover', async () => {
+        const target = await findDropTargetUnderCursor();
+        if (target) {
+          hoverTargetRef.current = target;
+          setDragOverTarget(target);
+        } else {
+          // 光标不在任何上传区域上
+          hoverTargetRef.current = null;
+          setDragOverTarget(null);
         }
       });
 
+      // file-drop: 文件被释放时触发
       unlistenDrop = await listen<string[]>('tauri://file-drop', async (event) => {
         setDragOverTarget(null);
         const paths = event.payload;
@@ -111,10 +156,24 @@ const CPSAutomation: React.FC = () => {
           return;
         }
 
-        const target = hoverTargetRef.current;
+        // 优先使用已缓存的目标，如果为空再尝试一次实时查询
+        let target = hoverTargetRef.current;
         if (!target) {
-          showToast('请将图片拖入指定的输入框区域', 'info');
-          return;
+          target = await findDropTargetUnderCursor();
+        }
+
+        if (!target) {
+          // 最终回退：如果只有一个区域为空，自动分配到该区域
+          const emptySlots: DropTarget[] = [];
+          if (!portraitImageRef.current) emptySlots.push('portrait');
+          if (!popupImageRef.current) emptySlots.push('popup');
+          if (!appIconImageRef.current) emptySlots.push('appIcon');
+          if (emptySlots.length === 1) {
+            target = emptySlots[0];
+          } else {
+            showToast('请将图片拖入指定的输入框区域', 'info');
+            return;
+          }
         }
 
         try {
@@ -144,10 +203,13 @@ const CPSAutomation: React.FC = () => {
           console.error('读取拖拽文件失败:', err);
           showToast('读取文件失败', 'error');
         }
+
+        hoverTargetRef.current = null;
       });
 
       unlistenCancel = await listen('tauri://file-drop-cancelled', () => {
         setDragOverTarget(null);
+        hoverTargetRef.current = null;
       });
     };
 
@@ -157,7 +219,7 @@ const CPSAutomation: React.FC = () => {
       unlistenHover?.();
       unlistenCancel?.();
     };
-  }, [showToast]);
+  }, [showToast, findDropTargetUnderCursor]);
 
   // ---- 图片处理工具函数 ----
 
@@ -552,6 +614,7 @@ const CPSAutomation: React.FC = () => {
     const isDragOver = dragOverTarget === type;
     return (
       <div
+        data-drop-target={type}
         className={`w-full h-full border-2 border-dashed rounded-lg flex flex-col items-center justify-center cursor-pointer transition-colors relative overflow-hidden ${
           isDragOver ? 'border-blue-500 bg-blue-500/10' : 'border-[#444444] hover:border-[#555555]'
         }`}
@@ -748,6 +811,7 @@ const CPSAutomation: React.FC = () => {
           </div>
           <div className="text-xs text-[#555555] mb-2">{renderHighlightedName(config.popup.namePrefix)}</div>
           <div className="bg-[#222222] rounded-lg overflow-hidden"
+            data-drop-target="popup"
             style={{ aspectRatio: `${config.popup.width}/${config.popup.height}` }}
             onMouseEnter={() => { hoverTargetRef.current = 'popup'; }}
             onMouseLeave={() => { if (hoverTargetRef.current === 'popup') hoverTargetRef.current = null; }}
@@ -767,6 +831,7 @@ const CPSAutomation: React.FC = () => {
           </div>
           <div className="text-xs text-[#555555] mb-2">{renderHighlightedName(config.appIcon.namePrefix)}</div>
           <div className="bg-[#222222] rounded-lg overflow-hidden mx-auto"
+            data-drop-target="appIcon"
             style={{ aspectRatio: `${config.appIcon.width}/${config.appIcon.height}`, maxWidth: '200px' }}
             onMouseEnter={() => { hoverTargetRef.current = 'appIcon'; }}
             onMouseLeave={() => { if (hoverTargetRef.current === 'appIcon') hoverTargetRef.current = null; }}

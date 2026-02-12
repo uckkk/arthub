@@ -9,7 +9,8 @@ use std::sync::Mutex;
 use winapi::um::winuser::{
     MonitorFromPoint, GetMonitorInfoW, MONITOR_DEFAULTTONEAREST,
     EnumWindows, GetWindowTextW, SetForegroundWindow, ShowWindow, 
-    SW_RESTORE, SW_MINIMIZE, IsWindowVisible, IsIconic, GetClassNameW
+    SW_RESTORE, SW_MINIMIZE, IsWindowVisible, IsIconic, GetClassNameW,
+    GetCursorPos
 };
 #[cfg(target_os = "windows")]
 use winapi::shared::windef::{POINT, HWND};
@@ -2183,7 +2184,8 @@ fn main() {
             rename_file_with_path,
             enable_autostart,
             disable_autostart,
-            is_autostart_enabled
+            is_autostart_enabled,
+            get_cursor_position
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
@@ -2463,5 +2465,27 @@ fn is_autostart_enabled(_app: tauri::AppHandle) -> Result<bool, String> {
     #[cfg(not(any(target_os = "windows", target_os = "macos")))]
     {
         Ok(false)
+    }
+}
+
+// Tauri 命令：获取操作系统级鼠标光标位置（屏幕物理像素坐标）
+// 用于在 Tauri 文件拖拽（file-drop）事件中定位目标元素
+// 因为 Tauri 拦截了原生拖拽事件，DOM 的 mouseenter/dragover 等事件不会触发
+#[tauri::command]
+fn get_cursor_position() -> Result<(i32, i32), String> {
+    #[cfg(target_os = "windows")]
+    {
+        unsafe {
+            let mut point = POINT { x: 0, y: 0 };
+            if GetCursorPos(&mut point) != 0 {
+                Ok((point.x, point.y))
+            } else {
+                Err("Failed to get cursor position".to_string())
+            }
+        }
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        Err("get_cursor_position is only supported on Windows".to_string())
     }
 }
