@@ -5,6 +5,7 @@ import { invoke } from '@tauri-apps/api/tauri';
 import { open } from '@tauri-apps/api/dialog';
 import { listen } from '@tauri-apps/api/event';
 import { appWindow } from '@tauri-apps/api/window';
+import JSZip from 'jszip';
 
 // 默认参数配置
 const DEFAULT_CONFIG = {
@@ -616,16 +617,20 @@ const CPSAutomation: React.FC = () => {
         // 导出完成后自动打开目标文件夹
         try { await invoke('open_folder', { path: selectedDir }); } catch (_) { /* 静默 */ }
       } else {
-        // 浏览器环境：逐个下载文件
+        // 浏览器环境：打包为 zip 一次下载
+        const zip = new JSZip();
         for (const img of images) {
-          const url = URL.createObjectURL(img.blob);
-          const a = document.createElement('a');
-          a.href = url;
-          a.download = img.name;
-          a.click();
-          URL.revokeObjectURL(url);
+          zip.file(img.name, img.blob);
         }
-        showToast(`成功导出 ${images.length} 张图片`, 'success');
+        const zipBlob = await zip.generateAsync({ type: 'blob' });
+        const zipName = `CPS_${customName || 'export'}.zip`;
+        const url = URL.createObjectURL(zipBlob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = zipName;
+        a.click();
+        URL.revokeObjectURL(url);
+        showToast(`成功导出 ${images.length} 张图片（${zipName}）`, 'success');
       }
     } catch (error) {
       console.error('导出失败:', error);
