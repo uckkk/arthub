@@ -654,6 +654,16 @@ const CPSAutomation: React.FC = () => {
     </div>
   );
 
+  // ---- 尺寸输入（禁用时显示为静态文本，启用时变为可编辑输入框） ----
+  const dimInput = (value: number, onChange: (v: number) => void) => (
+    paramDisabled ? (
+      <span className="text-xs text-white">{value}</span>
+    ) : (
+      <input type="number" value={value} onChange={e => onChange(parseInt(e.target.value) || 1)}
+        className="w-14 px-1.5 py-0.5 bg-[#2a2a2a] border border-[#3a3a3a] rounded text-white text-xs text-center" />
+    )
+  );
+
   // ---- 上传区域 ----
   const renderUploadBox = (
     type: 'portrait' | 'popup' | 'appIcon',
@@ -831,9 +841,9 @@ const CPSAutomation: React.FC = () => {
           <div className="shrink-0">
             <div className="flex items-center gap-2 mb-1">
               <span className="text-xs text-[#888888]">W</span>
-              <span className="text-xs text-white">{config.portrait.outputSizes.big.width}</span>
+              {dimInput(config.portrait.outputSizes.big.width, v => setConfig({ ...config, portrait: { ...config.portrait, outputSizes: { ...config.portrait.outputSizes, big: { ...config.portrait.outputSizes.big, width: v } } } }))}
               <span className="text-xs text-[#888888] ml-2">H</span>
-              <span className="text-xs text-white">{config.portrait.outputSizes.big.height}</span>
+              {dimInput(config.portrait.outputSizes.big.height, v => setConfig({ ...config, portrait: { ...config.portrait, outputSizes: { ...config.portrait.outputSizes, big: { ...config.portrait.outputSizes.big, height: v } } } }))}
               <span className="text-xs text-[#555555] ml-1">(含投影)</span>
             </div>
             <div className="text-xs text-[#555555] mb-1">{renderHighlightedName(config.portrait.namePrefix, 'big')}</div>
@@ -847,9 +857,9 @@ const CPSAutomation: React.FC = () => {
           <div className="shrink-0">
             <div className="flex items-center gap-2 mb-1">
               <span className="text-xs text-[#888888]">W</span>
-              <span className="text-xs text-white">{config.portrait.outputSizes.mid.width}</span>
+              {dimInput(config.portrait.outputSizes.mid.width, v => setConfig({ ...config, portrait: { ...config.portrait, outputSizes: { ...config.portrait.outputSizes, mid: { ...config.portrait.outputSizes.mid, width: v } } } }))}
               <span className="text-xs text-[#888888] ml-2">H</span>
-              <span className="text-xs text-white">{config.portrait.outputSizes.mid.height}</span>
+              {dimInput(config.portrait.outputSizes.mid.height, v => setConfig({ ...config, portrait: { ...config.portrait, outputSizes: { ...config.portrait.outputSizes, mid: { ...config.portrait.outputSizes.mid, height: v } } } }))}
             </div>
             <div className="text-xs text-[#555555] mb-1">{renderHighlightedName(config.portrait.namePrefix, 'mid')}</div>
             <div className="bg-[#222222] rounded-lg overflow-hidden"
@@ -868,9 +878,9 @@ const CPSAutomation: React.FC = () => {
           <div className="shrink-0">
             <div className="flex items-center gap-2 mb-1">
               <span className="text-xs text-[#888888]">W</span>
-              <span className="text-xs text-white">{config.portrait.outputSizes.small.width}</span>
+              {dimInput(config.portrait.outputSizes.small.width, v => setConfig({ ...config, portrait: { ...config.portrait, outputSizes: { ...config.portrait.outputSizes, small: { ...config.portrait.outputSizes.small, width: v } } } }))}
               <span className="text-xs text-[#888888] ml-2">H</span>
-              <span className="text-xs text-white">{config.portrait.outputSizes.small.height}</span>
+              {dimInput(config.portrait.outputSizes.small.height, v => setConfig({ ...config, portrait: { ...config.portrait, outputSizes: { ...config.portrait.outputSizes, small: { ...config.portrait.outputSizes.small, height: v } } } }))}
             </div>
             <div className="text-xs text-[#555555] mb-1">{renderHighlightedName(config.portrait.namePrefix, 'small')}</div>
             <div className="bg-[#222222] rounded-lg overflow-hidden"
@@ -894,9 +904,9 @@ const CPSAutomation: React.FC = () => {
           <h2 className="text-sm font-semibold mb-2">弹窗</h2>
           <div className="flex items-center gap-2 mb-1">
             <span className="text-xs text-[#888888]">W</span>
-            <span className="text-xs text-white">{config.popup.width}</span>
+            {dimInput(config.popup.width, v => setConfig({ ...config, popup: { ...config.popup, width: v } }))}
             <span className="text-xs text-[#888888] ml-2">H</span>
-            <span className="text-xs text-white">{config.popup.height}</span>
+            {dimInput(config.popup.height, v => setConfig({ ...config, popup: { ...config.popup, height: v } }))}
             <span className="text-xs text-[#555555] ml-1">R{config.portrait.borderRadius}</span>
           </div>
           <div className="text-xs text-[#555555] mb-1">{renderHighlightedName(config.popup.namePrefix)}</div>
@@ -915,9 +925,9 @@ const CPSAutomation: React.FC = () => {
           <h2 className="text-sm font-semibold mb-2">APPicon</h2>
           <div className="flex items-center gap-2 mb-1">
             <span className="text-xs text-[#888888]">W</span>
-            <span className="text-xs text-white">{config.appIcon.width}</span>
+            {dimInput(config.appIcon.width, v => setConfig({ ...config, appIcon: { ...config.appIcon, width: v } }))}
             <span className="text-xs text-[#888888] ml-2">H</span>
-            <span className="text-xs text-white">{config.appIcon.height}</span>
+            {dimInput(config.appIcon.height, v => setConfig({ ...config, appIcon: { ...config.appIcon, height: v } }))}
             <span className="text-xs text-[#555555] ml-1">R{config.appIcon.borderRadius}</span>
           </div>
 
