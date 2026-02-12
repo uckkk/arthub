@@ -527,9 +527,14 @@ const UIAudit: React.FC = () => {
 
   useEffect(() => { renderCanvas(); }, [renderCanvas]);
 
-  /* ---------- 画布自适应缩放 (填满可用空间) ---------- */
+  /* ---------- 画布视口: 缩放 + 平移 ---------- */
   const [containerSize, setContainerSize] = useState({ w: 600, h: 700 });
+  const [zoom, setZoom] = useState(1);       // 用户缩放倍率 (1 = 自适应)
+  const [pan, setPan] = useState({ x: 0, y: 0 }); // 平移偏移 (px)
+  const isPanningRef = useRef(false);
+  const panStartRef = useRef({ x: 0, y: 0, panX: 0, panY: 0 });
 
+  // 容器尺寸监听
   useEffect(() => {
     const el = canvasAreaRef.current;
     if (!el) return;
@@ -545,18 +550,81 @@ const UIAudit: React.FC = () => {
     return () => ro.disconnect();
   }, []);
 
-  const canvasStyle = useMemo(() => {
-    const cw = screenSize.width + 40;  // 画布逻辑宽 (含 padding)
+  // 切换设备/宽高比时重置视口
+  useEffect(() => {
+    setZoom(1);
+    setPan({ x: 0, y: 0 });
+  }, [screenSize]);
+
+  // 基础适配缩放 (让设备完整显示在容器中)
+  const baseScale = useMemo(() => {
+    const cw = screenSize.width + 40;
     const ch = screenSize.height + 40;
-    // 可用空间 (减去底部文字区域留 60px)
     const availW = Math.max(containerSize.w - 32, 200);
-    const availH = Math.max(containerSize.h - 80, 200);
-    const scale = Math.min(1, availW / cw, availH / ch);
-    return {
-      width: cw * scale,
-      height: ch * scale,
-    };
+    const availH = Math.max(containerSize.h - 60, 200);
+    return Math.min(1, availW / cw, availH / ch);
   }, [screenSize, containerSize]);
+
+  // 最终显示尺寸 = 基础适配 × 用户缩放
+  const canvasStyle = useMemo(() => {
+    const cw = screenSize.width + 40;
+    const ch = screenSize.height + 40;
+    const s = baseScale * zoom;
+    return { width: cw * s, height: ch * s };
+  }, [screenSize, baseScale, zoom]);
+
+  // 滚轮缩放 (以光标为锚点)
+  const handleWheel = useCallback((e: React.WheelEvent) => {
+    e.preventDefault();
+    const delta = -e.deltaY;
+    const factor = delta > 0 ? 1.1 : 1 / 1.1;
+    const newZoom = Math.min(Math.max(zoom * factor, 0.2), 5);
+
+    // 锚点: 光标相对容器中心的偏移
+    const rect = canvasAreaRef.current?.getBoundingClientRect();
+    if (rect) {
+      const cx = e.clientX - rect.left - rect.width / 2;
+      const cy = e.clientY - rect.top - rect.height / 2;
+      const scale = 1 - newZoom / zoom;
+      setPan(prev => ({
+        x: prev.x + (cx - prev.x) * scale,
+        y: prev.y + (cy - prev.y) * scale,
+      }));
+    }
+
+    setZoom(newZoom);
+  }, [zoom]);
+
+  // 左键按住拖动
+  const handlePanStart = useCallback((e: React.MouseEvent) => {
+    // 仅左键, 且不在 input / button 上
+    if (e.button !== 0) return;
+    const tag = (e.target as HTMLElement).tagName;
+    if (tag === 'INPUT' || tag === 'BUTTON') return;
+
+    isPanningRef.current = true;
+    panStartRef.current = { x: e.clientX, y: e.clientY, panX: pan.x, panY: pan.y };
+    e.preventDefault();
+  }, [pan]);
+
+  const handlePanMove = useCallback((e: React.MouseEvent) => {
+    if (!isPanningRef.current) return;
+    const dx = e.clientX - panStartRef.current.x;
+    const dy = e.clientY - panStartRef.current.y;
+    setPan({ x: panStartRef.current.panX + dx, y: panStartRef.current.panY + dy });
+  }, []);
+
+  const handlePanEnd = useCallback(() => {
+    isPanningRef.current = false;
+  }, []);
+
+  // 双击归位
+  const handleDoubleClick = useCallback((e: React.MouseEvent) => {
+    // 避免触发文件选择
+    if ((e.target as HTMLElement).tagName === 'INPUT') return;
+    setZoom(1);
+    setPan({ x: 0, y: 0 });
+  }, []);
 
   /* ---------- 小程序切换 ---------- */
   const toggleMiniProgram = useCallback((id: string) => {
@@ -584,37 +652,54 @@ const UIAudit: React.FC = () => {
      ============================================================ */
   return (
     <div className="flex h-full bg-[#0e0e0e] text-white overflow-hidden">
-      {/* ---- 左侧: 画布区 ---- */}
-      <div ref={canvasAreaRef} className="flex-1 flex flex-col items-center justify-center p-4 min-w-0 overflow-auto">
-        {/* 上传区 / 画布 */}
-        {!image ? (
-          <div
-            data-drop-target="ui-audit"
-            className={`rounded-2xl border-2 border-dashed transition-all flex flex-col items-center justify-center cursor-pointer select-none ${
-              isDragging
-                ? 'border-blue-400 bg-blue-400/10'
-                : 'border-[#333] hover:border-[#555] bg-[#161616]'
-            }`}
-            style={{ width: canvasStyle.width, height: canvasStyle.height }}
-            onDrop={handleDrop}
-            onDragOver={handleDragOver}
-            onDragLeave={handleDragLeave}
-            onClick={() => fileInputRef.current?.click()}
-          >
-            <Upload size={40} className="text-[#555] mb-3" />
-            <p className="text-sm text-[#888]">拖放或点击上传游戏截图</p>
-            <p className="text-xs text-[#555] mt-1">支持 PNG / JPG / WebP</p>
-            <p className="text-[10px] text-[#444] mt-2">{screenSize.width}×{screenSize.height}pt</p>
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept="image/*"
-              className="hidden"
-              onChange={handleFileSelect}
-            />
-          </div>
-        ) : (
-          <div className="flex flex-col items-center gap-3">
+      {/* ---- 左侧: 画布区 (可缩放 + 可拖动) ---- */}
+      <div
+        ref={canvasAreaRef}
+        className="flex-1 flex flex-col min-w-0 overflow-hidden relative"
+        onWheel={handleWheel}
+        onMouseDown={handlePanStart}
+        onMouseMove={handlePanMove}
+        onMouseUp={handlePanEnd}
+        onMouseLeave={handlePanEnd}
+        onDoubleClick={handleDoubleClick}
+        style={{ cursor: isPanningRef.current ? 'grabbing' : 'grab' }}
+      >
+        {/* 可平移+缩放的内容层 */}
+        <div
+          className="flex-1 flex items-center justify-center"
+          style={{
+            transform: `translate(${pan.x}px, ${pan.y}px)`,
+            transition: isPanningRef.current ? 'none' : undefined,
+          }}
+        >
+          {/* 上传区 / 画布 */}
+          {!image ? (
+            <div
+              data-drop-target="ui-audit"
+              className={`rounded-2xl border-2 border-dashed transition-colors flex flex-col items-center justify-center cursor-pointer select-none ${
+                isDragging
+                  ? 'border-blue-400 bg-blue-400/10'
+                  : 'border-[#333] hover:border-[#555] bg-[#161616]'
+              }`}
+              style={{ width: canvasStyle.width, height: canvasStyle.height }}
+              onDrop={handleDrop}
+              onDragOver={handleDragOver}
+              onDragLeave={handleDragLeave}
+              onClick={(e) => { e.stopPropagation(); fileInputRef.current?.click(); }}
+            >
+              <Upload size={40} className="text-[#555] mb-3" />
+              <p className="text-sm text-[#888]">拖放或点击上传游戏截图</p>
+              <p className="text-xs text-[#555] mt-1">支持 PNG / JPG / WebP</p>
+              <p className="text-[10px] text-[#444] mt-2">{screenSize.width}×{screenSize.height}pt</p>
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="image/*"
+                className="hidden"
+                onChange={handleFileSelect}
+              />
+            </div>
+          ) : (
             <div
               data-drop-target="ui-audit"
               className="relative"
@@ -634,29 +719,49 @@ const UIAudit: React.FC = () => {
                 </div>
               )}
             </div>
-            <div className="flex items-center gap-3 text-xs text-[#888] flex-wrap justify-center">
-              <span>{imageName}</span>
-              <span>·</span>
-              <span>{device.name}</span>
-              <span>·</span>
-              <span>{screenSize.width}×{screenSize.height}pt</span>
-              {aspectMode !== 'device' && (
-                <>
-                  <span>·</span>
-                  <span className="text-blue-400">
-                    {aspectMode === 'preset' ? selectedAspectId : `${customWidth}:${customHeight}`}
-                  </span>
-                </>
-              )}
+          )}
+        </div>
+
+        {/* 底部信息栏 (固定在视口底部, 不随平移) */}
+        <div className="absolute bottom-0 left-0 right-0 flex items-center justify-center gap-3 py-2 px-4 bg-gradient-to-t from-[#0e0e0e] via-[#0e0e0ecc] to-transparent pointer-events-none">
+          <div className="flex items-center gap-3 text-xs text-[#888] flex-wrap justify-center pointer-events-auto">
+            {image && (
+              <>
+                <span>{imageName}</span>
+                <span>·</span>
+              </>
+            )}
+            <span>{device.name}</span>
+            <span>·</span>
+            <span>{screenSize.width}×{screenSize.height}pt</span>
+            {aspectMode !== 'device' && (
+              <>
+                <span>·</span>
+                <span className="text-blue-400">
+                  {aspectMode === 'preset' ? selectedAspectId : `${customWidth}:${customHeight}`}
+                </span>
+              </>
+            )}
+            <span>·</span>
+            <span>{Math.round(zoom * baseScale * 100)}%</span>
+            {image && (
               <button
                 className="ml-2 px-2 py-1 rounded bg-[#222] hover:bg-[#333] text-[#aaa] transition-colors"
                 onClick={() => { setImage(null); setImageName(''); }}
               >
                 更换截图
               </button>
-            </div>
+            )}
+            {(zoom !== 1 || pan.x !== 0 || pan.y !== 0) && (
+              <button
+                className="px-2 py-1 rounded bg-[#222] hover:bg-[#333] text-[#aaa] transition-colors"
+                onClick={() => { setZoom(1); setPan({ x: 0, y: 0 }); }}
+              >
+                归位
+              </button>
+            )}
           </div>
-        )}
+        </div>
       </div>
 
       {/* ---- 右侧: 控制面板 ---- */}
