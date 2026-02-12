@@ -757,7 +757,7 @@ const CPSAutomation: React.FC = () => {
         <h2 className="text-base font-semibold mb-3">通用立绘 <span className="text-xs text-[#666] font-normal ml-2">导出含投影</span></h2>
 
         {/* 参数行 */}
-        <div className="flex flex-wrap items-end gap-x-5 gap-y-3 mb-4">
+        <div className="flex flex-wrap items-end gap-x-5 gap-y-3 mb-8">
           {/* 圆角（可禁用） */}
           <div className={`transition-opacity ${paramDisabled ? 'opacity-40 pointer-events-none' : ''}`}>
             <div className="text-xs text-[#888888] mb-1">圆角</div>
