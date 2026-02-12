@@ -18,11 +18,20 @@ const DEFAULT_CONFIG = {
       spread: 0,
       color: 'rgba(0, 0, 0, 0.2)',
     },
+    // 内容裁切尺寸（蓝色区域）
     sizes: {
-      big: { width: 619, height: 536 },
+      big: { width: 618, height: 536 },
       mid: { width: 290, height: 536 },
       small: { width: 290, height: 246 },
     },
+    // 固定输出尺寸（含投影边距的黑色区域）
+    outputSizes: {
+      big: { width: 648, height: 566 },
+      mid: { width: 320, height: 566 },
+      small: { width: 320, height: 276 },
+    },
+    // 内容裁切区到输出边缘的固定间距
+    margin: { left: 15, right: 15, top: 7, bottom: 23 },
     namePrefix: 'cps_big_icon@',
   },
   popup: {
@@ -82,16 +91,8 @@ const CPSAutomation: React.FC = () => {
   useEffect(() => { popupImageRef.current = popupImage; }, [popupImage]);
   useEffect(() => { appIconImageRef.current = appIconImage; }, [appIconImage]);
 
-  // ---- 投影 padding 计算（通用立绘专用，弹窗和icon无投影） ----
-  const shadowPadding = useMemo(() => {
-    const { offsetX, offsetY, blur } = config.portrait.shadow;
-    return {
-      left: blur + Math.max(0, -offsetX),
-      right: blur + Math.max(0, offsetX),
-      top: blur + Math.max(0, -offsetY),
-      bottom: blur + Math.max(0, offsetY),
-    };
-  }, [config.portrait.shadow]);
+  // ---- 固定边距（内容裁切区到输出边缘） ----
+  const margin = config.portrait.margin;
 
   // ---- 环境检测 ----
   const isTauri = typeof window !== 'undefined' && !!(window as any).__TAURI_IPC__;
@@ -408,10 +409,11 @@ const CPSAutomation: React.FC = () => {
 
   // ---- 渲染逻辑 ----
 
-  // 通用立绘渲染（包含投影，画布比内容大）
+  // 通用立绘渲染（固定输出尺寸，固定边距，内容区带投影和圆角裁剪）
   const renderPortrait = useCallback(async (
     canvasRef: React.RefObject<HTMLCanvasElement>,
     size: { width: number; height: number },
+    outputSize: { width: number; height: number },
     sizeType: 'big' | 'mid' | 'small'
   ) => {
     if (!canvasRef.current || !portraitImage) return;
@@ -419,10 +421,9 @@ const CPSAutomation: React.FC = () => {
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
-    // 画布 = 内容尺寸 + 投影 padding
-    const pad = shadowPadding;
-    canvas.width = size.width + pad.left + pad.right;
-    canvas.height = size.height + pad.top + pad.bottom;
+    // 画布 = 固定输出尺寸
+    canvas.width = outputSize.width;
+    canvas.height = outputSize.height;
 
     try {
       const img = await loadImage(portraitImage.file);
@@ -434,9 +435,9 @@ const CPSAutomation: React.FC = () => {
         sizeType === 'mid' ? fitMidSize(img, size.width, size.height) :
                              fitSmallSize(img, size.width, size.height);
 
-      // 内容绘制位置 = padding 偏移 + 适配偏移
-      const contentX = pad.left;
-      const contentY = pad.top;
+      // 内容绘制位置 = 固定边距偏移
+      const contentX = margin.left;
+      const contentY = margin.top;
       const drawX = contentX + params.dx;
       const drawY = contentY + params.dy;
 
@@ -446,7 +447,7 @@ const CPSAutomation: React.FC = () => {
       ctx.shadowOffsetY = config.portrait.shadow.offsetY;
       ctx.shadowBlur = config.portrait.shadow.blur;
       ctx.shadowColor = config.portrait.shadow.color;
-      ctx.fillStyle = '#1b1b1b'; // 卡片底色 (来自 CSS: UIColor(0.106, 0.106, 0.106))
+      ctx.fillStyle = '#1b1b1b';
       drawRoundedRect(ctx, contentX, contentY, size.width, size.height,
         config.portrait.borderRadius, config.portrait.smoothBorderRadius);
       ctx.fill();
@@ -462,7 +463,7 @@ const CPSAutomation: React.FC = () => {
     } catch (e) {
       console.error('渲染预览失败:', e);
     }
-  }, [portraitImage, config.portrait, shadowPadding]);
+  }, [portraitImage, config.portrait, margin]);
 
   // 弹窗渲染（无投影，平滑圆角裁剪，最长边撑满）
   const renderPopup = useCallback(async () => {
@@ -516,9 +517,9 @@ const CPSAutomation: React.FC = () => {
 
   useEffect(() => {
     if (portraitImage) {
-      renderPortrait(portraitBigCanvasRef, config.portrait.sizes.big, 'big');
-      renderPortrait(portraitMidCanvasRef, config.portrait.sizes.mid, 'mid');
-      renderPortrait(portraitSmallCanvasRef, config.portrait.sizes.small, 'small');
+      renderPortrait(portraitBigCanvasRef, config.portrait.sizes.big, config.portrait.outputSizes.big, 'big');
+      renderPortrait(portraitMidCanvasRef, config.portrait.sizes.mid, config.portrait.outputSizes.mid, 'mid');
+      renderPortrait(portraitSmallCanvasRef, config.portrait.sizes.small, config.portrait.outputSizes.small, 'small');
     }
   }, [portraitImage, config.portrait, renderPortrait]);
 
@@ -680,11 +681,9 @@ const CPSAutomation: React.FC = () => {
     );
   };
 
-  // ---- 计算含投影的画布宽高比（用于预览容器） ----
-  const paddedAspect = (size: { width: number; height: number }) => {
-    const w = size.width + shadowPadding.left + shadowPadding.right;
-    const h = size.height + shadowPadding.top + shadowPadding.bottom;
-    return `${w}/${h}`;
+  // ---- 输出尺寸宽高比（用于预览容器） ----
+  const outputAspect = (outputSize: { width: number; height: number }) => {
+    return `${outputSize.width}/${outputSize.height}`;
   };
 
   // ---- 预览布局（紧凑模式：固定高度 + 等比宽度，仅影响显示，不影响导出） ----
@@ -694,10 +693,10 @@ const CPSAutomation: React.FC = () => {
 
   // 小尺寸立绘预览高度（与大/中保持同一缩放比例）
   const smallPreviewH = useMemo(() => {
-    const bigH = config.portrait.sizes.big.height + shadowPadding.top + shadowPadding.bottom;
-    const smallH = config.portrait.sizes.small.height + shadowPadding.top + shadowPadding.bottom;
+    const bigH = config.portrait.outputSizes.big.height;
+    const smallH = config.portrait.outputSizes.small.height;
     return Math.round(PORTRAIT_PREVIEW_H * smallH / bigH);
-  }, [config.portrait.sizes, shadowPadding]);
+  }, [config.portrait.outputSizes]);
 
   // ---- 渲染 ----
   return (
@@ -790,14 +789,14 @@ const CPSAutomation: React.FC = () => {
           <div className="shrink-0">
             <div className="flex items-center gap-2 mb-1">
               <span className="text-xs text-[#888888]">W</span>
-              <span className="text-xs text-white">{config.portrait.sizes.big.width}</span>
+              <span className="text-xs text-white">{config.portrait.outputSizes.big.width}</span>
               <span className="text-xs text-[#888888] ml-2">H</span>
-              <span className="text-xs text-white">{config.portrait.sizes.big.height}</span>
-              <span className="text-xs text-[#555555] ml-1">(+投影)</span>
+              <span className="text-xs text-white">{config.portrait.outputSizes.big.height}</span>
+              <span className="text-xs text-[#555555] ml-1">(含投影)</span>
             </div>
             <div className="text-xs text-[#555555] mb-1">{renderHighlightedName(config.portrait.namePrefix, 'big')}</div>
             <div className="bg-[#222222] rounded-lg overflow-hidden"
-              style={{ height: `${PORTRAIT_PREVIEW_H}px`, aspectRatio: paddedAspect(config.portrait.sizes.big) }}>
+              style={{ height: `${PORTRAIT_PREVIEW_H}px`, aspectRatio: outputAspect(config.portrait.outputSizes.big) }}>
               {renderUploadBox('portrait', portraitImage, portraitBigCanvasRef)}
             </div>
           </div>
@@ -806,13 +805,13 @@ const CPSAutomation: React.FC = () => {
           <div className="shrink-0">
             <div className="flex items-center gap-2 mb-1">
               <span className="text-xs text-[#888888]">W</span>
-              <span className="text-xs text-white">{config.portrait.sizes.mid.width}</span>
+              <span className="text-xs text-white">{config.portrait.outputSizes.mid.width}</span>
               <span className="text-xs text-[#888888] ml-2">H</span>
-              <span className="text-xs text-white">{config.portrait.sizes.mid.height}</span>
+              <span className="text-xs text-white">{config.portrait.outputSizes.mid.height}</span>
             </div>
             <div className="text-xs text-[#555555] mb-1">{renderHighlightedName(config.portrait.namePrefix, 'mid')}</div>
             <div className="bg-[#222222] rounded-lg overflow-hidden"
-              style={{ height: `${PORTRAIT_PREVIEW_H}px`, aspectRatio: paddedAspect(config.portrait.sizes.mid) }}>
+              style={{ height: `${PORTRAIT_PREVIEW_H}px`, aspectRatio: outputAspect(config.portrait.outputSizes.mid) }}>
               {portraitImage ? (
                 <canvas ref={portraitMidCanvasRef} className="w-full h-full" />
               ) : (
@@ -827,13 +826,13 @@ const CPSAutomation: React.FC = () => {
           <div className="shrink-0">
             <div className="flex items-center gap-2 mb-1">
               <span className="text-xs text-[#888888]">W</span>
-              <span className="text-xs text-white">{config.portrait.sizes.small.width}</span>
+              <span className="text-xs text-white">{config.portrait.outputSizes.small.width}</span>
               <span className="text-xs text-[#888888] ml-2">H</span>
-              <span className="text-xs text-white">{config.portrait.sizes.small.height}</span>
+              <span className="text-xs text-white">{config.portrait.outputSizes.small.height}</span>
             </div>
             <div className="text-xs text-[#555555] mb-1">{renderHighlightedName(config.portrait.namePrefix, 'small')}</div>
             <div className="bg-[#222222] rounded-lg overflow-hidden"
-              style={{ height: `${smallPreviewH}px`, aspectRatio: paddedAspect(config.portrait.sizes.small) }}>
+              style={{ height: `${smallPreviewH}px`, aspectRatio: outputAspect(config.portrait.outputSizes.small) }}>
               {portraitImage ? (
                 <canvas ref={portraitSmallCanvasRef} className="w-full h-full" />
               ) : (
