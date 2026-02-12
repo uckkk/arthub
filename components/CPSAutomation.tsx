@@ -757,7 +757,7 @@ const CPSAutomation: React.FC = () => {
         <h2 className="text-base font-semibold mb-3">通用立绘 <span className="text-xs text-[#666] font-normal ml-2">导出含投影</span></h2>
 
         {/* 参数行 */}
-        <div className="flex flex-wrap items-end gap-x-5 gap-y-3 mb-8">
+        <div className="flex flex-wrap items-end gap-x-5 gap-y-3 mb-5">
           {/* 圆角（可禁用） */}
           <div className={`transition-opacity ${paramDisabled ? 'opacity-40 pointer-events-none' : ''}`}>
             <div className="text-xs text-[#888888] mb-1">圆角</div>
@@ -834,6 +834,9 @@ const CPSAutomation: React.FC = () => {
               placeholder="输入名称" className="w-40 px-2 py-1 bg-[#2a2a2a] border border-[#3a3a3a] rounded text-white text-xs" />
           </div>
         </div>
+
+        {/* 分割线 */}
+        <div className="h-px bg-[#2a2a2a] mb-5"></div>
 
         {/* 三张图预览区 - 紧凑等比布局：固定高度 + aspect-ratio 自动算宽度 */}
         <div className="flex gap-3 items-end">
