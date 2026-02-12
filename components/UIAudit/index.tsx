@@ -323,13 +323,12 @@ const UIAudit: React.FC = () => {
 
     const sw = screenSize.width;
     const sh = screenSize.height;
-    const DEVICE_PAD = 20;  // 设备外框内边距
-    const FRAME_R = 40;
-    const FRAME_BORDER = 3;
+    const FRAME_R = 40;       // 设备圆角
+    const FRAME_BORDER = 2.5; // 边框粗细
 
-    // 设备帧尺寸
-    const deviceW = sw + DEVICE_PAD * 2;
-    const deviceH = sh + DEVICE_PAD * 2;
+    // 设备帧 = 屏幕区域 (截图撑满圆角容器)
+    const deviceW = sw;
+    const deviceH = sh;
 
     // 画布总尺寸 = 标注区 + 设备 + 标注区
     const cw = ANNOTATION_MARGIN + deviceW + ANNOTATION_MARGIN;
@@ -339,8 +338,8 @@ const UIAudit: React.FC = () => {
 
     const deviceX = ANNOTATION_MARGIN; // 设备帧左上角 X
     const deviceY = 20;                // 设备帧左上角 Y
-    const screenX = deviceX + DEVICE_PAD; // 屏幕左上角
-    const screenY = deviceY + DEVICE_PAD;
+    const screenX = deviceX;           // 屏幕 = 设备帧 (无间距)
+    const screenY = deviceY;
 
     // 清空
     ctx.clearRect(0, 0, cw, ch);
@@ -646,11 +645,11 @@ const UIAudit: React.FC = () => {
 
   // 画布总尺寸 (含标注区域)
   const canvasLogicalSize = useMemo(() => {
-    const deviceW = screenSize.width + 40;
-    const deviceH = screenSize.height + 40;
+    const deviceW = screenSize.width;
+    const deviceH = screenSize.height;
     return {
       width: ANNOTATION_MARGIN + deviceW + ANNOTATION_MARGIN,
-      height: deviceH + 40,
+      height: deviceH + 40, // 上下各 20 给画布留白
     };
   }, [screenSize]);
 
