@@ -129,8 +129,7 @@ const CPSAutomation: React.FC = () => {
     if (target === 'portrait') setPortraitImage(imageFile);
     else if (target === 'popup') setPopupImage(imageFile);
     else if (target === 'appIcon') setAppIconImage(imageFile);
-    showToast(`已导入: ${file.name}`, 'success');
-  }, [showToast]);
+  }, []);
 
   // ---- Tauri 文件拖拽支持（仅在 Tauri 环境中注册） ----
   useEffect(() => {
@@ -612,6 +611,9 @@ const CPSAutomation: React.FC = () => {
             content: Array.from(new Uint8Array(buf)),
           });
         }
+        showToast(`成功导出 ${images.length} 张图片`, 'success');
+        // 导出完成后自动打开目标文件夹
+        try { await invoke('open_folder', { path: selectedDir }); } catch (_) { /* 静默 */ }
       } else {
         // 浏览器环境：逐个下载文件
         for (const img of images) {
@@ -622,8 +624,8 @@ const CPSAutomation: React.FC = () => {
           a.click();
           URL.revokeObjectURL(url);
         }
+        showToast(`成功导出 ${images.length} 张图片`, 'success');
       }
-      showToast(`成功导出 ${images.length} 张图片`, 'success');
     } catch (error) {
       console.error('导出失败:', error);
       showToast('导出失败: ' + (error instanceof Error ? error.message : String(error)), 'error');
