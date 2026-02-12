@@ -339,12 +339,12 @@ const AppContent: React.FC = () => {
           if (valid) {
             setIsUserVerified(true);
             setUserInfo(savedUserInfo);
+            // 认证成功后再启动自动同步（同步需要 Rust 端认证状态）
+            initAutoSync();
           } else {
-            // 凭据已失效（你在 GitHub 上改了密码），清除本地缓存
             clearUserInfo();
           }
         } catch {
-          // 网络失败时仍允许离线使用（Tauri 环境下 Rust 端无认证态，功能受限）
           clearUserInfo();
         }
         preloadComponents();
@@ -356,7 +356,7 @@ const AppContent: React.FC = () => {
     };
     
     loadData();
-    initAutoSync();
+    // initAutoSync 已移到认证成功后调用，避免未认证时写文件失败
     
     // 初始化全局快捷键（仅在 Tauri 环境中）
     if (typeof window !== 'undefined' && (window as any).__TAURI__) {
@@ -408,9 +408,10 @@ const AppContent: React.FC = () => {
     if (savedUserInfo) {
       setUserInfo(savedUserInfo);
     }
-    // 用户验证通过后，开始预加载所有组件和数据
+    // 用户验证通过后，开始预加载所有组件和数据，并启动自动同步
     preloadComponents();
     preloadAllData();
+    initAutoSync();
   };
 
   const handleLogout = async () => {
