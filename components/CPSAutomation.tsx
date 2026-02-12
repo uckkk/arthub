@@ -803,12 +803,6 @@ const CPSAutomation: React.FC = () => {
         {/* 弹窗 */}
         <div className="bg-[#1a1a1a] rounded-lg p-5">
           <h2 className="text-base font-semibold mb-3">弹窗 <span className="text-xs text-[#666] font-normal ml-2">{config.popup.width}×{config.popup.height} R{config.portrait.borderRadius}</span></h2>
-          <div className="mb-2">
-            <div className="text-xs text-[#888888] mb-1">默认资产名称</div>
-            <div className="text-xs text-white bg-[#2a2a2a] border border-[#3a3a3a] rounded px-2 py-1 inline-block">
-              {renderDefaultName(config.popup.namePrefix)}
-            </div>
-          </div>
           <div className="text-xs text-[#555555] mb-2">{renderHighlightedName(config.popup.namePrefix)}</div>
           <div className="bg-[#222222] rounded-lg overflow-hidden"
             data-drop-target="popup"
@@ -843,12 +837,6 @@ const CPSAutomation: React.FC = () => {
             </div>
           </div>
 
-          <div className="mb-2">
-            <div className="text-xs text-[#888888] mb-1">默认资产名称</div>
-            <div className="text-xs text-white bg-[#2a2a2a] border border-[#3a3a3a] rounded px-2 py-1 inline-block">
-              {renderDefaultName(config.appIcon.namePrefix)}
-            </div>
-          </div>
           <div className="text-xs text-[#555555] mb-2">{renderHighlightedName(config.appIcon.namePrefix)}</div>
           <div className="bg-[#222222] rounded-lg overflow-hidden mx-auto"
             data-drop-target="appIcon"
