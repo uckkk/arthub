@@ -18,8 +18,10 @@ interface OverlayWarning {
   id: string;
   level: 'error' | 'warn' | 'info';
   message: string;
-  /** 画布上标注的区域 (逻辑像素) */
-  rect?: { x: number; y: number; w: number; h: number };
+  /** 画布上标注的区域 (相对屏幕左上角的逻辑像素) */
+  rect: { x: number; y: number; w: number; h: number };
+  /** 标注放置侧 */
+  side?: 'left' | 'right';
 }
 
 type Orientation = 'portrait' | 'landscape';
@@ -311,6 +313,8 @@ const UIAudit: React.FC = () => {
   }, []);
 
   /* ---------- 画布渲染 ---------- */
+  const ANNOTATION_MARGIN = 200; // 标注区域宽度 (设备两侧)
+
   const renderCanvas = useCallback(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
@@ -319,21 +323,32 @@ const UIAudit: React.FC = () => {
 
     const sw = screenSize.width;
     const sh = screenSize.height;
-    const PADDING = 20; // 画布内边距(用于设备外框)
-    const FRAME_R = 40; // 设备外框圆角
-    const FRAME_BORDER = 3; // 外框边框粗细
+    const DEVICE_PAD = 20;  // 设备外框内边距
+    const FRAME_R = 40;
+    const FRAME_BORDER = 3;
 
-    const cw = sw + PADDING * 2;
-    const ch = sh + PADDING * 2;
+    // 设备帧尺寸
+    const deviceW = sw + DEVICE_PAD * 2;
+    const deviceH = sh + DEVICE_PAD * 2;
+
+    // 画布总尺寸 = 标注区 + 设备 + 标注区
+    const cw = ANNOTATION_MARGIN + deviceW + ANNOTATION_MARGIN;
+    const ch = deviceH + 40; // 上下各留 20
     canvas.width = cw;
     canvas.height = ch;
+
+    const deviceX = ANNOTATION_MARGIN; // 设备帧左上角 X
+    const deviceY = 20;                // 设备帧左上角 Y
+    const screenX = deviceX + DEVICE_PAD; // 屏幕左上角
+    const screenY = deviceY + DEVICE_PAD;
 
     // 清空
     ctx.clearRect(0, 0, cw, ch);
 
     // 1. 设备外框 (Apple 平滑圆角)
     ctx.save();
-    drawRoundedRect(ctx, FRAME_BORDER / 2, FRAME_BORDER / 2, cw - FRAME_BORDER, ch - FRAME_BORDER, FRAME_R, 80);
+    drawRoundedRect(ctx, deviceX + FRAME_BORDER / 2, deviceY + FRAME_BORDER / 2,
+      deviceW - FRAME_BORDER, deviceH - FRAME_BORDER, FRAME_R, 80);
     ctx.strokeStyle = '#444';
     ctx.lineWidth = FRAME_BORDER;
     ctx.stroke();
@@ -341,102 +356,158 @@ const UIAudit: React.FC = () => {
 
     // 2. 屏幕区域裁剪
     ctx.save();
-    ctx.rect(PADDING, PADDING, sw, sh);
+    ctx.rect(screenX, screenY, sw, sh);
     ctx.clip();
 
     // 2a. 屏幕背景
     ctx.fillStyle = '#111';
-    ctx.fillRect(PADDING, PADDING, sw, sh);
+    ctx.fillRect(screenX, screenY, sw, sh);
 
     // 2b. 截图
     if (image) {
       const imgW = image.naturalWidth;
       const imgH = image.naturalHeight;
-      // 等比缩放填满屏幕
       const scaleX = sw / imgW;
       const scaleY = sh / imgH;
-      const scale = Math.max(scaleX, scaleY); // cover
+      const scale = Math.max(scaleX, scaleY);
       const dw = imgW * scale;
       const dh = imgH * scale;
-      const dx = PADDING + (sw - dw) / 2;
-      const dy = PADDING + (sh - dh) / 2;
+      const dx = screenX + (sw - dw) / 2;
+      const dy = screenY + (sh - dh) / 2;
       ctx.drawImage(image, dx, dy, dw, dh);
     }
 
-    // ---------- 遮罩层 ----------
-    if (showOverlays) {
-      const ox = PADDING; // 屏幕偏移
-      const oy = PADDING;
-      const newWarnings: OverlayWarning[] = [];
+    // ---------- 遮罩层 + 收集标注 ----------
+    const newWarnings: OverlayWarning[] = [];
 
-      // 3. 状态栏/顶部安全区
+    if (showOverlays) {
+      const ox = screenX;
+      const oy = screenY;
+
+      // 3. 顶部安全区
       if (safeArea.top > 0) {
         ctx.fillStyle = OVERLAY_COLORS.safeAreaTop;
         ctx.fillRect(ox, oy, sw, safeArea.top);
+        newWarnings.push({
+          id: 'safe-top', level: 'warn',
+          message: `顶部安全区 ${safeArea.top}pt`,
+          rect: { x: 0, y: 0, w: sw, h: safeArea.top }, side: 'right',
+        });
       }
 
       // 4. 异形屏凹口
       if (device.cutout) {
         drawCutout(ctx, device, orientation, ox, oy, sw);
+        const c = device.cutout;
+        newWarnings.push({
+          id: 'cutout', level: 'error',
+          message: getCutoutName(c.type),
+          rect: orientation === 'portrait'
+            ? { x: c.x, y: c.y, w: c.width, h: c.height }
+            : { x: 0, y: c.x, w: c.height, h: c.width },
+          side: 'right',
+        });
       }
 
       // 5. 底部安全区
       if (safeArea.bottom > 0) {
         ctx.fillStyle = OVERLAY_COLORS.safeAreaBottom;
         ctx.fillRect(ox, oy + sh - safeArea.bottom, sw, safeArea.bottom);
+        newWarnings.push({
+          id: 'safe-bottom', level: 'warn',
+          message: `底部安全区 ${safeArea.bottom}pt`,
+          rect: { x: 0, y: sh - safeArea.bottom, w: sw, h: safeArea.bottom }, side: 'right',
+        });
       }
 
       // 6. 横屏左右安全区
       if (safeArea.left > 0) {
         ctx.fillStyle = OVERLAY_COLORS.safeAreaTop;
         ctx.fillRect(ox, oy, safeArea.left, sh);
+        newWarnings.push({
+          id: 'safe-left', level: 'warn',
+          message: `左侧安全区 ${safeArea.left}pt`,
+          rect: { x: 0, y: sh * 0.3, w: safeArea.left, h: 20 }, side: 'left',
+        });
       }
       if (safeArea.right > 0) {
         ctx.fillStyle = OVERLAY_COLORS.safeAreaTop;
         ctx.fillRect(ox + sw - safeArea.right, oy, safeArea.right, sh);
+        newWarnings.push({
+          id: 'safe-right', level: 'warn',
+          message: `右侧安全区 ${safeArea.right}pt`,
+          rect: { x: sw - safeArea.right, y: sh * 0.3, w: safeArea.right, h: 20 }, side: 'right',
+        });
       }
 
       // 7. 折叠屏折痕
       if (device.foldCrease) {
         const crease = device.foldCrease;
         ctx.fillStyle = OVERLAY_COLORS.foldCrease;
+        let creaseRect: OverlayWarning['rect'];
         if (orientation === 'portrait') {
           if (crease.position === 'vertical') {
             ctx.fillRect(ox + crease.offset - crease.width / 2, oy, crease.width, sh);
+            creaseRect = { x: crease.offset - crease.width / 2, y: sh * 0.5, w: crease.width, h: 10 };
           } else {
             ctx.fillRect(ox, oy + crease.offset - crease.width / 2, sw, crease.width);
+            creaseRect = { x: 0, y: crease.offset, w: sw, h: crease.width };
           }
         } else {
-          // 横屏时旋转
           if (crease.position === 'vertical') {
             ctx.fillRect(ox, oy + crease.offset - crease.width / 2, sw, crease.width);
+            creaseRect = { x: 0, y: crease.offset, w: sw, h: crease.width };
           } else {
             ctx.fillRect(ox + crease.offset - crease.width / 2, oy, crease.width, sh);
+            creaseRect = { x: crease.offset, y: sh * 0.5, w: crease.width, h: 10 };
           }
         }
         newWarnings.push({
-          id: 'fold-crease',
-          level: 'warn',
-          message: '折叠屏折痕区域 — 避免放置关键交互元素',
+          id: 'fold-crease', level: 'warn',
+          message: '折叠屏折痕',
+          rect: creaseRect, side: 'left',
         });
       }
 
-      // 8. Android 导航栏 (三键模式时更高)
+      // 8. Android 导航栏
       if (device.androidNavBar && androidNav === 'threeButton') {
         const navH = device.androidNavBar.threeButton;
         ctx.fillStyle = OVERLAY_COLORS.androidNav;
         if (orientation === 'portrait') {
           ctx.fillRect(ox, oy + sh - navH, sw, navH);
+          newWarnings.push({
+            id: 'android-nav', level: 'info',
+            message: `三键导航 ${navH}pt`,
+            rect: { x: 0, y: sh - navH, w: sw, h: navH }, side: 'left',
+          });
         } else {
           ctx.fillRect(ox + sw - navH, oy, navH, sh);
+          newWarnings.push({
+            id: 'android-nav', level: 'info',
+            message: `三键导航 ${navH}pt`,
+            rect: { x: sw - navH, y: sh * 0.7, w: navH, h: 20 }, side: 'right',
+          });
         }
       }
 
       // 9. 小程序遮罩
+      let mpIndex = 0;
       selectedMiniPrograms.forEach(mpId => {
         const mp = MINIPROGRAM_PRESETS.find(m => m.id === mpId);
         if (!mp) return;
         drawMiniProgramOverlay(ctx, mp, device, orientation, ox, oy, sw, sh);
+        const mpPlatform = getDevicePlatform(device);
+        const navH = mpPlatform === 'ios' ? mp.navBarHeight.ios : mp.navBarHeight.android;
+        const statusH = orientation === 'portrait' ? device.statusBarHeight.portrait : device.statusBarHeight.landscape;
+        newWarnings.push({
+          id: `mp-${mpId}`, level: 'warn',
+          message: mp.name.replace('小程序', ''),
+          rect: orientation === 'portrait'
+            ? { x: 0, y: statusH, w: sw, h: navH }
+            : { x: safeArea.left, y: statusH > 0 ? statusH : safeArea.top, w: sw * 0.3, h: navH },
+          side: mpIndex % 2 === 0 ? 'left' : 'right',
+        });
+        mpIndex++;
       });
 
       // 10. TabBar
@@ -446,8 +517,18 @@ const UIAudit: React.FC = () => {
         ctx.fillStyle = OVERLAY_COLORS.tabBar;
         if (orientation === 'portrait') {
           ctx.fillRect(ox, oy + sh - bottomOffset - tbH, sw, tbH);
+          newWarnings.push({
+            id: 'tabbar', level: 'info',
+            message: `TabBar ${tbH}pt`,
+            rect: { x: 0, y: sh - bottomOffset - tbH, w: sw, h: tbH }, side: 'left',
+          });
         } else {
           ctx.fillRect(ox + safeArea.left, oy + sh - tbH, sw - safeArea.left - safeArea.right, tbH);
+          newWarnings.push({
+            id: 'tabbar', level: 'info',
+            message: `TabBar ${tbH}pt`,
+            rect: { x: safeArea.left, y: sh - tbH, w: sw - safeArea.left - safeArea.right, h: tbH }, side: 'left',
+          });
         }
       }
 
@@ -457,71 +538,49 @@ const UIAudit: React.FC = () => {
           ? KEYBOARD_HEIGHTS.ios[orientation]
           : KEYBOARD_HEIGHTS.android[orientation];
         ctx.fillStyle = OVERLAY_COLORS.keyboard;
-        if (orientation === 'portrait') {
-          ctx.fillRect(ox, oy + sh - kbH, sw, kbH);
-        } else {
-          ctx.fillRect(ox, oy + sh - kbH, sw, kbH);
-        }
+        ctx.fillRect(ox, oy + sh - kbH, sw, kbH);
         newWarnings.push({
-          id: 'keyboard',
-          level: 'info',
-          message: `键盘弹出高度 ${kbH}pt — 确保输入框可见`,
-          rect: { x: 0, y: sh - kbH, w: sw, h: kbH },
+          id: 'keyboard', level: 'info',
+          message: `键盘 ${kbH}pt`,
+          rect: { x: 0, y: sh - kbH, w: sw, h: kbH }, side: 'left',
         });
       }
-
-      // 生成通用警告
-      if (safeArea.top > 0) {
-        newWarnings.push({
-          id: 'safe-top',
-          level: 'warn',
-          message: `顶部安全区 ${safeArea.top}pt — 避免放置可交互元素`,
-        });
-      }
-      if (safeArea.bottom > 0) {
-        newWarnings.push({
-          id: 'safe-bottom',
-          level: 'warn',
-          message: `底部安全区 ${safeArea.bottom}pt — 底部留出足够空间`,
-        });
-      }
-      if (device.cutout) {
-        newWarnings.push({
-          id: 'cutout',
-          level: 'error',
-          message: `${getCutoutName(device.cutout.type)} — 此区域内容会被遮挡`,
-        });
-      }
-      if (selectedMiniPrograms.size > 0) {
-        newWarnings.push({
-          id: 'mini-program-nav',
-          level: 'warn',
-          message: `${selectedMiniPrograms.size} 个小程序导航栏遮罩已启用`,
-        });
-      }
-
-      setWarnings(newWarnings);
-    } else {
-      setWarnings([]);
     }
 
+    setWarnings(newWarnings);
     ctx.restore(); // 结束屏幕裁剪
 
-    // 12. 设备外框裁剪 (屏幕四角圆角遮罩)
-    ctx.save();
-    ctx.globalCompositeOperation = 'destination-in';
-    drawRoundedRect(ctx, 0, 0, cw, ch, FRAME_R, 80);
-    ctx.fillStyle = '#000';
-    ctx.fill();
-    ctx.restore();
+    // 12. 设备帧圆角裁剪 (使用 offscreen canvas 隔离设备区域)
+    {
+      const offCanvas = document.createElement('canvas');
+      offCanvas.width = deviceW;
+      offCanvas.height = deviceH;
+      const offCtx = offCanvas.getContext('2d')!;
+      // 截取设备帧区域
+      offCtx.drawImage(canvas, deviceX, deviceY, deviceW, deviceH, 0, 0, deviceW, deviceH);
+      // 用圆角遮罩裁剪
+      offCtx.globalCompositeOperation = 'destination-in';
+      drawRoundedRect(offCtx, 0, 0, deviceW, deviceH, FRAME_R, 80);
+      offCtx.fillStyle = '#000';
+      offCtx.fill();
+      // 清除主画布的设备区域, 然后贴回裁剪后的
+      ctx.clearRect(deviceX, deviceY, deviceW, deviceH);
+      ctx.drawImage(offCanvas, deviceX, deviceY);
+    }
 
-    // 13. 重绘边框（因为 destination-in 会擦掉之前画的边框）
+    // 13. 重绘设备边框
     ctx.save();
-    drawRoundedRect(ctx, FRAME_BORDER / 2, FRAME_BORDER / 2, cw - FRAME_BORDER, ch - FRAME_BORDER, FRAME_R, 80);
+    drawRoundedRect(ctx, deviceX + FRAME_BORDER / 2, deviceY + FRAME_BORDER / 2,
+      deviceW - FRAME_BORDER, deviceH - FRAME_BORDER, FRAME_R, 80);
     ctx.strokeStyle = '#444';
     ctx.lineWidth = FRAME_BORDER;
     ctx.stroke();
     ctx.restore();
+
+    // ========== 14. 标注绘制 ==========
+    if (showOverlays && newWarnings.length > 0) {
+      drawAnnotations(ctx, newWarnings, screenX, screenY, sw, sh, deviceX, deviceW, cw, ch);
+    }
 
   }, [image, screenSize, device, orientation, safeArea, androidNav, selectedMiniPrograms, showKeyboard, showTabBar, showOverlays, platform]);
 
@@ -556,22 +615,31 @@ const UIAudit: React.FC = () => {
     setPan({ x: 0, y: 0 });
   }, [screenSize]);
 
-  // 基础适配缩放 (让设备完整显示在容器中)
+  // 画布总尺寸 (含标注区域)
+  const canvasLogicalSize = useMemo(() => {
+    const deviceW = screenSize.width + 40;
+    const deviceH = screenSize.height + 40;
+    return {
+      width: ANNOTATION_MARGIN + deviceW + ANNOTATION_MARGIN,
+      height: deviceH + 40,
+    };
+  }, [screenSize]);
+
+  // 基础适配缩放 (让整个画布含标注完整显示)
   const baseScale = useMemo(() => {
-    const cw = screenSize.width + 40;
-    const ch = screenSize.height + 40;
-    const availW = Math.max(containerSize.w - 32, 200);
+    const availW = Math.max(containerSize.w - 16, 200);
     const availH = Math.max(containerSize.h - 60, 200);
-    return Math.min(1, availW / cw, availH / ch);
-  }, [screenSize, containerSize]);
+    return Math.min(1, availW / canvasLogicalSize.width, availH / canvasLogicalSize.height);
+  }, [canvasLogicalSize, containerSize]);
 
   // 最终显示尺寸 = 基础适配 × 用户缩放
   const canvasStyle = useMemo(() => {
-    const cw = screenSize.width + 40;
-    const ch = screenSize.height + 40;
     const s = baseScale * zoom;
-    return { width: cw * s, height: ch * s };
-  }, [screenSize, baseScale, zoom]);
+    return {
+      width: canvasLogicalSize.width * s,
+      height: canvasLogicalSize.height * s,
+    };
+  }, [canvasLogicalSize, baseScale, zoom]);
 
   // 滚轮缩放 (以光标为锚点)
   const handleWheel = useCallback((e: React.WheelEvent) => {
@@ -1025,9 +1093,7 @@ const UIAudit: React.FC = () => {
 
         {/* == 检测结果 == */}
         <PanelSection title="检测结果" icon={<AlertTriangle size={14} />}>
-          {!image ? (
-            <p className="text-xs text-[#555]">上传截图后开始检测</p>
-          ) : warnings.length === 0 ? (
+          {warnings.length === 0 ? (
             <div className="flex items-center gap-2 text-xs text-green-400">
               <Shield size={14} />
               <span>未发现遮挡风险</span>
@@ -1140,6 +1206,159 @@ function Legend({ color, label }: { color: string; label: string }) {
 /* ============================================================
    绘制辅助函数
    ============================================================ */
+
+/* ============================================================
+   标注绘制引擎
+   ============================================================ */
+const ANNOTATION_COLORS: Record<string, { dot: string; line: string; bg: string; text: string }> = {
+  error: { dot: '#ff3b30', line: '#ff3b30', bg: 'rgba(255,59,48,0.12)', text: '#ff6b6b' },
+  warn:  { dot: '#ff9500', line: '#ff9500', bg: 'rgba(255,149,0,0.12)', text: '#ffb340' },
+  info:  { dot: '#007aff', line: '#007aff', bg: 'rgba(0,122,255,0.12)', text: '#5ac8fa' },
+};
+
+function drawAnnotations(
+  ctx: CanvasRenderingContext2D,
+  warnings: OverlayWarning[],
+  screenX: number, screenY: number,
+  sw: number, sh: number,
+  deviceX: number, deviceW: number,
+  _canvasW: number, _canvasH: number,
+) {
+  // 分左右两侧
+  const leftItems = warnings.filter(w => w.side === 'left');
+  const rightItems = warnings.filter(w => w.side !== 'left');
+
+  const LABEL_H = 26;      // 标签高度
+  const LABEL_GAP = 6;     // 标签间距
+  const LABEL_PAD_X = 10;  // 标签内边距
+  const LABEL_R = 6;       // 标签圆角
+  const DOT_R = 3.5;       // 源点半径
+  const FONT_SIZE = 11;
+  const MARGIN_W = 190;    // 标注区可用宽度
+
+  ctx.font = `${FONT_SIZE}px -apple-system, "SF Pro Text", "Helvetica Neue", sans-serif`;
+  ctx.textBaseline = 'middle';
+
+  // 布局标签 (沿 Y 轴均匀分布, 避免重叠)
+  const layoutLabels = (items: OverlayWarning[], startY: number) => {
+    // 按源点 Y 坐标排序
+    const sorted = [...items].sort((a, b) => {
+      const ay = a.rect.y + a.rect.h / 2;
+      const by = b.rect.y + b.rect.h / 2;
+      return ay - by;
+    });
+
+    const positions: number[] = [];
+    sorted.forEach((item, i) => {
+      const idealY = screenY + item.rect.y + item.rect.h / 2 - LABEL_H / 2;
+      let y = Math.max(startY, idealY);
+      // 避免与上一个重叠
+      if (i > 0 && positions[i - 1] !== undefined) {
+        y = Math.max(y, positions[i - 1] + LABEL_H + LABEL_GAP);
+      }
+      positions.push(y);
+    });
+
+    return sorted.map((item, i) => ({ item, labelY: positions[i] }));
+  };
+
+  // 绘制一侧的标注
+  const drawSide = (items: OverlayWarning[], side: 'left' | 'right') => {
+    if (items.length === 0) return;
+
+    const layout = layoutLabels(items, screenY);
+
+    layout.forEach(({ item, labelY }) => {
+      const colors = ANNOTATION_COLORS[item.level] || ANNOTATION_COLORS.info;
+
+      // 源点: 遮罩区域边缘中点
+      let srcX: number, srcY: number;
+      srcY = screenY + item.rect.y + item.rect.h / 2;
+
+      if (side === 'left') {
+        srcX = screenX + Math.min(item.rect.x + 10, sw * 0.3);
+      } else {
+        srcX = screenX + Math.max(item.rect.x + item.rect.w - 10, sw * 0.7);
+      }
+
+      // 标签位置
+      const textW = ctx.measureText(item.message).width;
+      const labelW = textW + LABEL_PAD_X * 2;
+      let labelX: number;
+      let elbowX: number; // 折线拐点 X
+
+      if (side === 'left') {
+        labelX = deviceX - 12 - labelW;
+        elbowX = deviceX - 8;
+      } else {
+        labelX = deviceX + deviceW + 12;
+        elbowX = deviceX + deviceW + 8;
+      }
+
+      const labelCenterY = labelY + LABEL_H / 2;
+
+      // ---- 绘制连接线 (折线: 源点 → 拐点 → 标签) ----
+      ctx.save();
+      ctx.strokeStyle = colors.line;
+      ctx.lineWidth = 1;
+      ctx.globalAlpha = 0.6;
+      ctx.setLineDash([3, 3]);
+      ctx.beginPath();
+      ctx.moveTo(srcX, srcY);
+      ctx.lineTo(elbowX, srcY);           // 水平到设备边缘外
+      ctx.lineTo(elbowX, labelCenterY);   // 垂直到标签中线
+      if (side === 'left') {
+        ctx.lineTo(labelX + labelW, labelCenterY); // 水平到标签
+      } else {
+        ctx.lineTo(labelX, labelCenterY);
+      }
+      ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.globalAlpha = 1;
+      ctx.restore();
+
+      // ---- 源点圆点 ----
+      ctx.save();
+      ctx.fillStyle = colors.dot;
+      ctx.globalAlpha = 0.9;
+      ctx.beginPath();
+      ctx.arc(srcX, srcY, DOT_R, 0, Math.PI * 2);
+      ctx.fill();
+      // 光晕
+      ctx.globalAlpha = 0.25;
+      ctx.beginPath();
+      ctx.arc(srcX, srcY, DOT_R * 2.5, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+
+      // ---- 标签背景 ----
+      ctx.save();
+      simpleRoundRect(ctx, labelX, labelY, labelW, LABEL_H, LABEL_R);
+      ctx.fillStyle = colors.bg;
+      ctx.fill();
+      // 标签边框
+      ctx.strokeStyle = colors.line;
+      ctx.globalAlpha = 0.3;
+      ctx.lineWidth = 1;
+      ctx.stroke();
+      ctx.globalAlpha = 1;
+      ctx.restore();
+
+      // ---- 标签文字 ----
+      ctx.save();
+      ctx.fillStyle = colors.text;
+      ctx.font = `${FONT_SIZE}px -apple-system, "SF Pro Text", "Helvetica Neue", sans-serif`;
+      ctx.textBaseline = 'middle';
+      ctx.textAlign = side === 'left' ? 'right' : 'left';
+      const textX = side === 'left' ? labelX + labelW - LABEL_PAD_X : labelX + LABEL_PAD_X;
+      ctx.fillText(item.message, textX, labelCenterY);
+      ctx.restore();
+    });
+  };
+
+  drawSide(leftItems, 'left');
+  drawSide(rightItems, 'right');
+}
 
 /** 简单圆角矩形 (兼容不支持 roundRect 的浏览器) */
 function simpleRoundRect(
