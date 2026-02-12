@@ -4,7 +4,7 @@ import {
   Sparkles, Home, CheckSquare, Grid3X3, PenTool, Zap
 } from 'lucide-react';
 import { getStorageConfig, formatSyncTime } from './services/fileStorageService';
-import { getUserInfo, clearUserInfo, UserInfo } from './services/userAuthService';
+import { getUserInfo, clearUserInfo, UserInfo, verifyUser, rustLogout } from './services/userAuthService';
 import { initAutoSync } from './utils/autoSync';
 import { preloadAllData } from './services/preloadService';
 import { initHotkey } from './services/hotkeyService';
@@ -333,13 +333,23 @@ const AppContent: React.FC = () => {
       
       const savedUserInfo = getUserInfo();
       if (savedUserInfo) {
-        setIsUserVerified(true);
-        setUserInfo(savedUserInfo);
-        // 用户验证通过后，开始预加载所有组件和数据
+        // 用已保存的凭据重新向 Rust 后端验证（确保 Rust 端 authenticated=true）
+        try {
+          const valid = await verifyUser(savedUserInfo.username, savedUserInfo.userId);
+          if (valid) {
+            setIsUserVerified(true);
+            setUserInfo(savedUserInfo);
+          } else {
+            // 凭据已失效（你在 GitHub 上改了密码），清除本地缓存
+            clearUserInfo();
+          }
+        } catch {
+          // 网络失败时仍允许离线使用（Tauri 环境下 Rust 端无认证态，功能受限）
+          clearUserInfo();
+        }
         preloadComponents();
         await preloadAllData();
       } else {
-        // 即使没有用户信息，也预加载数据
         preloadComponents();
         await preloadAllData();
       }
@@ -403,9 +413,10 @@ const AppContent: React.FC = () => {
     preloadAllData();
   };
 
-  const handleLogout = () => {
+  const handleLogout = async () => {
     try {
       clearUserInfo();
+      await rustLogout(); // 重置 Rust 端认证状态，所有受保护命令立即失效
       setUserInfo(null);
       setIsUserVerified(false);
     } catch (error) {

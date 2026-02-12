@@ -49,6 +49,88 @@ struct AppState {
     drag_start_window: Mutex<IconPosition>, // 拖拽开始时窗口的位置
     ai_tabs: Mutex<Vec<String>>, // 存储AI标签页窗口标签
     main_window_visible: Mutex<bool>, // 主窗口是否真的可见（在前台，非最小化）
+    authenticated: Mutex<bool>, // 用户是否已通过认证（Rust 端强制）
+}
+
+// ---- 认证模块（Rust 端强制，无法被前端绕过） ----
+
+// 认证守卫：检查是否已认证，未认证则返回错误
+fn require_auth(state: &AppState) -> Result<(), String> {
+    let auth = state.authenticated.lock().unwrap();
+    if *auth {
+        Ok(())
+    } else {
+        Err("未授权：请先登录".to_string())
+    }
+}
+
+// Tauri 命令：验证用户（Rust 端从 GitHub 拉取 CSV 并验证）
+#[tauri::command]
+async fn verify_user(app: tauri::AppHandle, username: String, user_id: String) -> Result<bool, String> {
+    // CSV 地址硬编码在 Rust 中，前端无法看到也无法篡改
+    const CSV_URL: &str = "https://raw.githubusercontent.com/uckkk/ArtAssetNamingConfig/main/useID.csv";
+
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(10))
+        .build()
+        .map_err(|e| format!("创建 HTTP 客户端失败: {}", e))?;
+
+    let response = client.get(CSV_URL).send().await
+        .map_err(|e| format!("网络请求失败: {}", e))?;
+
+    if !response.status().is_success() {
+        return Err(format!("获取用户列表失败: HTTP {}", response.status()));
+    }
+
+    let csv_text = response.text().await
+        .map_err(|e| format!("读取响应失败: {}", e))?;
+
+    // 解析 CSV：格式为 用户名,用户ID
+    let mut valid = false;
+    for line in csv_text.lines() {
+        let line = line.trim();
+        if line.is_empty() || line.starts_with('#') {
+            continue;
+        }
+        let parts: Vec<&str> = line.splitn(2, ',').collect();
+        if parts.len() == 2 {
+            let csv_username = parts[0].trim();
+            let csv_user_id = parts[1].trim();
+            if csv_username == username && csv_user_id == user_id {
+                valid = true;
+                break;
+            }
+        }
+    }
+
+    if valid {
+        let state = app.state::<AppState>();
+        let mut auth = state.authenticated.lock().unwrap();
+        *auth = true;
+        println!("[Auth] 用户 '{}' 认证成功", username);
+    } else {
+        println!("[Auth] 用户 '{}' 认证失败", username);
+    }
+
+    Ok(valid)
+}
+
+// Tauri 命令：检查当前认证状态
+#[tauri::command]
+fn check_auth(app: tauri::AppHandle) -> Result<bool, String> {
+    let state = app.state::<AppState>();
+    let auth = state.authenticated.lock().unwrap();
+    Ok(*auth)
+}
+
+// Tauri 命令：登出（重置认证状态）
+#[tauri::command]
+fn auth_logout(app: tauri::AppHandle) -> Result<(), String> {
+    let state = app.state::<AppState>();
+    let mut auth = state.authenticated.lock().unwrap();
+    *auth = false;
+    println!("[Auth] 用户已登出");
+    Ok(())
 }
 
 const ICON_SIZE: i32 = 80; // 增大窗口大小，确保图标完整显示
@@ -1412,7 +1494,8 @@ fn get_app_icon(_path: String) -> Result<String, String> {
 
 // Tauri 命令：写入文件（绕过文件系统作用域限制）
 #[tauri::command]
-fn write_binary_file_with_path(file_path: String, content: Vec<u8>) -> Result<(), String> {
+fn write_binary_file_with_path(app: tauri::AppHandle, file_path: String, content: Vec<u8>) -> Result<(), String> {
+    require_auth(&app.state::<AppState>())?;
     use std::fs;
     use std::path::Path;
     
@@ -1433,7 +1516,8 @@ fn write_binary_file_with_path(file_path: String, content: Vec<u8>) -> Result<()
 }
 
 #[tauri::command]
-fn write_file_with_path(file_path: String, content: String) -> Result<(), String> {
+fn write_file_with_path(app: tauri::AppHandle, file_path: String, content: String) -> Result<(), String> {
+    require_auth(&app.state::<AppState>())?;
     use std::fs;
     use std::path::Path;
     
@@ -1456,7 +1540,8 @@ fn write_file_with_path(file_path: String, content: String) -> Result<(), String
 
 // Tauri 命令：重命名文件或目录（绕过文件系统作用域限制）
 #[tauri::command]
-fn rename_file_with_path(old_path: String, new_path: String) -> Result<(), String> {
+fn rename_file_with_path(app: tauri::AppHandle, old_path: String, new_path: String) -> Result<(), String> {
+    require_auth(&app.state::<AppState>())?;
     use std::fs;
     use std::path::Path;
     
@@ -1477,9 +1562,10 @@ fn rename_file_with_path(old_path: String, new_path: String) -> Result<(), Strin
     }
 }
 
-// Tauri 命令：读取文件（绕过文件系统作用域限制）
+// Tauri 命令：重命名目录（绕过文件系统作用域限制）
 #[tauri::command]
-fn rename_directory_with_path(old_path: String, new_path: String) -> Result<(), String> {
+fn rename_directory_with_path(app: tauri::AppHandle, old_path: String, new_path: String) -> Result<(), String> {
+    require_auth(&app.state::<AppState>())?;
     use std::fs;
     use std::path::Path;
     
@@ -1501,7 +1587,8 @@ fn rename_directory_with_path(old_path: String, new_path: String) -> Result<(), 
 }
 
 #[tauri::command]
-fn read_file_with_path(file_path: String) -> Result<String, String> {
+fn read_file_with_path(app: tauri::AppHandle, file_path: String) -> Result<String, String> {
+    require_auth(&app.state::<AppState>())?;
     use std::fs;
     use std::path::Path;
     
@@ -1515,7 +1602,8 @@ fn read_file_with_path(file_path: String) -> Result<String, String> {
 
 // Tauri 命令：读取二进制文件（用于创建 Blob URL）
 #[tauri::command]
-fn read_binary_file_with_path(file_path: String) -> Result<Vec<u8>, String> {
+fn read_binary_file_with_path(app: tauri::AppHandle, file_path: String) -> Result<Vec<u8>, String> {
+    require_auth(&app.state::<AppState>())?;
     use std::fs;
     use std::path::Path;
     
@@ -1529,7 +1617,8 @@ fn read_binary_file_with_path(file_path: String) -> Result<Vec<u8>, String> {
 
 // Tauri 命令：检查文件是否存在（绕过文件系统作用域限制）
 #[tauri::command]
-fn file_exists_with_path(file_path: String) -> Result<bool, String> {
+fn file_exists_with_path(app: tauri::AppHandle, file_path: String) -> Result<bool, String> {
+    require_auth(&app.state::<AppState>())?;
     use std::path::Path;
     
     Ok(Path::new(&file_path).exists())
@@ -1537,7 +1626,8 @@ fn file_exists_with_path(file_path: String) -> Result<bool, String> {
 
 // Tauri 命令：创建目录（绕过文件系统作用域限制）
 #[tauri::command]
-fn create_dir_with_path(dir_path: String, recursive: bool) -> Result<(), String> {
+fn create_dir_with_path(app: tauri::AppHandle, dir_path: String, recursive: bool) -> Result<(), String> {
+    require_auth(&app.state::<AppState>())?;
     use std::fs;
     use std::path::Path;
     
@@ -2098,7 +2188,8 @@ fn main() {
             drag_start_mouse: Mutex::new(IconPosition { x: 0, y: 0 }),
             drag_start_window: Mutex::new(IconPosition { x: 0, y: 0 }),
             ai_tabs: Mutex::new(Vec::new()),
-            main_window_visible: Mutex::new(true), // 默认主窗口是可见的
+            main_window_visible: Mutex::new(true),
+            authenticated: Mutex::new(false), // 启动时未认证
         })
         .setup(|app| {
             println!("=== Tauri setup started ===");
@@ -2185,7 +2276,10 @@ fn main() {
             enable_autostart,
             disable_autostart,
             is_autostart_enabled,
-            get_cursor_position
+            get_cursor_position,
+            verify_user,
+            check_auth,
+            auth_logout
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
