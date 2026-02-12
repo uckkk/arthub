@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, lazy, Suspense } from 'react';
 import { 
   Type, Menu, User, Settings, 
-  Sparkles, Home, CheckSquare, Grid3X3, PenTool, Zap
+  Sparkles, Home, CheckSquare, Grid3X3, PenTool, Zap, ScanLine
 } from 'lucide-react';
 import { getStorageConfig, formatSyncTime } from './services/fileStorageService';
 import { getUserInfo, clearUserInfo, UserInfo, verifyUser, rustLogout } from './services/userAuthService';
@@ -29,6 +29,7 @@ const QuadrantTodo = lazy(() => import('./components/QuadrantTodo'));
 const AppLauncher = lazy(() => import('./components/AppLauncher'));
 const Whiteboard = lazy(() => import('./components/Whiteboard'));
 const CPSAutomation = lazy(() => import('./components/CPSAutomation'));
+const UIAudit = lazy(() => import('./components/UIAudit'));
 
 // 预加载所有组件的函数
 const preloadComponents = () => {
@@ -84,6 +85,10 @@ const preloadComponents = () => {
   schedulePreload(() => {
     import('./components/UpdateNotification').catch(() => {});
   }, 600);
+
+  schedulePreload(() => {
+    import('./components/UIAudit').catch(() => {});
+  }, 500);
 };
 
 // 定义菜单项
@@ -102,6 +107,7 @@ const createMenuGroups = (): MenuGroup[] => [
       { id: 'apps', label: '常用应用', icon: Grid3X3 },
       { id: 'whiteboard', label: '无限画布', icon: PenTool },
       { id: 'cps', label: 'CPS自动化', icon: Zap },
+      { id: 'uiaudit', label: 'UI审计助手', icon: ScanLine },
     ],
   },
 ];
@@ -438,6 +444,7 @@ const AppContent: React.FC = () => {
       'apps': 'apps',
       'whiteboard': 'whiteboard',
       'cps': 'cps',
+      'uiaudit': 'uiaudit',
     };
     const tab = tabMapping[id] || 'home';
 
@@ -482,6 +489,7 @@ const AppContent: React.FC = () => {
     apps:       { node: <AppLauncher />,    skeleton: 'apps' },
     whiteboard: { node: <Whiteboard />,     skeleton: 'whiteboard', absolute: true },
     cps:        { node: <CPSAutomation />,  skeleton: 'default' },
+    uiaudit:    { node: <UIAudit />,        skeleton: 'default' },
     ai:         { node: <AITool />,         skeleton: 'ai' },
   };
 
