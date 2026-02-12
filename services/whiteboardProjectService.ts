@@ -321,15 +321,20 @@ export async function convertFilePathToUrl(filePath: string): Promise<string> {
     };
     const mimeType = mimeTypes[ext] || 'application/octet-stream';
     
-    // 将字节数组转换为 base64
+    // 将字节数组转换为 base64（使用 Blob + FileReader，兼容大文件且无栈溢出风险）
     const uint8Array = new Uint8Array(content);
-    let binary = '';
-    const chunkSize = 8192; // 分块处理避免栈溢出
-    for (let i = 0; i < uint8Array.length; i += chunkSize) {
-      const chunk = uint8Array.slice(i, i + chunkSize);
-      binary += String.fromCharCode.apply(null, Array.from(chunk));
-    }
-    const base64 = btoa(binary);
+    const base64 = await new Promise<string>((resolve, reject) => {
+      const blob = new Blob([uint8Array], { type: mimeType });
+      const reader = new FileReader();
+      reader.onload = () => {
+        // readAsDataURL 返回 "data:mime;base64,xxx"，截取 base64 部分
+        const dataUrl = reader.result as string;
+        const commaIdx = dataUrl.indexOf(',');
+        resolve(commaIdx >= 0 ? dataUrl.substring(commaIdx + 1) : dataUrl);
+      };
+      reader.onerror = () => reject(reader.error);
+      reader.readAsDataURL(blob);
+    });
     
     // 返回 data: URL
     return `data:${mimeType};base64,${base64}`;

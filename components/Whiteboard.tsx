@@ -92,17 +92,19 @@ const Whiteboard: React.FC = () => {
     message: '',
   });
   
-  // 主题状态：'dark' | 'light'
+  // 主题状态：'dark' | 'light'（兼容 Safari 隐私模式）
   const [isDarkMode, setIsDarkMode] = useState<boolean>(() => {
-    const saved = localStorage.getItem(THEME_STORAGE_KEY);
-    return saved !== 'light'; // 默认深色
+    try {
+      const saved = localStorage.getItem(THEME_STORAGE_KEY);
+      return saved !== 'light';
+    } catch { return true; }
   });
 
   // 切换主题
   const handleToggleTheme = useCallback(() => {
     const newIsDark = !isDarkMode;
     setIsDarkMode(newIsDark);
-    localStorage.setItem(THEME_STORAGE_KEY, newIsDark ? 'dark' : 'light');
+    try { localStorage.setItem(THEME_STORAGE_KEY, newIsDark ? 'dark' : 'light'); } catch { /* Safari 隐私模式 */ }
     
     // 更新 tldraw 编辑器的主题
     if (editorRef.current) {
@@ -300,6 +302,8 @@ const Whiteboard: React.FC = () => {
     const fileArray = Array.from(files);
     const imageTypes = ['image/png', 'image/jpeg', 'image/jpg', 'image/gif', 'image/webp'];
     const videoTypes = ['video/mp4', 'video/webm', 'video/ogg'];
+    const imageExts = ['.png', '.jpg', '.jpeg', '.gif', '.webp'];
+    const videoExts = ['.mp4', '.webm', '.ogg', '.mov'];
     
     // 文件大小限制（单位：字节）
     const MAX_VIDEO_SIZE = 20 * 1024 * 1024; // 20MB
@@ -307,8 +311,10 @@ const Whiteboard: React.FC = () => {
 
     const validFiles: File[] = [];
     for (const file of fileArray) {
-      const isImage = imageTypes.includes(file.type);
-      const isVideo = videoTypes.includes(file.type) || file.name.toLowerCase().endsWith('.mp4');
+      const ext = file.name.toLowerCase().substring(file.name.lastIndexOf('.'));
+      const mimeType = (file.type || '').toLowerCase();
+      const isImage = imageTypes.includes(mimeType) || imageExts.includes(ext);
+      const isVideo = videoTypes.includes(mimeType) || videoExts.includes(ext);
 
       if (!isImage && !isVideo) {
         showToast('warning', `不支持的文件类型: ${file.name}`);
@@ -624,7 +630,7 @@ const Whiteboard: React.FC = () => {
   return (
     <div className="h-full flex flex-col bg-[#0a0a0a] relative">
       {/* 顶部工具栏 */}
-      <div className="flex items-center justify-between p-4 border-b border-[#1a1a1a] shrink-0">
+      <div className="flex items-center justify-between px-3 py-2 sm:px-4 sm:py-3 border-b border-[#1a1a1a] shrink-0">
         <div className="flex items-center gap-3">
           {/* 项目选择器 */}
           <div className="relative">
@@ -702,9 +708,9 @@ const Whiteboard: React.FC = () => {
         {/* 工具栏按钮 */}
         <div className="flex items-center gap-2">
           {/* 上传文件 */}
-          <label className="px-3 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-medium transition-colors cursor-pointer flex items-center gap-2 text-sm">
+          <label className="px-2.5 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-medium transition-colors cursor-pointer flex items-center gap-1.5 text-sm" title="上传图片或视频">
             <Plus size={16} />
-            上传
+            <span className="hidden sm:inline">上传</span>
             <input
               type="file"
               multiple
@@ -717,37 +723,37 @@ const Whiteboard: React.FC = () => {
           {/* 保存按钮 */}
           <button
             onClick={handleSaveCanvas}
-            className="px-3 py-2 rounded-lg bg-green-600 hover:bg-green-700 text-white font-medium transition-colors flex items-center gap-2 text-sm"
-            title="保存画布到本地文件（自动保存每30秒）"
+            className="px-2.5 py-2 rounded-lg bg-green-600 hover:bg-green-700 text-white font-medium transition-colors flex items-center gap-1.5 text-sm"
+            title="保存画布到本地文件"
           >
             <Save size={16} />
-            保存
+            <span className="hidden sm:inline">保存</span>
           </button>
 
           {/* 导出为 PNG */}
           <button
             onClick={handleExportPng}
-            className="px-3 py-2 rounded-lg bg-[#2a2a2a] hover:bg-[#3a3a3a] text-white font-medium transition-colors flex items-center gap-2 text-sm"
+            className="px-2.5 py-2 rounded-lg bg-[#2a2a2a] hover:bg-[#3a3a3a] text-white font-medium transition-colors flex items-center gap-1.5 text-sm"
             title="导出为 PNG 图片"
           >
             <Download size={16} />
-            导出图片
+            <span className="hidden md:inline">导出图片</span>
           </button>
 
           {/* 导出/分享 JSON */}
           <button
             onClick={handleExportJson}
-            className="px-3 py-2 rounded-lg bg-[#2a2a2a] hover:bg-[#3a3a3a] text-white font-medium transition-colors flex items-center gap-2 text-sm"
+            className="px-2.5 py-2 rounded-lg bg-[#2a2a2a] hover:bg-[#3a3a3a] text-white font-medium transition-colors flex items-center gap-1.5 text-sm"
             title="导出画布数据，可分享给他人"
           >
             <Share2 size={16} />
-            分享
+            <span className="hidden md:inline">分享</span>
           </button>
 
           {/* 导入 JSON */}
-          <label className="px-3 py-2 rounded-lg bg-[#2a2a2a] hover:bg-[#3a3a3a] text-white font-medium transition-colors cursor-pointer flex items-center gap-2 text-sm" title="导入他人分享的画布数据">
+          <label className="px-2.5 py-2 rounded-lg bg-[#2a2a2a] hover:bg-[#3a3a3a] text-white font-medium transition-colors cursor-pointer flex items-center gap-1.5 text-sm" title="导入他人分享的画布数据">
             <Folder size={16} />
-            导入
+            <span className="hidden md:inline">导入</span>
             <input
               type="file"
               accept=".json"
@@ -759,11 +765,12 @@ const Whiteboard: React.FC = () => {
           {/* 主题切换 */}
           <button
             onClick={handleToggleTheme}
-            className="px-3 py-2 rounded-lg bg-[#2a2a2a] hover:bg-[#3a3a3a] text-white font-medium transition-colors flex items-center gap-2 text-sm"
+            className="px-2.5 py-2 rounded-lg bg-[#2a2a2a] hover:bg-[#3a3a3a] text-white font-medium transition-colors flex items-center gap-1.5 text-sm"
             title={isDarkMode ? '切换到浅色模式' : '切换到深色模式'}
+            aria-pressed={isDarkMode}
           >
             {isDarkMode ? <Sun size={16} /> : <Moon size={16} />}
-            {isDarkMode ? '浅色' : '深色'}
+            <span className="hidden sm:inline">{isDarkMode ? '浅色' : '深色'}</span>
           </button>
         </div>
       </div>
@@ -772,13 +779,20 @@ const Whiteboard: React.FC = () => {
       {progress.visible && (
         <div className="absolute bottom-0 left-0 right-0 z-50 bg-[#1a1a1a] border-t border-[#2a2a2a] px-4 py-2">
           <div className="flex items-center gap-3">
-            <div className="flex-1 h-2 bg-[#2a2a2a] rounded-full overflow-hidden">
+            <div
+              className="flex-1 h-2 bg-[#2a2a2a] rounded-full overflow-hidden"
+              role="progressbar"
+              aria-valuenow={Math.round(progress.percent)}
+              aria-valuemin={0}
+              aria-valuemax={100}
+              aria-label={progress.message}
+            >
               <div
                 className="h-full bg-blue-500 transition-all duration-200 ease-out"
                 style={{ width: `${Math.min(100, Math.max(0, progress.percent))}%` }}
               />
             </div>
-            <span className="text-sm text-[#a0a0a0] shrink-0 min-w-[140px]">
+            <span className="text-sm text-[#a0a0a0] shrink-0 min-w-[100px] sm:min-w-[140px] truncate">
               {progress.message}
             </span>
           </div>
@@ -847,23 +861,27 @@ const Whiteboard: React.FC = () => {
                 // 立即隐藏
                 hideWatermark();
                 
-                // 延迟再次隐藏（确保DOM渲染后）
-                setTimeout(hideWatermark, 100);
-                setTimeout(hideWatermark, 500);
-                setTimeout(hideWatermark, 1000);
-                setTimeout(hideWatermark, 2000);
+                // 延迟再次隐藏（确保DOM渲染后），保存 timer ID 以便清理
+                const wmTimers = [
+                  setTimeout(hideWatermark, 100),
+                  setTimeout(hideWatermark, 500),
+                  setTimeout(hideWatermark, 1000),
+                  setTimeout(hideWatermark, 2000),
+                ];
                 
-                // 使用 MutationObserver 持续监控并移除水印
+                // 使用 MutationObserver 监控 tldraw 容器（而非整个 body，减少性能开销）
+                const tldrawContainer = document.querySelector('.tl-container') || document.body;
                 const watermarkObserver = new MutationObserver(() => {
                   hideWatermark();
                 });
                 
-                watermarkObserver.observe(document.body, {
+                watermarkObserver.observe(tldrawContainer, {
                   childList: true,
                   subtree: true,
                 });
 
-                const savedTheme = localStorage.getItem(THEME_STORAGE_KEY);
+                let savedTheme: string | null = null;
+                try { savedTheme = localStorage.getItem(THEME_STORAGE_KEY); } catch { /* Safari 隐私模式 */ }
                 editor.user.updateUserPreferences({
                   colorScheme: savedTheme === 'light' ? 'light' : 'dark',
                 });
@@ -896,8 +914,7 @@ const Whiteboard: React.FC = () => {
 
                 return () => {
                   clearInterval(intervalId);
-                  
-                  // 清理 MutationObserver
+                  wmTimers.forEach(clearTimeout);
                   watermarkObserver.disconnect();
 
                   if (editorRef.current) {
