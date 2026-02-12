@@ -151,8 +151,8 @@ const AppContent: React.FC = () => {
     };
   }, []);
 
-  // 无限画布访问标记 - 访问后保持挂载，避免 tldraw 卸载时内部 bug
-  const [hasVisitedWhiteboard, setHasVisitedWhiteboard] = useState(false);
+  // 已访问过的 tab 集合 — 首次访问后保持挂载，切换时只改 display，实现秒切
+  const [visitedTabs, setVisitedTabs] = useState<Set<string>>(new Set(['home']));
 
   // 菜单顺序管理
   const [menuItemOrder, setMenuItemOrder] = useState<Record<number, string[]>>(() => {
@@ -437,10 +437,14 @@ const AppContent: React.FC = () => {
       'whiteboard': 'whiteboard',
       'cps': 'cps',
     };
-    setActiveTab(tabMapping[id] || 'home');
-    if (tabMapping[id] === 'whiteboard') {
-      setHasVisitedWhiteboard(true);
-    }
+    const tab = tabMapping[id] || 'home';
+    setActiveTab(tab);
+    setVisitedTabs(prev => {
+      if (prev.has(tab)) return prev;
+      const next = new Set(prev);
+      next.add(tab);
+      return next;
+    });
   };
 
   if (!isUserVerified) {
@@ -453,75 +457,42 @@ const AppContent: React.FC = () => {
     );
   }
 
-  // 渲染主内容
-  const renderContent = () => {
-    switch (activeTab) {
-      case 'home':
-        return (
-          <Suspense fallback={<SkeletonScreen variant="home" />}>
-            <ContentFadeIn>
-              <HomePage />
-            </ContentFadeIn>
-          </Suspense>
-        );
-      case 'naming':
-        return (
-          <Suspense fallback={<SkeletonScreen variant="naming" />}>
-            <ContentFadeIn>
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 h-full p-6">
-                <NamingTool />
-                <div className="hidden lg:block">
-                  <NamingHistory />
-                </div>
-              </div>
-            </ContentFadeIn>
-          </Suspense>
-        );
-      case 'paths':
-        return (
-          <Suspense fallback={<SkeletonScreen variant="paths" />}>
-            <ContentFadeIn>
-              <PathManager />
-            </ContentFadeIn>
-          </Suspense>
-        );
-      case 'todo':
-        return (
-          <Suspense fallback={<SkeletonScreen variant="todo" />}>
-            <ContentFadeIn>
-              <QuadrantTodo />
-            </ContentFadeIn>
-          </Suspense>
-        );
-      case 'apps':
-        return (
-          <Suspense fallback={<SkeletonScreen variant="apps" />}>
-            <ContentFadeIn>
-              <AppLauncher />
-            </ContentFadeIn>
-          </Suspense>
-        );
-      case 'whiteboard':
-        // 画布由下方独立区块渲染，此处返回 null
-        return null;
-      case 'cps':
-        return (
-          <Suspense fallback={<SkeletonScreen variant="default" />}>
-            <ContentFadeIn>
-              <CPSAutomation />
-            </ContentFadeIn>
-          </Suspense>
-        );
-      default:
-        return (
-          <Suspense fallback={<SkeletonScreen variant="ai" />}>
-            <ContentFadeIn>
-              <AITool />
-            </ContentFadeIn>
-          </Suspense>
-        );
-    }
+  // Tab 配置：key → { component, skeleton, 是否用 absolute 定位（画布等特殊组件） }
+  const tabPanels: Record<string, { node: React.ReactNode; skeleton: string; absolute?: boolean }> = {
+    home:       { node: <HomePage />,       skeleton: 'home' },
+    naming:     { node: (
+                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 h-full p-6">
+                      <NamingTool />
+                      <div className="hidden lg:block"><NamingHistory /></div>
+                    </div>
+                  ), skeleton: 'naming' },
+    paths:      { node: <PathManager />,    skeleton: 'paths' },
+    todo:       { node: <QuadrantTodo />,   skeleton: 'todo' },
+    apps:       { node: <AppLauncher />,    skeleton: 'apps' },
+    whiteboard: { node: <Whiteboard />,     skeleton: 'whiteboard', absolute: true },
+    cps:        { node: <CPSAutomation />,  skeleton: 'default' },
+    ai:         { node: <AITool />,         skeleton: 'ai' },
   };
+
+  // 渲染所有已访问的 tab（保持挂载），当前 tab 可见，其余隐藏
+  const renderAllTabs = () =>
+    Object.entries(tabPanels).map(([key, { node, skeleton, absolute }]) => {
+      if (!visitedTabs.has(key)) return null;
+      const isActive = activeTab === key;
+      return (
+        <div
+          key={key}
+          className={`flex-1 flex flex-col overflow-hidden ${absolute ? 'absolute inset-0' : ''} ${
+            isActive ? '' : absolute ? 'invisible pointer-events-none' : 'hidden'
+          }`}
+          aria-hidden={!isActive}
+        >
+          <Suspense fallback={<SkeletonScreen variant={skeleton} />}>
+            <ContentFadeIn>{node}</ContentFadeIn>
+          </Suspense>
+        </div>
+      );
+    });
 
   return (
     <div className="h-screen flex bg-[#0a0a0a] text-white overflow-hidden">
@@ -590,27 +561,9 @@ const AppContent: React.FC = () => {
             )}
           />
 
-          {/* 主内容区域 */}
+          {/* 主内容区域 - 所有已访问的 tab 保持挂载，切换仅改 display/visibility */}
           <main className="flex-1 flex flex-col overflow-hidden relative">
-            {/* 非画布页面 - 画布激活时隐藏 */}
-            <div
-              className={`flex-1 flex flex-col overflow-hidden ${activeTab === 'whiteboard' ? 'hidden' : ''}`}
-            >
-              {renderContent()}
-            </div>
-            {/* 无限画布 - 访问后保持挂载，切换时仅隐藏不卸载，避免 tldraw 内部 "h is not a function" 错误 */}
-            {hasVisitedWhiteboard && (
-              <div
-                className={`flex-1 flex flex-col overflow-hidden absolute inset-0 ${activeTab !== 'whiteboard' ? 'invisible pointer-events-none' : ''}`}
-                aria-hidden={activeTab !== 'whiteboard'}
-              >
-                <Suspense fallback={<SkeletonScreen variant="whiteboard" />}>
-                  <ContentFadeIn>
-                    <Whiteboard />
-                  </ContentFadeIn>
-                </Suspense>
-              </div>
-            )}
+            {renderAllTabs()}
           </main>
 
           {/* 设置面板 - 始终渲染以静默加载数据，但只在 showSettings 为 true 时显示 */}
