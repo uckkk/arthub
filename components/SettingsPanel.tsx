@@ -241,21 +241,22 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ isOpen, onClose, triggerR
         onClick={onClose}
       />
       
-      {/* 设置面板 - 居中显示 */}
+      {/* 设置面板 - 居中显示，固定高度避免切换 tab 时跳动 */}
       <div 
         ref={panelRef}
         className="
           fixed z-50 
           top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2
           w-[420px] max-w-[90vw]
+          h-[460px] max-h-[80vh]
           bg-[#151515] border border-[#2a2a2a] rounded-xl 
           shadow-2xl shadow-black/50 
-          overflow-hidden
+          flex flex-col
           animate-scale-in
         "
       >
         {/* 标题栏 */}
-        <div className="flex items-center justify-between px-5 py-4 border-b border-[#2a2a2a]">
+        <div className="flex items-center justify-between px-5 py-4 border-b border-[#2a2a2a] shrink-0">
           <div className="flex items-center gap-3">
             <Settings size={18} className="text-blue-400" />
             <h3 className="font-semibold text-white">系统设置</h3>
@@ -269,7 +270,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ isOpen, onClose, triggerR
         </div>
         
         {/* 分组切换 */}
-        <div className="flex gap-2 px-5 py-3 border-b border-[#2a2a2a]">
+        <div className="flex gap-2 px-5 py-3 border-b border-[#2a2a2a] shrink-0">
           <button
             onClick={() => setActiveGroup('general')}
             className={`
@@ -320,8 +321,8 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ isOpen, onClose, triggerR
           </button>
         </div>
         
-        {/* 内容区域 */}
-        <div className="p-5 space-y-5 max-h-[60vh] overflow-y-auto">
+        {/* 内容区域 - flex-1 填满剩余空间，高度固定不跳动 */}
+        <div className="flex-1 min-h-0 p-5 space-y-5 overflow-y-auto">
           {/* 组1：翻译 API 配置 */}
           {/* 通用：开机自动启动等 */}
           {activeGroup === 'general' && (
@@ -731,7 +732,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ isOpen, onClose, triggerR
         {/* 状态提示 */}
         {statusMsg && (
           <div className={`
-            mx-5 mb-5 p-3 rounded-lg text-sm
+            mx-5 mb-5 p-3 rounded-lg text-sm shrink-0
             ${statusMsg.type === 'success' 
               ? 'bg-green-500/10 border border-green-500/20 text-green-400' 
               : 'bg-red-500/10 border border-red-500/20 text-red-400'
