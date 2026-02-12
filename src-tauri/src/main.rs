@@ -85,18 +85,28 @@ async fn verify_user(app: tauri::AppHandle, username: String, user_id: String) -
     let csv_text = response.text().await
         .map_err(|e| format!("读取响应失败: {}", e))?;
 
-    // 解析 CSV：格式为 用户名,用户ID
+    // 去除 UTF-8 BOM（如果存在）
+    let csv_text = csv_text.trim_start_matches('\u{FEFF}');
+
+    // 解析 CSV：实际格式为 "用户名,ID, "（每行末尾有多余逗号）
+    // 跳过标题行，按逗号拆分后取前两列
     let mut valid = false;
+    let mut is_header = true;
     for line in csv_text.lines() {
         let line = line.trim();
         if line.is_empty() || line.starts_with('#') {
             continue;
         }
-        let parts: Vec<&str> = line.splitn(2, ',').collect();
-        if parts.len() == 2 {
+        // 跳过标题行（第一行非空非注释行）
+        if is_header {
+            is_header = false;
+            continue;
+        }
+        let parts: Vec<&str> = line.split(',').collect();
+        if parts.len() >= 2 {
             let csv_username = parts[0].trim();
             let csv_user_id = parts[1].trim();
-            if csv_username == username && csv_user_id == user_id {
+            if !csv_username.is_empty() && csv_username == username && csv_user_id == user_id {
                 valid = true;
                 break;
             }
