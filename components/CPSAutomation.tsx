@@ -1,11 +1,23 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from 'react';
-import { Download, RotateCcw, Plus } from 'lucide-react';
+import { Download, RotateCcw, Plus, Save, ChevronDown, Share2, X, Copy, Check } from 'lucide-react';
 import { useToast } from './Toast';
 import { invoke } from '@tauri-apps/api/tauri';
 import { open } from '@tauri-apps/api/dialog';
 import { listen } from '@tauri-apps/api/event';
 import { appWindow } from '@tauri-apps/api/window';
 import JSZip from 'jszip';
+import UPNG from 'upng-js';
+
+// ---- TinyPNG 同款技术：PNG 色彩量化（24/32-bit → 8-bit 索引色，最多 256 色） ----
+// 通过智能减少颜色数量，视觉几乎无损，体积缩减 50-80%
+function compressPNG(canvas: HTMLCanvasElement): Blob {
+  const ctx = canvas.getContext('2d');
+  if (!ctx) throw new Error('Canvas context unavailable');
+  const { width, height } = canvas;
+  const imageData = ctx.getImageData(0, 0, width, height);
+  const compressed = UPNG.encode([imageData.data.buffer], width, height, 256);
+  return new Blob([compressed], { type: 'image/png' });
+}
 
 // 默认参数配置
 const DEFAULT_CONFIG = {
@@ -50,6 +62,13 @@ const DEFAULT_CONFIG = {
   },
 };
 
+interface CPSTemplate {
+  id: string;
+  name: string;
+  config: typeof DEFAULT_CONFIG;
+  createdAt: number;
+}
+
 interface ImageFile {
   file: File;
   preview: string;
@@ -75,6 +94,90 @@ const CPSAutomation: React.FC = () => {
   const [config, setConfig] = useState(DEFAULT_CONFIG);
   const [customName, setCustomName] = useState('');
   const [customMode, setCustomMode] = useState(false); // 自定义开关，默认关闭
+
+  // ---- 模板系统 ----
+  const [templates, setTemplates] = useState<CPSTemplate[]>(() => {
+    try {
+      const saved = localStorage.getItem('arthub_cps_templates');
+      return saved ? JSON.parse(saved) : [];
+    } catch { return []; }
+  });
+  const [activeTemplateId, setActiveTemplateId] = useState<string>('default');
+  const [showSaveTemplateModal, setShowSaveTemplateModal] = useState(false);
+  const [newTemplateName, setNewTemplateName] = useState('');
+  const [showTemplateDropdown, setShowTemplateDropdown] = useState(false);
+  const [showShareModal, setShowShareModal] = useState(false);
+  const [shareTemplateId, setShareTemplateId] = useState<string>('default');
+  const [shareUrl, setShareUrl] = useState<string>('');
+  const [shareCopied, setShareCopied] = useState(false);
+  const templateDropdownRef = useRef<HTMLDivElement>(null);
+
+  // 保存模板到localStorage
+  useEffect(() => {
+    localStorage.setItem('arthub_cps_templates', JSON.stringify(templates));
+  }, [templates]);
+
+  // 点击外部关闭模板下拉
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (templateDropdownRef.current && !templateDropdownRef.current.contains(e.target as Node)) {
+        setShowTemplateDropdown(false);
+      }
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, []);
+
+  // 检测配置是否被修改（相对于当前活动模板）
+  const configDirty = useMemo(() => {
+    if (activeTemplateId === 'default') {
+      return JSON.stringify(config) !== JSON.stringify(DEFAULT_CONFIG);
+    }
+    const tpl = templates.find(t => t.id === activeTemplateId);
+    return tpl ? JSON.stringify(config) !== JSON.stringify(tpl.config) : false;
+  }, [config, activeTemplateId, templates]);
+
+  // 保存为模板
+  const handleSaveTemplate = () => {
+    const name = newTemplateName.trim();
+    if (!name) return;
+    const newTpl: CPSTemplate = {
+      id: Date.now().toString(),
+      name,
+      config: JSON.parse(JSON.stringify(config)),
+      createdAt: Date.now(),
+    };
+    setTemplates([...templates, newTpl]);
+    setActiveTemplateId(newTpl.id);
+    setShowSaveTemplateModal(false);
+    setNewTemplateName('');
+    showToast('success', `模板「${name}」已保存`);
+  };
+
+  // 切换模板
+  const handleSwitchTemplate = (id: string) => {
+    if (id === 'default') {
+      setConfig(JSON.parse(JSON.stringify(DEFAULT_CONFIG)));
+      setActiveTemplateId('default');
+    } else {
+      const tpl = templates.find(t => t.id === id);
+      if (tpl) {
+        setConfig(JSON.parse(JSON.stringify(tpl.config)));
+        setActiveTemplateId(tpl.id);
+      }
+    }
+    setShowTemplateDropdown(false);
+  };
+
+  // 删除模板
+  const handleDeleteTemplate = (id: string) => {
+    setTemplates(templates.filter(t => t.id !== id));
+    if (activeTemplateId === id) {
+      setConfig(JSON.parse(JSON.stringify(DEFAULT_CONFIG)));
+      setActiveTemplateId('default');
+    }
+    showToast('success', '模板已删除');
+  };
 
   const portraitBigCanvasRef = useRef<HTMLCanvasElement>(null);
   const portraitMidCanvasRef = useRef<HTMLCanvasElement>(null);
@@ -124,7 +227,7 @@ const CPSAutomation: React.FC = () => {
   // ---- 处理拖入的文件（Tauri 和浏览器通用） ----
   const handleDroppedFile = useCallback((file: File, target: DropTarget) => {
     if (!target || !file.type.startsWith('image/')) {
-      if (!file.type.startsWith('image/')) showToast('请拖入图片文件', 'error');
+      if (!file.type.startsWith('image/')) showToast('error', '请拖入图片文件');
       return;
     }
     const preview = URL.createObjectURL(file);
@@ -132,7 +235,7 @@ const CPSAutomation: React.FC = () => {
     if (target === 'portrait') setPortraitImage(imageFile);
     else if (target === 'popup') setPopupImage(imageFile);
     else if (target === 'appIcon') setAppIconImage(imageFile);
-  }, []);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ---- Tauri 文件拖拽支持（仅在 Tauri 环境中注册） ----
   useEffect(() => {
@@ -165,7 +268,7 @@ const CPSAutomation: React.FC = () => {
         const isImage = ['.png', '.jpg', '.jpeg', '.gif', '.webp', '.bmp', '.tiff', '.svg'].some(
           ext => lowerPath.endsWith(ext)
         );
-        if (!isImage) { showToast('请拖入图片文件', 'error'); return; }
+        if (!isImage) { showToast('error', '请拖入图片文件'); return; }
 
         let target = hoverTargetRef.current;
         if (!target) target = await findDropTargetUnderCursor();
@@ -175,7 +278,7 @@ const CPSAutomation: React.FC = () => {
           if (!popupImageRef.current) emptySlots.push('popup');
           if (!appIconImageRef.current) emptySlots.push('appIcon');
           if (emptySlots.length === 1) target = emptySlots[0];
-          else { showToast('请将图片拖入指定的输入框区域', 'info'); return; }
+          else { showToast('info', '请将图片拖入指定的输入框区域'); return; }
         }
 
         try {
@@ -194,7 +297,7 @@ const CPSAutomation: React.FC = () => {
           handleDroppedFile(file, target);
         } catch (err) {
           console.error('读取拖拽文件失败:', err);
-          showToast('读取文件失败', 'error');
+          showToast('error', '读取文件失败');
         }
         hoverTargetRef.current = null;
       });
@@ -531,7 +634,7 @@ const CPSAutomation: React.FC = () => {
   // ---- 文件选择 ----
 
   const handleFileUpload = (file: File, type: 'portrait' | 'popup' | 'appIcon') => {
-    if (!file.type.startsWith('image/')) { showToast('请上传图片文件', 'error'); return; }
+    if (!file.type.startsWith('image/')) { showToast('error', '请上传图片文件'); return; }
     const imageFile: ImageFile = { file, preview: URL.createObjectURL(file), name: file.name };
     if (type === 'portrait') setPortraitImage(imageFile);
     else if (type === 'popup') setPopupImage(imageFile);
@@ -544,7 +647,7 @@ const CPSAutomation: React.FC = () => {
     e.target.value = '';
   };
 
-  const handleReset = () => { setConfig(DEFAULT_CONFIG); setCustomName(''); showToast('已恢复默认设置', 'success'); };
+  const handleReset = () => { setConfig(DEFAULT_CONFIG); setCustomName(''); showToast('success', '已恢复默认设置'); };
 
   const generateFileName = (prefix: string, suffix?: string): string => {
     const name = customName || '';
@@ -578,28 +681,24 @@ const CPSAutomation: React.FC = () => {
   // ---- 导出 ----
 
   const handleExport = async () => {
-    if (!portraitImage || !popupImage || !appIconImage) { showToast('请先上传所有三张图片', 'error'); return; }
+    if (!portraitImage || !popupImage || !appIconImage) { showToast('error', '请先上传所有三张图片'); return; }
     try {
-      showToast('正在生成图片...', 'info');
+      showToast('info', '正在生成并压缩图片...');
       await new Promise(r => setTimeout(r, 300));
       const images: GeneratedImage[] = [];
 
-      const canvasToBlob = (ref: React.RefObject<HTMLCanvasElement>, name: string) =>
-        new Promise<void>(resolve => {
-          if (!ref.current) { resolve(); return; }
-          ref.current.toBlob(blob => {
-            if (blob) images.push({ name, blob });
-            resolve();
-          }, 'image/png');
-        });
+      // TinyPNG 同款：从 Canvas 提取像素数据 → UPNG 量化为 256 色索引 PNG
+      const canvasToBlob = (ref: React.RefObject<HTMLCanvasElement>, name: string) => {
+        if (!ref.current) return;
+        const blob = compressPNG(ref.current);
+        images.push({ name, blob });
+      };
 
-      await Promise.all([
-        canvasToBlob(portraitBigCanvasRef, generateFileName(config.portrait.namePrefix, 'big')),
-        canvasToBlob(portraitMidCanvasRef, generateFileName(config.portrait.namePrefix, 'mid')),
-        canvasToBlob(portraitSmallCanvasRef, generateFileName(config.portrait.namePrefix, 'small')),
-        canvasToBlob(popupCanvasRef, generateFileName(config.popup.namePrefix)),
-        canvasToBlob(appIconCanvasRef, generateFileName(config.appIcon.namePrefix)),
-      ]);
+      canvasToBlob(portraitBigCanvasRef, generateFileName(config.portrait.namePrefix, 'big'));
+      canvasToBlob(portraitMidCanvasRef, generateFileName(config.portrait.namePrefix, 'mid'));
+      canvasToBlob(portraitSmallCanvasRef, generateFileName(config.portrait.namePrefix, 'small'));
+      canvasToBlob(popupCanvasRef, generateFileName(config.popup.namePrefix));
+      canvasToBlob(appIconCanvasRef, generateFileName(config.appIcon.namePrefix));
 
       if (isTauri) {
         // Tauri 环境：选择目录后保存到本地文件系统
@@ -614,7 +713,7 @@ const CPSAutomation: React.FC = () => {
             content: Array.from(new Uint8Array(buf)),
           });
         }
-        showToast(`成功导出 ${images.length} 张图片`, 'success');
+        showToast('success', `已导出 ${images.length} 张图片`);
         // 导出完成后自动打开目标文件夹
         try { await invoke('open_folder', { path: selectedDir }); } catch (_) { /* 静默 */ }
       } else {
@@ -631,13 +730,246 @@ const CPSAutomation: React.FC = () => {
         a.download = zipName;
         a.click();
         URL.revokeObjectURL(url);
-        showToast(`成功导出 ${images.length} 张图片（${zipName}）`, 'success');
+        showToast('success', `已导出 ${images.length} 张图片（${zipName}）`);
       }
     } catch (error) {
       console.error('导出失败:', error);
-      showToast('导出失败: ' + (error instanceof Error ? error.message : String(error)), 'error');
+      showToast('error', '导出失败：' + (error instanceof Error ? error.message : String(error)));
     }
   };
+
+  // ---- 生成分享页面 ----
+  const generateSharePage = useCallback((templateConfig: typeof DEFAULT_CONFIG) => {
+    return `<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>边锋掼蛋CPS图片处理</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:#0a0a0a;color:#fff;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:24px}
+.header{text-align:center;margin-bottom:20px}
+.header h1{font-size:18px;font-weight:600;color:#ccc}
+.upload-section{max-width:560px;margin:0 auto 24px}
+.upload-grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-bottom:16px}
+.upload-box{border:2px dashed #444;border-radius:10px;aspect-ratio:1;display:flex;flex-direction:column;align-items:center;justify-content:center;cursor:pointer;transition:border-color .2s;position:relative;overflow:hidden}
+.upload-box:hover{border-color:#666}
+.upload-box.has-image{border-color:#333}
+.upload-box img{width:100%;height:100%;object-fit:cover;position:absolute;inset:0}
+.upload-box .label{font-size:11px;color:#666;margin-top:4px}
+.upload-box .plus{font-size:24px;color:#555}
+.ctrl-row{display:flex;gap:8px;align-items:center}
+.ctrl-row label{font-size:12px;color:#888;white-space:nowrap}
+.ctrl-row input{flex:1;padding:7px 10px;background:#1a1a1a;border:1px solid #333;border-radius:8px;color:#fff;font-size:13px;outline:none}
+.ctrl-row input:focus{border-color:#3b82f6}
+.ctrl-row .btn{flex:none;width:auto;padding:7px 16px}
+.btn{padding:10px 20px;border:none;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;transition:all .2s}
+.btn-primary{background:#2563eb;color:#fff}.btn-primary:hover{background:#1d4ed8}
+.btn-primary:disabled{background:#333;color:#555;cursor:not-allowed}
+.btn-sm{padding:5px 10px;font-size:11px;border-radius:6px;font-weight:500}
+.btn-outline{background:transparent;border:1px solid #444;color:#aaa}.btn-outline:hover{border-color:#666;color:#fff}
+.results{display:none;max-width:900px;margin:0 auto}
+.results-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;padding-bottom:8px;border-bottom:1px solid #1a1a1a}
+.results-header h2{font-size:14px;color:#aaa;font-weight:500}
+.result-grid{display:flex;flex-wrap:wrap;gap:10px;justify-content:center}
+.result-item{background:#111;border:1px solid #222;border-radius:10px;overflow:hidden;display:flex;flex-direction:column}
+.result-item img{display:block;background:repeating-conic-gradient(#1a1a1a 0% 25%,#111 0% 50%) 50%/16px 16px}
+.result-item .info{padding:6px 8px;display:flex;align-items:center;justify-content:space-between;gap:6px;border-top:1px solid #222}
+.result-item .info .name{font-size:10px;color:#888;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.status{text-align:center;font-size:12px;color:#888;margin-top:10px}
+canvas{display:none}
+</style>
+<script src="https://cdn.jsdelivr.net/npm/pako@2.1.0/dist/pako.min.js"><\/script>
+<script src="https://cdn.jsdelivr.net/npm/upng-js@2.1.0/UPNG.js"><\/script>
+</head>
+<body>
+<div class="header"><h1>边锋掼蛋CPS图片处理</h1></div>
+<div class="upload-section">
+  <div class="upload-grid">
+    <div class="upload-box" id="box-portrait" onclick="triggerUpload('portrait')"><span class="plus">+</span><span class="label">能用立绘</span></div>
+    <div class="upload-box" id="box-popup" onclick="triggerUpload('popup')"><span class="plus">+</span><span class="label">弹窗</span></div>
+    <div class="upload-box" id="box-appIcon" onclick="triggerUpload('appIcon')"><span class="plus">+</span><span class="label">APP图标</span></div>
+  </div>
+  <input type="file" id="fileInput" accept="image/*" style="display:none">
+  <div class="ctrl-row">
+    <label>命名</label>
+    <input id="customName" placeholder="输入自定义名称">
+    <button class="btn btn-primary" id="exportBtn" disabled onclick="doExport()">生成</button>
+  </div>
+  <div class="status" id="status"></div>
+</div>
+<div class="results" id="results">
+  <div class="results-header">
+    <h2>生成结果</h2>
+    <button class="btn btn-sm btn-outline" onclick="downloadAll()">逐张下载全部</button>
+  </div>
+  <div class="result-grid" id="resultGrid"></div>
+</div>
+<canvas id="cvs"></canvas>
+<script>
+const CFG=${JSON.stringify(templateConfig)};
+const files={portrait:null,popup:null,appIcon:null};
+let currentType='',generatedImages=[];
+function triggerUpload(type){currentType=type;document.getElementById('fileInput').click()}
+// TinyPNG 同款技术：PNG 色彩量化（24/32-bit → 8-bit 索引色，最多 256 色）
+function compressPNG(canvas){
+  var ctx=canvas.getContext('2d');
+  var imgData=ctx.getImageData(0,0,canvas.width,canvas.height);
+  var compressed=UPNG.encode([imgData.data.buffer],canvas.width,canvas.height,256);
+  return new Blob([compressed],{type:'image/png'});
+}
+function blobToDataURI(blob){
+  return new Promise(function(r){var rd=new FileReader();rd.onload=function(){r(rd.result)};rd.readAsDataURL(blob)});
+}
+document.getElementById('fileInput').onchange=function(e){
+  const f=e.target.files[0];if(!f)return;
+  files[currentType]=f;
+  const box=document.getElementById('box-'+currentType);
+  box.classList.add('has-image');
+  box.innerHTML='<img src="'+URL.createObjectURL(f)+'">';
+  e.target.value='';checkReady();
+};
+function checkReady(){
+  const ok=files.portrait&&files.popup&&files.appIcon;
+  document.getElementById('exportBtn').disabled=!ok;
+}
+function loadImg(file){return new Promise((r,j)=>{const i=new Image();i.onload=()=>r(i);i.onerror=j;i.src=URL.createObjectURL(file)})}
+function drawRoundedRect(ctx,x,y,w,h,radius,sp){
+  const maxR=Math.min(w,h)/2;if(radius<=0){ctx.beginPath();ctx.rect(x,y,w,h);return}
+  const s=Math.max(0,Math.min(100,sp))/100,n=2+s*3,e=2/n;
+  let r;if(s>0.01){const kC=Math.SQRT1_2,kS=Math.pow(Math.SQRT1_2,e);r=Math.min(radius*(1-kC)/(1-kS),maxR)}else{r=Math.min(radius,maxR)}
+  const S=48;ctx.beginPath();ctx.moveTo(x+r,y);ctx.lineTo(x+w-r,y);
+  for(let i=S;i>=0;i--){const t=i/S*Math.PI/2;ctx.lineTo(x+w-r+r*Math.pow(Math.abs(Math.cos(t)),e),y+r-r*Math.pow(Math.abs(Math.sin(t)),e))}
+  ctx.lineTo(x+w,y+h-r);
+  for(let i=0;i<=S;i++){const t=i/S*Math.PI/2;ctx.lineTo(x+w-r+r*Math.pow(Math.abs(Math.cos(t)),e),y+h-r+r*Math.pow(Math.abs(Math.sin(t)),e))}
+  ctx.lineTo(x+r,y+h);
+  for(let i=S;i>=0;i--){const t=i/S*Math.PI/2;ctx.lineTo(x+r-r*Math.pow(Math.abs(Math.cos(t)),e),y+h-r+r*Math.pow(Math.abs(Math.sin(t)),e))}
+  ctx.lineTo(x,y+r);
+  for(let i=0;i<=S;i++){const t=i/S*Math.PI/2;ctx.lineTo(x+r-r*Math.pow(Math.abs(Math.cos(t)),e),y+r-r*Math.pow(Math.abs(Math.sin(t)),e))}
+  ctx.closePath();
+}
+function fitBig(img,cw,ch){const ia=img.width/img.height,ca=cw/ch;let dw,dh,dx,dy;if(ia>ca){dw=cw;dh=cw/ia;dx=0;dy=(ch-dh)/2}else{dh=ch;dw=ch*ia;dx=(cw-dw)/2;dy=0}return{sx:0,sy:0,sw:img.width,sh:img.height,dx,dy,dw,dh}}
+function fitMid(img,cw,ch){const ca=cw/ch,ia=img.width/img.height;if(ia>ca){const w=img.height*ca,x=(img.width-w)/2;return{sx:x,sy:0,sw:w,sh:img.height,dx:0,dy:0,dw:cw,dh:ch}}else{const h=img.width/ca,y=(img.height-h)/2;return{sx:0,sy:y,sw:img.width,sh:h,dx:0,dy:0,dw:cw,dh:ch}}}
+function fitSmall(img,cw,ch){const ms=CFG.portrait.sizes.mid,ma=ms.width/ms.height,ia=img.width/img.height;let msx,msy,msw,msh;if(ia>ma){msw=img.height*ma;msx=(img.width-msw)/2;msy=0;msh=img.height}else{msw=img.width;msx=0;msh=img.width/ma;msy=(img.height-msh)/2}const sc=msh/ms.height,hr=ch/ms.height;return{sx:msx,sy:msy+83*sc,sw:msw,sh:msh*hr,dx:0,dy:0,dw:cw,dh:ch}}
+function fitShortest(img,cw,ch){const ia=img.width/img.height,ca=cw/ch;if(ia>ca){const w=img.height*ca,x=(img.width-w)/2;return{sx:x,sy:0,sw:w,sh:img.height,dx:0,dy:0,dw:cw,dh:ch}}else{const h=img.width/ca,y=(img.height-h)/2;return{sx:0,sy:y,sw:img.width,sh:h,dx:0,dy:0,dw:cw,dh:ch}}}
+function renderToCanvas(img,outW,outH,drawFn){
+  const cvs=document.getElementById('cvs'),ctx=cvs.getContext('2d');
+  cvs.width=outW;cvs.height=outH;ctx.clearRect(0,0,outW,outH);
+  drawFn(ctx,img,outW,outH);
+  return cvs.toDataURL('image/png');
+}
+function drawPortrait(ctx,img,outW,outH,size,type){
+  const m=CFG.portrait.margin;
+  const p=type==='big'?fitBig(img,size.width,size.height):type==='mid'?fitMid(img,size.width,size.height):fitSmall(img,size.width,size.height);
+  ctx.save();ctx.shadowOffsetX=CFG.portrait.shadow.offsetX;ctx.shadowOffsetY=CFG.portrait.shadow.offsetY;
+  ctx.shadowBlur=CFG.portrait.shadow.blur;ctx.shadowColor=CFG.portrait.shadow.color;
+  ctx.fillStyle='#1b1b1b';drawRoundedRect(ctx,m.left,m.top,size.width,size.height,CFG.portrait.borderRadius,CFG.portrait.smoothBorderRadius);ctx.fill();ctx.restore();
+  ctx.save();drawRoundedRect(ctx,m.left,m.top,size.width,size.height,CFG.portrait.borderRadius,CFG.portrait.smoothBorderRadius);ctx.clip();
+  ctx.drawImage(img,p.sx,p.sy,p.sw,p.sh,m.left+p.dx,m.top+p.dy,p.dw,p.dh);ctx.restore();
+}
+function genName(prefix,suffix){const n=document.getElementById('customName').value||'';let fn=prefix.replace('@',n);if(suffix)fn+='_'+suffix;return fn+'.png'}
+function downloadDataURI(dataURI,name){const a=document.createElement('a');a.href=dataURI;a.download=name;a.click()}
+function downloadAll(){
+  if(!generatedImages.length)return;
+  let i=0;
+  function next(){if(i>=generatedImages.length)return;const g=generatedImages[i];downloadDataURI(g.dataURI,g.name);i++;setTimeout(next,400)}
+  next();
+}
+async function doExport(){
+  const st=document.getElementById('status');st.textContent='正在处理...';
+  document.getElementById('exportBtn').disabled=true;
+  try{
+    const[pImg,popImg,iconImg]=await Promise.all([loadImg(files.portrait),loadImg(files.popup),loadImg(files.appIcon)]);
+    generatedImages=[];
+    const tasks=[
+      {outSize:CFG.portrait.outputSizes.big,size:CFG.portrait.sizes.big,type:'big',prefix:CFG.portrait.namePrefix,suffix:'big',label:'立绘-大'},
+      {outSize:CFG.portrait.outputSizes.mid,size:CFG.portrait.sizes.mid,type:'mid',prefix:CFG.portrait.namePrefix,suffix:'mid',label:'立绘-中'},
+      {outSize:CFG.portrait.outputSizes.small,size:CFG.portrait.sizes.small,type:'small',prefix:CFG.portrait.namePrefix,suffix:'small',label:'立绘-小'},
+      {outSize:{width:CFG.popup.width,height:CFG.popup.height},type:'popup',prefix:CFG.popup.namePrefix,suffix:null,label:'弹窗'},
+      {outSize:{width:CFG.appIcon.width,height:CFG.appIcon.height},type:'icon',prefix:CFG.appIcon.namePrefix,suffix:null,label:'图标'},
+    ];
+    for(const t of tasks){
+      const cvs=document.getElementById('cvs'),ctx=cvs.getContext('2d');
+      cvs.width=t.outSize.width;cvs.height=t.outSize.height;ctx.clearRect(0,0,cvs.width,cvs.height);
+      if(t.type==='popup'){
+        ctx.save();drawRoundedRect(ctx,0,0,cvs.width,cvs.height,CFG.portrait.borderRadius,CFG.portrait.smoothBorderRadius);ctx.clip();
+        const p=fitBig(popImg,cvs.width,cvs.height);ctx.drawImage(popImg,p.sx,p.sy,p.sw,p.sh,p.dx,p.dy,p.dw,p.dh);ctx.restore();
+      }else if(t.type==='icon'){
+        ctx.save();drawRoundedRect(ctx,0,0,cvs.width,cvs.height,CFG.appIcon.borderRadius,CFG.appIcon.smoothBorderRadius);ctx.clip();
+        const p=fitShortest(iconImg,cvs.width,cvs.height);ctx.drawImage(iconImg,p.sx,p.sy,p.sw,p.sh,p.dx,p.dy,p.dw,p.dh);ctx.restore();
+      }else{
+        drawPortrait(ctx,pImg,cvs.width,cvs.height,t.size,t.type);
+      }
+      // TinyPNG 同款：UPNG 量化为 256 色索引 PNG
+      var blob=compressPNG(cvs);
+      var dataURI=await blobToDataURI(blob);
+      var sizeKB=(blob.size/1024).toFixed(0);
+      const name=genName(t.prefix,t.suffix);
+      generatedImages.push({dataURI,name,label:t.label,w:t.outSize.width,h:t.outSize.height,sizeKB:sizeKB});
+    }
+    const grid=document.getElementById('resultGrid');
+    grid.innerHTML='';
+    for(const g of generatedImages){
+      const previewH=Math.min(160,g.h);const previewW=Math.round(previewH*g.w/g.h);
+      const div=document.createElement('div');div.className='result-item';
+      div.innerHTML='<img src="'+g.dataURI+'" style="width:'+previewW+'px;height:'+previewH+'px">'
+        +'<div class="info"><span class="name" title="'+g.name+'">'+g.label+' ('+g.w+'\\u00d7'+g.h+') '+g.sizeKB+'KB</span>'
+        +'<button class="btn btn-sm btn-outline">保存</button></div>';
+      var btn=div.querySelector('button');
+      btn.onclick=(function(uri,nm){return function(){downloadDataURI(uri,nm)}})(g.dataURI,g.name);
+      grid.appendChild(div);
+    }
+    document.getElementById('results').style.display='block';
+    st.textContent='处理完成！已使用 TinyPNG 量化压缩（256 色索引 PNG）';
+  }catch(e){st.textContent='处理失败: '+e.message;console.error(e)}
+  document.getElementById('exportBtn').disabled=false;
+}
+<\/script>
+<div style="text-align:center;padding:32px 0 16px;font-size:11px;color:#444">边锋掼蛋@2026</div>
+</body>
+</html>`;
+  }, []);
+
+  // 处理分享
+  const handleShare = useCallback(async () => {
+    const tplConfig = shareTemplateId === 'default'
+      ? DEFAULT_CONFIG
+      : templates.find(t => t.id === shareTemplateId)?.config || DEFAULT_CONFIG;
+
+    const html = generateSharePage(tplConfig);
+    const blob = new Blob([html], { type: 'text/html' });
+
+    if (isTauri) {
+      // Tauri: 保存 HTML 文件到选择的目录
+      try {
+        const selectedDir = await open({ directory: true, multiple: false, title: '选择保存目录' });
+        if (!selectedDir || typeof selectedDir !== 'string') return;
+        const sep = (selectedDir as string).includes('/') ? '/' : '\\';
+        const filePath = `${selectedDir}${sep}CPS_Share.html`;
+        const buf = await blob.arrayBuffer();
+        await invoke('write_binary_file_with_path', {
+          filePath,
+          content: Array.from(new Uint8Array(buf)),
+        });
+        setShareUrl(filePath);
+        showToast('success', '分享页面已生成');
+        try { await invoke('open_folder', { path: selectedDir }); } catch (_) {}
+      } catch (err) {
+        console.error('保存分享页面失败:', err);
+        showToast('error', '保存失败');
+      }
+    } else {
+      // 浏览器: 直接下载 HTML
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'CPS_Share.html';
+      a.click();
+      URL.revokeObjectURL(url);
+      setShareUrl('CPS_Share.html（已下载）');
+      showToast('success', '分享页面已下载');
+    }
+  }, [shareTemplateId, templates, isTauri, generateSharePage, showToast]);
 
   const canExport = portraitImage && popupImage && appIconImage;
 
@@ -722,7 +1054,68 @@ const CPSAutomation: React.FC = () => {
   return (
     <div className="h-full overflow-y-auto bg-[#0a0a0a] text-white p-5">
       {/* 顶部操作栏 */}
-      <div className="flex items-center justify-end gap-8 mb-4">
+      <div className="flex items-center gap-3 mb-4 flex-wrap">
+        {/* 模板选择器 */}
+        <div className="relative" ref={templateDropdownRef}>
+          <button
+            onClick={() => setShowTemplateDropdown(!showTemplateDropdown)}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded bg-[#1a1a1a] border border-[#333] hover:border-[#444] text-xs text-white transition-colors"
+          >
+            <span className="text-[#888] mr-0.5">模板:</span>
+            <span className="max-w-[120px] truncate">
+              {activeTemplateId === 'default' ? '默认' : (templates.find(t => t.id === activeTemplateId)?.name || '默认')}
+            </span>
+            <ChevronDown size={12} className={`text-[#666] transition-transform ${showTemplateDropdown ? 'rotate-180' : ''}`} />
+          </button>
+          {showTemplateDropdown && (
+            <div className="absolute top-full left-0 mt-1 w-56 bg-[#1a1a1a] border border-[#333] rounded-lg shadow-xl z-50 py-1 max-h-64 overflow-y-auto">
+              <button
+                onClick={() => handleSwitchTemplate('default')}
+                className={`w-full text-left px-3 py-1.5 text-xs transition-colors flex items-center justify-between ${
+                  activeTemplateId === 'default' ? 'bg-blue-500/15 text-blue-400' : 'text-[#ccc] hover:bg-[#222]'
+                }`}
+              >
+                <span>默认模板</span>
+                {activeTemplateId === 'default' && <Check size={12} />}
+              </button>
+              {templates.length > 0 && <div className="h-px bg-[#2a2a2a] my-1" />}
+              {templates.map(tpl => (
+                <div key={tpl.id} className={`flex items-center group ${
+                  activeTemplateId === tpl.id ? 'bg-blue-500/15' : 'hover:bg-[#222]'
+                }`}>
+                  <button
+                    onClick={() => handleSwitchTemplate(tpl.id)}
+                    className={`flex-1 text-left px-3 py-1.5 text-xs transition-colors flex items-center justify-between ${
+                      activeTemplateId === tpl.id ? 'text-blue-400' : 'text-[#ccc]'
+                    }`}
+                  >
+                    <span className="truncate">{tpl.name}</span>
+                    {activeTemplateId === tpl.id && <Check size={12} />}
+                  </button>
+                  <button
+                    onClick={(e) => { e.stopPropagation(); handleDeleteTemplate(tpl.id); }}
+                    className="p-1 mr-1.5 rounded text-[#555] hover:text-red-400 opacity-0 group-hover:opacity-100 transition-all"
+                  >
+                    <X size={11} />
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* 保存为模板按钮 */}
+        {configDirty && (
+          <button
+            onClick={() => setShowSaveTemplateModal(true)}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded bg-green-600/20 border border-green-600/30 hover:bg-green-600/30 text-xs text-green-400 transition-colors"
+          >
+            <Save size={12} /> 保存为模板
+          </button>
+        )}
+
+        <div className="flex-1" />
+
         {/* "自定义参数"开关 */}
         <div className="flex items-center gap-2">
           <span className="text-xs text-[#a0a0a0] select-none">自定义参数</span>
@@ -749,6 +1142,14 @@ const CPSAutomation: React.FC = () => {
         <button onClick={handleReset}
           className="px-3 py-1.5 rounded bg-[#2a2a2a] hover:bg-[#3a3a3a] text-xs text-white transition-colors flex items-center gap-1.5 shrink-0">
           <RotateCcw size={12} /> 恢复默认
+        </button>
+
+        {/* 分享按钮 */}
+        <button
+          onClick={() => { setShareUrl(''); setShareCopied(false); setShowShareModal(true); }}
+          className="px-3 py-1.5 rounded bg-[#2a2a2a] hover:bg-[#3a3a3a] text-xs text-white transition-colors flex items-center gap-1.5 shrink-0"
+        >
+          <Share2 size={12} /> 分享
         </button>
       </div>
 
@@ -854,6 +1255,9 @@ const CPSAutomation: React.FC = () => {
               style={{ height: `${PORTRAIT_PREVIEW_H}px`, aspectRatio: outputAspect(config.portrait.outputSizes.big) }}>
               {renderUploadBox('portrait', portraitImage, portraitBigCanvasRef)}
             </div>
+            {portraitImage && (
+              <div className="text-[10px] text-[#555] text-center mt-1">{(portraitImage.file.size / 1024).toFixed(0)} KB</div>
+            )}
           </div>
 
           {/* 中 */}
@@ -921,6 +1325,9 @@ const CPSAutomation: React.FC = () => {
           >
             {renderUploadBox('popup', popupImage, popupCanvasRef)}
           </div>
+          {popupImage && (
+            <div className="text-[10px] text-[#555] text-center mt-1">{(popupImage.file.size / 1024).toFixed(0)} KB</div>
+          )}
         </div>
 
         {/* APPicon */}
@@ -964,6 +1371,9 @@ const CPSAutomation: React.FC = () => {
           >
             {renderUploadBox('appIcon', appIconImage, appIconCanvasRef)}
           </div>
+          {appIconImage && (
+            <div className="text-[10px] text-[#555] text-center mt-1">{(appIconImage.file.size / 1024).toFixed(0)} KB</div>
+          )}
         </div>
       </div>
 
@@ -976,6 +1386,103 @@ const CPSAutomation: React.FC = () => {
           <Download size={16} /> 打包导出
         </button>
       </div>
+
+      {/* ====== 保存模板模态框 ====== */}
+      {showSaveTemplateModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm"
+          onClick={() => setShowSaveTemplateModal(false)}>
+          <div className="w-full max-w-sm mx-4 bg-[#151515] border border-[#2a2a2a] rounded-xl shadow-2xl"
+            onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between px-5 py-3 border-b border-[#2a2a2a]">
+              <h3 className="text-sm font-semibold text-white">保存为模板</h3>
+              <button onClick={() => setShowSaveTemplateModal(false)} className="p-1 rounded text-[#666] hover:text-white hover:bg-[#252525] transition-colors">
+                <X size={16} />
+              </button>
+            </div>
+            <div className="p-5">
+              <label className="block text-xs text-[#888] mb-1.5">模板名称</label>
+              <input
+                type="text"
+                value={newTemplateName}
+                onChange={e => setNewTemplateName(e.target.value)}
+                placeholder="输入模板名称..."
+                className="w-full px-3 py-2 rounded-lg bg-[#0f0f0f] border border-[#2a2a2a] text-white text-sm placeholder-[#555] focus:outline-none focus:border-blue-500"
+                autoFocus
+                onKeyDown={e => { if (e.key === 'Enter') handleSaveTemplate(); else if (e.key === 'Escape') setShowSaveTemplateModal(false); }}
+              />
+            </div>
+            <div className="flex justify-end gap-2 px-5 py-3 border-t border-[#2a2a2a]">
+              <button onClick={() => setShowSaveTemplateModal(false)}
+                className="px-3 py-1.5 rounded-lg bg-[#1a1a1a] border border-[#2a2a2a] text-[#999] hover:text-white text-xs transition-colors">
+                取消
+              </button>
+              <button onClick={handleSaveTemplate} disabled={!newTemplateName.trim()}
+                className="px-3 py-1.5 rounded-lg bg-green-600 hover:bg-green-700 text-white text-xs font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1.5">
+                <Save size={12} /> 保存
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ====== 分享模态框 ====== */}
+      {showShareModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm"
+          onClick={() => setShowShareModal(false)}>
+          <div className="w-full max-w-md mx-4 bg-[#151515] border border-[#2a2a2a] rounded-xl shadow-2xl"
+            onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between px-5 py-3 border-b border-[#2a2a2a]">
+              <h3 className="text-sm font-semibold text-white">分享 CPS 处理页面</h3>
+              <button onClick={() => setShowShareModal(false)} className="p-1 rounded text-[#666] hover:text-white hover:bg-[#252525] transition-colors">
+                <X size={16} />
+              </button>
+            </div>
+            <div className="p-5 space-y-4">
+              <div>
+                <label className="block text-xs text-[#888] mb-1.5">选择模板</label>
+                <select
+                  value={shareTemplateId}
+                  onChange={e => setShareTemplateId(e.target.value)}
+                  className="w-full px-3 py-2 rounded-lg bg-[#0f0f0f] border border-[#2a2a2a] text-white text-sm focus:outline-none focus:border-blue-500"
+                >
+                  <option value="default">默认模板</option>
+                  {templates.map(tpl => (
+                    <option key={tpl.id} value={tpl.id}>{tpl.name}</option>
+                  ))}
+                </select>
+              </div>
+              <div className="p-3 rounded-lg bg-[#0d0d0d] border border-[#222] text-xs text-[#888] space-y-1">
+                <p>将生成一个自包含的 HTML 页面，包含：</p>
+                <ul className="list-disc list-inside space-y-0.5 text-[#666]">
+                  <li>3 个图片上传框（能用立绘、弹窗、APP图标）</li>
+                  <li>自定义命名输入</li>
+                  <li>处理后 5 张图片预览 + 逐张下载</li>
+                </ul>
+                <p className="text-[#555] mt-1.5">所有模板参数已内嵌，无需安装任何工具，不依赖外部CDN。</p>
+              </div>
+              {shareUrl && (
+                <div className="flex items-center gap-2 p-2 rounded-lg bg-green-500/10 border border-green-500/20">
+                  <span className="text-xs text-green-400 flex-1 truncate">{shareUrl}</span>
+                  <button onClick={() => { navigator.clipboard.writeText(shareUrl); setShareCopied(true); setTimeout(() => setShareCopied(false), 2000); }}
+                    className="p-1 rounded text-green-400 hover:bg-green-500/20 transition-colors">
+                    {shareCopied ? <Check size={14} /> : <Copy size={14} />}
+                  </button>
+                </div>
+              )}
+            </div>
+            <div className="flex justify-end gap-2 px-5 py-3 border-t border-[#2a2a2a]">
+              <button onClick={() => setShowShareModal(false)}
+                className="px-3 py-1.5 rounded-lg bg-[#1a1a1a] border border-[#2a2a2a] text-[#999] hover:text-white text-xs transition-colors">
+                取消
+              </button>
+              <button onClick={handleShare}
+                className="px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-xs font-medium transition-colors flex items-center gap-1.5">
+                <Share2 size={12} /> 生成分享页面
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
