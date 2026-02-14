@@ -5,18 +5,16 @@ import { invoke } from '@tauri-apps/api/tauri';
 import { open } from '@tauri-apps/api/dialog';
 import { listen } from '@tauri-apps/api/event';
 import { appWindow } from '@tauri-apps/api/window';
-import JSZip from 'jszip';
 import UPNG from 'upng-js';
 
-// ---- TinyPNG 同款技术：PNG 色彩量化（24/32-bit → 8-bit 索引色，最多 256 色） ----
-// 通过智能减少颜色数量，视觉几乎无损，体积缩减 50-80%
-function compressPNG(canvas: HTMLCanvasElement): Blob {
+// ---- 无损 PNG 压缩（UPNG 多滤波策略，0 = 不量化）----
+function canvasToBlob(canvas: HTMLCanvasElement): Blob {
   const ctx = canvas.getContext('2d');
   if (!ctx) throw new Error('Canvas context unavailable');
   const { width, height } = canvas;
   const imageData = ctx.getImageData(0, 0, width, height);
-  const compressed = UPNG.encode([imageData.data.buffer], width, height, 256);
-  return new Blob([compressed], { type: 'image/png' });
+  const buf = UPNG.encode([imageData.data.buffer], width, height, 0);
+  return new Blob([buf], { type: 'image/png' });
 }
 
 // 默认参数配置
@@ -683,22 +681,22 @@ const CPSAutomation: React.FC = () => {
   const handleExport = async () => {
     if (!portraitImage || !popupImage || !appIconImage) { showToast('error', '请先上传所有三张图片'); return; }
     try {
-      showToast('info', '正在生成并压缩图片...');
-      await new Promise(r => setTimeout(r, 300));
+      await new Promise(r => setTimeout(r, 100));
       const images: GeneratedImage[] = [];
 
-      // TinyPNG 同款：从 Canvas 提取像素数据 → UPNG 量化为 256 色索引 PNG
-      const canvasToBlob = (ref: React.RefObject<HTMLCanvasElement>, name: string) => {
-        if (!ref.current) return;
-        const blob = compressPNG(ref.current);
+      // 无损 PNG 导出
+      const refs: [React.RefObject<HTMLCanvasElement>, string][] = [
+        [portraitBigCanvasRef, generateFileName(config.portrait.namePrefix, 'big')],
+        [portraitMidCanvasRef, generateFileName(config.portrait.namePrefix, 'mid')],
+        [portraitSmallCanvasRef, generateFileName(config.portrait.namePrefix, 'small')],
+        [popupCanvasRef, generateFileName(config.popup.namePrefix)],
+        [appIconCanvasRef, generateFileName(config.appIcon.namePrefix)],
+      ];
+      for (const [ref, name] of refs) {
+        if (!ref.current) continue;
+        const blob = canvasToBlob(ref.current);
         images.push({ name, blob });
-      };
-
-      canvasToBlob(portraitBigCanvasRef, generateFileName(config.portrait.namePrefix, 'big'));
-      canvasToBlob(portraitMidCanvasRef, generateFileName(config.portrait.namePrefix, 'mid'));
-      canvasToBlob(portraitSmallCanvasRef, generateFileName(config.portrait.namePrefix, 'small'));
-      canvasToBlob(popupCanvasRef, generateFileName(config.popup.namePrefix));
-      canvasToBlob(appIconCanvasRef, generateFileName(config.appIcon.namePrefix));
+      }
 
       if (isTauri) {
         // Tauri 环境：选择目录后保存到本地文件系统
@@ -717,20 +715,18 @@ const CPSAutomation: React.FC = () => {
         // 导出完成后自动打开目标文件夹
         try { await invoke('open_folder', { path: selectedDir }); } catch (_) { /* 静默 */ }
       } else {
-        // 浏览器环境：打包为 zip 一次下载
-        const zip = new JSZip();
-        for (const img of images) {
-          zip.file(img.name, img.blob);
+        // 浏览器环境：逐张下载 PNG
+        for (let i = 0; i < images.length; i++) {
+          const img = images[i];
+          const url = URL.createObjectURL(img.blob);
+          const a = document.createElement('a');
+          a.href = url;
+          a.download = img.name;
+          a.click();
+          URL.revokeObjectURL(url);
+          if (i < images.length - 1) await new Promise(r => setTimeout(r, 300));
         }
-        const zipBlob = await zip.generateAsync({ type: 'blob' });
-        const zipName = `CPS_${customName || 'export'}.zip`;
-        const url = URL.createObjectURL(zipBlob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = zipName;
-        a.click();
-        URL.revokeObjectURL(url);
-        showToast('success', `已导出 ${images.length} 张图片（${zipName}）`);
+        showToast('success', `已导出 ${images.length} 张图片`);
       }
     } catch (error) {
       console.error('导出失败:', error);
@@ -748,89 +744,114 @@ const CPSAutomation: React.FC = () => {
 <style>
 *{margin:0;padding:0;box-sizing:border-box}
 body{background:#0a0a0a;color:#fff;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:24px}
-.header{text-align:center;margin-bottom:20px}
-.header h1{font-size:18px;font-weight:600;color:#ccc}
-.upload-section{max-width:560px;margin:0 auto 24px}
-.upload-grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-bottom:16px}
-.upload-box{border:2px dashed #444;border-radius:10px;aspect-ratio:1;display:flex;flex-direction:column;align-items:center;justify-content:center;cursor:pointer;transition:border-color .2s;position:relative;overflow:hidden}
+.header{text-align:center;margin-bottom:20px;display:flex;align-items:baseline;justify-content:center;gap:12px}
+.header h1{font-size:18px;font-weight:600;color:#ccc;margin:0}
+.upload-section{max-width:640px;width:100%;margin:0 auto 24px}
+.upload-grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:14px;margin-bottom:18px}
+.upload-box{border:2px dashed #444;border-radius:12px;aspect-ratio:3/4;min-height:180px;display:flex;flex-direction:column;align-items:center;justify-content:center;cursor:pointer;transition:border-color .2s;position:relative;overflow:hidden}
 .upload-box:hover{border-color:#666}
-.upload-box.has-image{border-color:#333}
+.upload-box.drag-over{border-color:#3b82f6;background:rgba(59,130,246,0.08)}
+.upload-box.has-image{border-color:#333;border-style:solid}
 .upload-box img{width:100%;height:100%;object-fit:cover;position:absolute;inset:0}
-.upload-box .label{font-size:11px;color:#666;margin-top:4px}
-.upload-box .plus{font-size:24px;color:#555}
-.ctrl-row{display:flex;gap:8px;align-items:center}
-.ctrl-row label{font-size:12px;color:#888;white-space:nowrap}
-.ctrl-row input{flex:1;padding:7px 10px;background:#1a1a1a;border:1px solid #333;border-radius:8px;color:#fff;font-size:13px;outline:none}
+.upload-box .label{font-size:14px;color:#fff;margin-top:6px}
+.upload-box .plus{font-size:30px;color:#fff}
+.upload-box .file-size{position:absolute;bottom:6px;left:0;right:0;text-align:center;font-size:11px;color:#aaa;background:rgba(0,0,0,0.55);padding:2px 0;z-index:1}
+.ctrl-row{display:flex;gap:10px;align-items:center}
+.ctrl-row label{font-size:13px;color:#888;white-space:nowrap}
+.ctrl-row input{flex:1;padding:9px 12px;background:#1a1a1a;border:1px solid #333;border-radius:8px;color:#fff;font-size:14px;outline:none}
 .ctrl-row input:focus{border-color:#3b82f6}
-.ctrl-row .btn{flex:none;width:auto;padding:7px 16px}
+.ctrl-row .btn{flex:none;width:auto;padding:9px 20px}
 .btn{padding:10px 20px;border:none;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;transition:all .2s}
 .btn-primary{background:#2563eb;color:#fff}.btn-primary:hover{background:#1d4ed8}
 .btn-primary:disabled{background:#333;color:#555;cursor:not-allowed}
-.btn-sm{padding:5px 10px;font-size:11px;border-radius:6px;font-weight:500}
-.btn-outline{background:transparent;border:1px solid #444;color:#aaa}.btn-outline:hover{border-color:#666;color:#fff}
-.results{display:none;max-width:900px;margin:0 auto}
-.results-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;padding-bottom:8px;border-bottom:1px solid #1a1a1a}
-.results-header h2{font-size:14px;color:#aaa;font-weight:500}
-.result-grid{display:flex;flex-wrap:wrap;gap:10px;justify-content:center}
-.result-item{background:#111;border:1px solid #222;border-radius:10px;overflow:hidden;display:flex;flex-direction:column}
-.result-item img{display:block;background:repeating-conic-gradient(#1a1a1a 0% 25%,#111 0% 50%) 50%/16px 16px}
-.result-item .info{padding:6px 8px;display:flex;align-items:center;justify-content:space-between;gap:6px;border-top:1px solid #222}
-.result-item .info .name{font-size:10px;color:#888;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.status{text-align:center;font-size:12px;color:#888;margin-top:10px}
+.status{text-align:center;font-size:12px;color:#888;margin-top:12px}
 canvas{display:none}
+.ctrl-row input::placeholder{color:#e53e3e;opacity:0.85}
+.input-hint{font-size:11px;color:#e53e3e;margin-top:4px;display:none;text-align:left;padding-left:42px}
+.input-hint.show{display:block}
+@keyframes shake{0%,100%{transform:translateX(0)}20%,60%{transform:translateX(-6px)}40%,80%{transform:translateX(6px)}}
+.shake{animation:shake .4s ease}
 </style>
 <script src="https://cdn.jsdelivr.net/npm/pako@2.1.0/dist/pako.min.js"><\/script>
 <script src="https://cdn.jsdelivr.net/npm/upng-js@2.1.0/UPNG.js"><\/script>
 </head>
 <body>
-<div class="header"><h1>边锋掼蛋CPS图片处理</h1></div>
+<div class="header"><h1>边锋掼蛋CPS图片处理</h1><a href="https://rcn6u2y4zn7a.feishu.cn/wiki/RDF1wn74riHdzYkEMViccVxtnfl?from=from_copylink" target="_blank" style="font-size:13px;color:#3b82f6;text-decoration:none;margin-left:12px">规范要求</a></div>
 <div class="upload-section">
   <div class="upload-grid">
-    <div class="upload-box" id="box-portrait" onclick="triggerUpload('portrait')"><span class="plus">+</span><span class="label">能用立绘</span></div>
+    <div class="upload-box" id="box-portrait" onclick="triggerUpload('portrait')"><span class="plus">+</span><span class="label">通用立绘</span></div>
     <div class="upload-box" id="box-popup" onclick="triggerUpload('popup')"><span class="plus">+</span><span class="label">弹窗</span></div>
     <div class="upload-box" id="box-appIcon" onclick="triggerUpload('appIcon')"><span class="plus">+</span><span class="label">APP图标</span></div>
   </div>
   <input type="file" id="fileInput" accept="image/*" style="display:none">
   <div class="ctrl-row">
     <label>命名</label>
-    <input id="customName" placeholder="输入自定义名称">
-    <button class="btn btn-primary" id="exportBtn" disabled onclick="doExport()">生成</button>
+    <input id="customName" placeholder="必须填产品给的命名序列号" maxlength="2">
+    <button class="btn btn-primary" id="exportBtn" disabled onclick="doExport()">生成并下载</button>
   </div>
+  <div class="input-hint" id="inputHint">只允许输入2位数字</div>
   <div class="status" id="status"></div>
-</div>
-<div class="results" id="results">
-  <div class="results-header">
-    <h2>生成结果</h2>
-    <button class="btn btn-sm btn-outline" onclick="downloadAll()">逐张下载全部</button>
-  </div>
-  <div class="result-grid" id="resultGrid"></div>
 </div>
 <canvas id="cvs"></canvas>
 <script>
 const CFG=${JSON.stringify(templateConfig)};
 const files={portrait:null,popup:null,appIcon:null};
-let currentType='',generatedImages=[];
+let currentType='';
 function triggerUpload(type){currentType=type;document.getElementById('fileInput').click()}
-// TinyPNG 同款技术：PNG 色彩量化（24/32-bit → 8-bit 索引色，最多 256 色）
-function compressPNG(canvas){
+(function(){
+  var inp=document.getElementById('customName'),hint=document.getElementById('inputHint');
+  inp.addEventListener('input',function(){
+    var v=inp.value.replace(/[^0-9]/g,'');
+    if(v.length>2) v=v.slice(0,2);
+    if(inp.value!==v||inp.value.length>2){
+      inp.value=v;
+      inp.classList.remove('shake');void inp.offsetWidth;inp.classList.add('shake');
+      hint.classList.add('show');
+    }else{
+      hint.classList.remove('show');
+    }
+    checkReady();
+  });
+  inp.addEventListener('animationend',function(){inp.classList.remove('shake')});
+})();
+// 无损 PNG 压缩（UPNG 多滤波策略，0 = 不量化）
+function canvasToPNG(canvas){
   var ctx=canvas.getContext('2d');
   var imgData=ctx.getImageData(0,0,canvas.width,canvas.height);
-  var compressed=UPNG.encode([imgData.data.buffer],canvas.width,canvas.height,256);
-  return new Blob([compressed],{type:'image/png'});
+  var buf=UPNG.encode([imgData.data.buffer],canvas.width,canvas.height,0);
+  return new Blob([buf],{type:'image/png'});
 }
-function blobToDataURI(blob){
-  return new Promise(function(r){var rd=new FileReader();rd.onload=function(){r(rd.result)};rd.readAsDataURL(blob)});
+function fmtSize(bytes){if(bytes<1024)return bytes+'B';if(bytes<1048576)return (bytes/1024).toFixed(1)+'KB';return (bytes/1048576).toFixed(1)+'MB'}
+function handleFile(type,f){
+  if(!f||!f.type.startsWith('image/'))return;
+  files[type]=f;
+  var box=document.getElementById('box-'+type);
+  box.classList.add('has-image');
+  box.innerHTML='<img src="'+URL.createObjectURL(f)+'"><span class="file-size">'+fmtSize(f.size)+'</span>';
+  checkReady();
 }
 document.getElementById('fileInput').onchange=function(e){
-  const f=e.target.files[0];if(!f)return;
-  files[currentType]=f;
-  const box=document.getElementById('box-'+currentType);
-  box.classList.add('has-image');
-  box.innerHTML='<img src="'+URL.createObjectURL(f)+'">';
-  e.target.value='';checkReady();
+  var f=e.target.files[0];if(!f)return;
+  handleFile(currentType,f);
+  e.target.value='';
 };
+// 拖拽上传
+['portrait','popup','appIcon'].forEach(function(type){
+  var box=document.getElementById('box-'+type);
+  box.addEventListener('dragover',function(e){e.preventDefault();e.stopPropagation();box.classList.add('drag-over')});
+  box.addEventListener('dragleave',function(e){e.preventDefault();e.stopPropagation();box.classList.remove('drag-over')});
+  box.addEventListener('drop',function(e){
+    e.preventDefault();e.stopPropagation();box.classList.remove('drag-over');
+    var f=e.dataTransfer&&e.dataTransfer.files[0];
+    if(f) handleFile(type,f);
+  });
+});
+// 阻止页面级拖拽打开文件
+document.addEventListener('dragover',function(e){e.preventDefault()});
+document.addEventListener('drop',function(e){e.preventDefault()});
 function checkReady(){
-  const ok=files.portrait&&files.popup&&files.appIcon;
+  var v=document.getElementById('customName').value;
+  var ok=files.portrait&&files.popup&&files.appIcon&&/^\\d{1,2}$/.test(v);
   document.getElementById('exportBtn').disabled=!ok;
 }
 function loadImg(file){return new Promise((r,j)=>{const i=new Image();i.onload=()=>r(i);i.onerror=j;i.src=URL.createObjectURL(file)})}
@@ -852,12 +873,6 @@ function fitBig(img,cw,ch){const ia=img.width/img.height,ca=cw/ch;let dw,dh,dx,d
 function fitMid(img,cw,ch){const ca=cw/ch,ia=img.width/img.height;if(ia>ca){const w=img.height*ca,x=(img.width-w)/2;return{sx:x,sy:0,sw:w,sh:img.height,dx:0,dy:0,dw:cw,dh:ch}}else{const h=img.width/ca,y=(img.height-h)/2;return{sx:0,sy:y,sw:img.width,sh:h,dx:0,dy:0,dw:cw,dh:ch}}}
 function fitSmall(img,cw,ch){const ms=CFG.portrait.sizes.mid,ma=ms.width/ms.height,ia=img.width/img.height;let msx,msy,msw,msh;if(ia>ma){msw=img.height*ma;msx=(img.width-msw)/2;msy=0;msh=img.height}else{msw=img.width;msx=0;msh=img.width/ma;msy=(img.height-msh)/2}const sc=msh/ms.height,hr=ch/ms.height;return{sx:msx,sy:msy+83*sc,sw:msw,sh:msh*hr,dx:0,dy:0,dw:cw,dh:ch}}
 function fitShortest(img,cw,ch){const ia=img.width/img.height,ca=cw/ch;if(ia>ca){const w=img.height*ca,x=(img.width-w)/2;return{sx:x,sy:0,sw:w,sh:img.height,dx:0,dy:0,dw:cw,dh:ch}}else{const h=img.width/ca,y=(img.height-h)/2;return{sx:0,sy:y,sw:img.width,sh:h,dx:0,dy:0,dw:cw,dh:ch}}}
-function renderToCanvas(img,outW,outH,drawFn){
-  const cvs=document.getElementById('cvs'),ctx=cvs.getContext('2d');
-  cvs.width=outW;cvs.height=outH;ctx.clearRect(0,0,outW,outH);
-  drawFn(ctx,img,outW,outH);
-  return cvs.toDataURL('image/png');
-}
 function drawPortrait(ctx,img,outW,outH,size,type){
   const m=CFG.portrait.margin;
   const p=type==='big'?fitBig(img,size.width,size.height):type==='mid'?fitMid(img,size.width,size.height):fitSmall(img,size.width,size.height);
@@ -868,27 +883,22 @@ function drawPortrait(ctx,img,outW,outH,size,type){
   ctx.drawImage(img,p.sx,p.sy,p.sw,p.sh,m.left+p.dx,m.top+p.dy,p.dw,p.dh);ctx.restore();
 }
 function genName(prefix,suffix){const n=document.getElementById('customName').value||'';let fn=prefix.replace('@',n);if(suffix)fn+='_'+suffix;return fn+'.png'}
-function downloadDataURI(dataURI,name){const a=document.createElement('a');a.href=dataURI;a.download=name;a.click()}
-function downloadAll(){
-  if(!generatedImages.length)return;
-  let i=0;
-  function next(){if(i>=generatedImages.length)return;const g=generatedImages[i];downloadDataURI(g.dataURI,g.name);i++;setTimeout(next,400)}
-  next();
-}
 async function doExport(){
-  const st=document.getElementById('status');st.textContent='正在处理...';
+  const st=document.getElementById('status');st.textContent='正在生成图片...';
   document.getElementById('exportBtn').disabled=true;
   try{
     const[pImg,popImg,iconImg]=await Promise.all([loadImg(files.portrait),loadImg(files.popup),loadImg(files.appIcon)]);
-    generatedImages=[];
     const tasks=[
-      {outSize:CFG.portrait.outputSizes.big,size:CFG.portrait.sizes.big,type:'big',prefix:CFG.portrait.namePrefix,suffix:'big',label:'立绘-大'},
-      {outSize:CFG.portrait.outputSizes.mid,size:CFG.portrait.sizes.mid,type:'mid',prefix:CFG.portrait.namePrefix,suffix:'mid',label:'立绘-中'},
-      {outSize:CFG.portrait.outputSizes.small,size:CFG.portrait.sizes.small,type:'small',prefix:CFG.portrait.namePrefix,suffix:'small',label:'立绘-小'},
-      {outSize:{width:CFG.popup.width,height:CFG.popup.height},type:'popup',prefix:CFG.popup.namePrefix,suffix:null,label:'弹窗'},
-      {outSize:{width:CFG.appIcon.width,height:CFG.appIcon.height},type:'icon',prefix:CFG.appIcon.namePrefix,suffix:null,label:'图标'},
+      {outSize:CFG.portrait.outputSizes.big,size:CFG.portrait.sizes.big,type:'big',prefix:CFG.portrait.namePrefix,suffix:'big'},
+      {outSize:CFG.portrait.outputSizes.mid,size:CFG.portrait.sizes.mid,type:'mid',prefix:CFG.portrait.namePrefix,suffix:'mid'},
+      {outSize:CFG.portrait.outputSizes.small,size:CFG.portrait.sizes.small,type:'small',prefix:CFG.portrait.namePrefix,suffix:'small'},
+      {outSize:{width:CFG.popup.width,height:CFG.popup.height},type:'popup',prefix:CFG.popup.namePrefix,suffix:null},
+      {outSize:{width:CFG.appIcon.width,height:CFG.appIcon.height},type:'icon',prefix:CFG.appIcon.namePrefix,suffix:null},
     ];
-    for(const t of tasks){
+    var dlList=[];
+    for(var ti=0;ti<tasks.length;ti++){
+      var t=tasks[ti];
+      st.textContent='正在处理 ('+(ti+1)+'/'+tasks.length+')...';
       const cvs=document.getElementById('cvs'),ctx=cvs.getContext('2d');
       cvs.width=t.outSize.width;cvs.height=t.outSize.height;ctx.clearRect(0,0,cvs.width,cvs.height);
       if(t.type==='popup'){
@@ -900,32 +910,26 @@ async function doExport(){
       }else{
         drawPortrait(ctx,pImg,cvs.width,cvs.height,t.size,t.type);
       }
-      // TinyPNG 同款：UPNG 量化为 256 色索引 PNG
-      var blob=compressPNG(cvs);
-      var dataURI=await blobToDataURI(blob);
-      var sizeKB=(blob.size/1024).toFixed(0);
-      const name=genName(t.prefix,t.suffix);
-      generatedImages.push({dataURI,name,label:t.label,w:t.outSize.width,h:t.outSize.height,sizeKB:sizeKB});
+      var blob=await canvasToPNG(cvs);
+      var name=genName(t.prefix,t.suffix);
+      dlList.push({blob:blob,name:name});
     }
-    const grid=document.getElementById('resultGrid');
-    grid.innerHTML='';
-    for(const g of generatedImages){
-      const previewH=Math.min(160,g.h);const previewW=Math.round(previewH*g.w/g.h);
-      const div=document.createElement('div');div.className='result-item';
-      div.innerHTML='<img src="'+g.dataURI+'" style="width:'+previewW+'px;height:'+previewH+'px">'
-        +'<div class="info"><span class="name" title="'+g.name+'">'+g.label+' ('+g.w+'\\u00d7'+g.h+') '+g.sizeKB+'KB</span>'
-        +'<button class="btn btn-sm btn-outline">保存</button></div>';
-      var btn=div.querySelector('button');
-      btn.onclick=(function(uri,nm){return function(){downloadDataURI(uri,nm)}})(g.dataURI,g.name);
-      grid.appendChild(div);
+    st.textContent='正在下载...';
+    for(var di=0;di<dlList.length;di++){
+      var item=dlList[di];
+      var a=document.createElement('a');
+      a.href=URL.createObjectURL(item.blob);
+      a.download=item.name;
+      a.click();
+      URL.revokeObjectURL(a.href);
+      if(di<dlList.length-1) await new Promise(function(r){setTimeout(r,300)});
     }
-    document.getElementById('results').style.display='block';
-    st.textContent='处理完成！已使用 TinyPNG 量化压缩（256 色索引 PNG）';
+    st.textContent='';
   }catch(e){st.textContent='处理失败: '+e.message;console.error(e)}
   document.getElementById('exportBtn').disabled=false;
 }
 <\/script>
-<div style="text-align:center;padding:32px 0 16px;font-size:11px;color:#444">边锋掼蛋@2026</div>
+<div style="text-align:center;padding:32px 0 16px;font-size:13px;color:#6b6b6b">边锋掼蛋@2026</div>
 </body>
 </html>`;
   }, []);
@@ -945,7 +949,7 @@ async function doExport(){
         const selectedDir = await open({ directory: true, multiple: false, title: '选择保存目录' });
         if (!selectedDir || typeof selectedDir !== 'string') return;
         const sep = (selectedDir as string).includes('/') ? '/' : '\\';
-        const filePath = `${selectedDir}${sep}CPS_Share.html`;
+        const filePath = `${selectedDir}${sep}边锋掼蛋CPS素材生成.html`;
         const buf = await blob.arrayBuffer();
         await invoke('write_binary_file_with_path', {
           filePath,
@@ -963,10 +967,10 @@ async function doExport(){
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = 'CPS_Share.html';
+      a.download = '边锋掼蛋CPS素材生成.html';
       a.click();
       URL.revokeObjectURL(url);
-      setShareUrl('CPS_Share.html（已下载）');
+      setShareUrl('边锋掼蛋CPS素材生成.html（已下载）');
       showToast('success', '分享页面已下载');
     }
   }, [shareTemplateId, templates, isTauri, generateSharePage, showToast]);

@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, lazy, Suspense } from 'react';
 import { 
   Type, Menu, User, Settings, 
-  Sparkles, Home, CheckSquare, Grid3X3, PenTool, Zap, ScanLine
+  Sparkles, Home, CheckSquare, Grid3X3, PenTool, Zap, ScanLine, Minimize2, Library
 } from 'lucide-react';
 import { getStorageConfig, formatSyncTime } from './services/fileStorageService';
 import { getUserInfo, clearUserInfo, UserInfo, verifyUser, rustLogout } from './services/userAuthService';
@@ -30,6 +30,8 @@ const AppLauncher = lazy(() => import('./components/AppLauncher'));
 const Whiteboard = lazy(() => import('./components/Whiteboard'));
 const CPSAutomation = lazy(() => import('./components/CPSAutomation'));
 const UIAudit = lazy(() => import('./components/UIAudit'));
+const ImageCompressor = lazy(() => import('./components/ImageCompressor'));
+const AssetManager = lazy(() => import('./components/AssetManager'));
 
 // 预加载所有组件的函数
 const preloadComponents = () => {
@@ -96,6 +98,7 @@ const createMenuGroups = (): MenuGroup[] => [
   {
     items: [
       { id: 'home', label: '首页', icon: Home, draggable: false }, // 首页固定，不可拖动
+      { id: 'assets', label: '资源管理', icon: Library, draggable: false },
     ],
   },
   {
@@ -107,7 +110,8 @@ const createMenuGroups = (): MenuGroup[] => [
       { id: 'apps', label: '常用应用', icon: Grid3X3 },
       { id: 'whiteboard', label: '无限画布', icon: PenTool },
       { id: 'cps', label: 'CPS自动化', icon: Zap },
-      { id: 'uiaudit', label: 'UI审计助手', icon: ScanLine },
+      { id: 'uiaudit', label: '图像分析', icon: ScanLine },
+      { id: 'imgcompress', label: '图片压缩', icon: Minimize2 },
     ],
   },
 ];
@@ -445,6 +449,8 @@ const AppContent: React.FC = () => {
       'whiteboard': 'whiteboard',
       'cps': 'cps',
       'uiaudit': 'uiaudit',
+      'imgcompress': 'imgcompress',
+      'assets': 'assets',
     };
     const tab = tabMapping[id] || 'home';
 
@@ -490,6 +496,8 @@ const AppContent: React.FC = () => {
     whiteboard: { node: <Whiteboard />,     skeleton: 'whiteboard', absolute: true },
     cps:        { node: <CPSAutomation />,  skeleton: 'default' },
     uiaudit:    { node: <UIAudit />,        skeleton: 'default' },
+    imgcompress:{ node: <ImageCompressor />,skeleton: 'default' },
+    assets:     { node: <AssetManager />,   skeleton: 'default' },
     ai:         { node: <AITool />,         skeleton: 'ai' },
   };
 

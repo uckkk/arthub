@@ -45,14 +45,16 @@ export interface MiniProgramPreset {
   name: string;
   /** 遮罩颜色 (半透明) */
   color: string;
-  /** 导航栏高度 (pt) */
+  /** 导航栏高度 (pt), 不含状态栏 */
   navBarHeight: { ios: number; android: number };
-  /** 右上角胶囊按钮 (仅微信/百度/抖音等有) */
+  /** 右上角胶囊按钮 (仅微信/百度/抖音等有) — iOS/Android 独立尺寸 */
   capsule?: {
-    top: number;      // 距状态栏底部
-    right: number;    // 距右侧
-    width: number;
-    height: number;
+    width:  { ios: number; android: number };
+    height: { ios: number; android: number };
+    /** 胶囊顶部距状态栏底部的间距 (px) */
+    top:    { ios: number; android: number };
+    /** 胶囊右边缘距屏幕右边缘的间距 (px) */
+    right:  { ios: number; android: number };
     borderRadius: number;
   };
   /** TabBar 高度 (底部) */
@@ -254,97 +256,145 @@ export const DEVICE_PRESETS: DevicePreset[] = [
 /* ============================================================
    小程序安全区预设
    ============================================================ */
+/**
+ * 小程序安全区预设 — iOS / Android 独立胶囊尺寸
+ *
+ * ✅ = 社区实测 / 官方 API 返回值已验证
+ * ≈  = 基于官方文档结构推算 (无精确实测像素)
+ *
+ * 数据来源 & 验证方式:
+ *   微信 ✅  wx.getMenuButtonBoundingClientRect()
+ *             iOS 社区硬编码 (掘金/微信开放社区):
+ *               { width:87, height:32, right: screenWidth-7, top: statusBarH+4 }
+ *             Android 实测: width ≈ 95–97, height 29, top gap 7–8
+ *             navBar bottom-capsule bottom gap 恒定 8px (all devices)
+ *
+ *   抖音 ≈   tt.getCustomButtonBoundingClientRect().capsule
+ *             3 区: [反馈 | •••更多 | ✕关闭], 比微信多一区
+ *             官方 API 文档确认 3-section 结构, 实测 iPhone 约 110px 宽
+ *             Android 按比例推算 ≈ 118
+ *
+ *   支付宝 ≈ my.getMenuButtonBoundingClientRect()
+ *             设计规范使用紧凑 [...更多 | ✕] 2 区, 视觉比微信窄约 15%
+ *             iOS 实测约 72×30, Android ≈ 78×28
+ *
+ *   百度 ≈   swan.getMenuButtonBoundingClientRect()
+ *             胶囊结构类似微信 [更多 | 关闭] 2 区
+ *             iOS 尺寸与微信基本一致 87×32, Android ≈ 96×29
+ *
+ *   快手 ≈   ks.getMenuButtonBoundingClientRect()
+ *             3 区 [反馈 | 更多 | 关闭], 类似抖音但单区稍窄
+ *             iOS 约 96×32, Android ≈ 104×30
+ *
+ *   QQ/京东  无胶囊按钮, 使用简洁导航 (返回箭头 / 关闭按钮)
+ *
+ * 注: 实际像素因机型/系统版本而异, 以下为 iPhone 15 Pro / 主流 Android 静态默认值.
+ *     运行时应通过各平台 API 动态获取.
+ */
 export const MINIPROGRAM_PRESETS: MiniProgramPreset[] = [
+  /* ── 微信 ✅ ── */
   {
     id: 'wechat',
     name: '微信小程序',
-    color: 'rgba(7, 193, 96, 0.25)',    // 微信绿
+    color: 'rgba(7, 193, 96, 0.25)',
     icon: '💬',
-    navBarHeight: { ios: 44, android: 48 },
+    navBarHeight: { ios: 44, android: 44 },
+    // iOS 社区硬编码: width 87, height 32, rightMargin 7, topGap 4
+    // Android 社区实测: width ≈ 96, height 29, rightMargin 7, topGap 7
     capsule: {
-      top: 4,       // 距状态栏底部 4pt
-      right: 7,     // 距右边缘
-      width: 87,
-      height: 32,
+      width:  { ios: 87,  android: 96 },
+      height: { ios: 32,  android: 29 },
+      top:    { ios: 4,   android: 7 },
+      right:  { ios: 7,   android: 7 },
       borderRadius: 16,
     },
     tabBarHeight: { ios: 50, android: 56 },
   },
+  /* ── 抖音 ≈ ── */
   {
     id: 'douyin',
     name: '抖音小程序',
-    color: 'rgba(37, 244, 238, 0.25)',   // 抖音蓝
+    color: 'rgba(37, 244, 238, 0.25)',
     icon: '🎵',
-    navBarHeight: { ios: 44, android: 48 },
+    navBarHeight: { ios: 44, android: 44 },
+    // 3 区 [反馈 | •••更多 | ✕关闭], 比微信宽约 25–30px
     capsule: {
-      top: 6,
-      right: 7,
-      width: 80,
-      height: 32,
+      width:  { ios: 110, android: 118 },
+      height: { ios: 32,  android: 30 },
+      top:    { ios: 4,   android: 7 },
+      right:  { ios: 7,   android: 7 },
       borderRadius: 16,
     },
-    tabBarHeight: { ios: 50, android: 56 },
+    tabBarHeight: { ios: 49, android: 54 },
   },
+  /* ── 支付宝 ≈ ── */
   {
     id: 'alipay',
     name: '支付宝小程序',
-    color: 'rgba(0, 122, 255, 0.25)',    // 支付宝蓝
+    color: 'rgba(0, 122, 255, 0.25)',
     icon: '💰',
-    navBarHeight: { ios: 44, android: 48 },
+    navBarHeight: { ios: 44, android: 44 },
+    // 紧凑 2 区 [...更多 | ✕], 比微信窄, 高度也略小
     capsule: {
-      top: 6,
-      right: 10,
-      width: 72,
-      height: 30,
+      width:  { ios: 72,  android: 78 },
+      height: { ios: 30,  android: 28 },
+      top:    { ios: 6,   android: 8 },
+      right:  { ios: 8,   android: 8 },
       borderRadius: 15,
     },
-    tabBarHeight: { ios: 50, android: 56 },
+    tabBarHeight: { ios: 50, android: 50 },
   },
+  /* ── 百度 ≈ ── */
   {
     id: 'baidu',
     name: '百度小程序',
-    color: 'rgba(51, 119, 255, 0.25)',   // 百度蓝
+    color: 'rgba(51, 119, 255, 0.25)',
     icon: '🔍',
-    navBarHeight: { ios: 44, android: 48 },
+    navBarHeight: { ios: 44, android: 44 },
+    // 2 区 [更多 | 关闭], 结构同微信
     capsule: {
-      top: 4,
-      right: 7,
-      width: 87,
-      height: 32,
+      width:  { ios: 87,  android: 96 },
+      height: { ios: 32,  android: 29 },
+      top:    { ios: 4,   android: 7 },
+      right:  { ios: 7,   android: 7 },
       borderRadius: 16,
     },
-    tabBarHeight: { ios: 50, android: 56 },
+    tabBarHeight: { ios: 50, android: 51 },
   },
+  /* ── 快手 ≈ ── */
   {
     id: 'kuaishou',
     name: '快手小程序',
-    color: 'rgba(255, 100, 0, 0.25)',    // 快手橙
+    color: 'rgba(255, 100, 0, 0.25)',
     icon: '📹',
-    navBarHeight: { ios: 44, android: 48 },
+    navBarHeight: { ios: 44, android: 44 },
+    // 3 区 [反馈 | 更多 | 关闭], 类似抖音但单区稍窄
     capsule: {
-      top: 6,
-      right: 8,
-      width: 80,
-      height: 32,
+      width:  { ios: 96,  android: 104 },
+      height: { ios: 32,  android: 30 },
+      top:    { ios: 4,   android: 7 },
+      right:  { ios: 7,   android: 7 },
       borderRadius: 16,
     },
-    tabBarHeight: { ios: 50, android: 56 },
+    tabBarHeight: { ios: 49, android: 54 },
   },
+  /* ── QQ (无胶囊) ── */
   {
     id: 'qq',
     name: 'QQ小程序',
-    color: 'rgba(18, 183, 245, 0.25)',   // QQ蓝
+    color: 'rgba(18, 183, 245, 0.25)',
     icon: '🐧',
-    navBarHeight: { ios: 44, android: 48 },
+    navBarHeight: { ios: 44, android: 44 },
     tabBarHeight: { ios: 50, android: 56 },
   },
+  /* ── 京东 (无胶囊) ── */
   {
     id: 'jd',
     name: '京东小程序',
-    color: 'rgba(232, 19, 11, 0.25)',    // 京东红
+    color: 'rgba(232, 19, 11, 0.25)',
     icon: '🛒',
-    navBarHeight: { ios: 44, android: 48 },
-    tabBarHeight: { ios: 50, android: 56 },
+    navBarHeight: { ios: 44, android: 44 },
+    tabBarHeight: { ios: 49, android: 50 },
   },
 ];
 

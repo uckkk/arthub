@@ -198,12 +198,9 @@ class ConsoleService {
             if (elHeight < 10 && parentHeight > 100) {
               this.addLog('warn', [
                 `[布局问题] 滚动容器高度异常`,
-                `元素: ${el.className || el.tagName}`,
-                `容器高度: ${elHeight}px`,
-                `父容器高度: ${parentHeight}px`,
-                `内容高度: ${el.scrollHeight}px`,
+                `元素: ${(el.className || el.tagName).substring(0, 120)}`,
+                `容器高度: ${elHeight}px, 父容器: ${parentHeight}px, 内容: ${el.scrollHeight}px`,
                 `建议: 检查是否需要添加 min-h-0 或 overflow-hidden 到父容器`,
-                { element: el, parent },
               ]);
             }
           }
@@ -219,20 +216,21 @@ class ConsoleService {
         const height = element.clientHeight;
         const parent = element.parentElement;
         
-        if (height === 0 && parent && parent.clientHeight > 0) {
+        if (height === 0 && parent && parent.clientHeight > 50) {
           // 检查是否是 flex 布局问题
           const parentStyle = window.getComputedStyle(parent);
           const isFlex = parentStyle.display === 'flex';
+          const isColumn = parentStyle.flexDirection === 'column';
           
-          if (isFlex) {
+          // 只在 flex-col 且父容器有明确高度时警告
+          if (isFlex && isColumn) {
+            // 跳过宽度也为 0 的元素（可能是完全折叠的）
+            if (element.clientWidth === 0) return;
             this.addLog('warn', [
               `[布局问题] h-full 元素高度为0`,
-              `元素: ${element.className || element.tagName}`,
-              `父容器: ${parent.className || parent.tagName}`,
-              `父容器高度: ${parent.clientHeight}px`,
-              `父容器 display: ${parentStyle.display}`,
+              `元素: ${(element.className || element.tagName).substring(0, 120)}`,
+              `父容器: ${(parent.className || parent.tagName).substring(0, 80)} (${parent.clientHeight}px)`,
               `建议: 检查父容器是否需要 overflow-hidden 或 flex-1`,
-              { element, parent },
             ]);
           }
         }
@@ -253,19 +251,31 @@ class ConsoleService {
 
           const parentStyle = window.getComputedStyle(parent);
           const isFlex = parentStyle.display === 'flex';
+          // 只在父容器 flex-direction: column 时检测高度问题
+          // row 方向的 flex-1 控制的是宽度，高度为0是正常的
+          const isColumn = parentStyle.flexDirection === 'column';
+          if (!isFlex || !isColumn) return;
+
           const elementHeight = element.clientHeight;
           const parentHeight = parent.clientHeight;
           
-          // 如果父容器是 flex，但 flex-1 元素高度为0
-          if (isFlex && elementHeight === 0 && parentHeight > 0) {
+          // 如果父容器是 flex-col，且父容器有足够高度（>50px），但 flex-1 子元素高度为0
+          if (elementHeight === 0 && parentHeight > 50) {
+            // 跳过内联元素（span 等）和非块级子项
+            if (elStyle.display === 'inline' || elStyle.display === 'inline-block') return;
+            // 跳过有 grid 布局的元素（grid 容器的 flex-1 行为不同）
+            if (elStyle.display === 'grid' || elStyle.display === 'inline-grid') return;
+            // 跳过本身也是 hidden/collapsed 的元素
+            if (element.clientWidth === 0) return;
+
             const hasMinH0 = element.className.includes('min-h-0');
+            const classSnippet = (element.className || element.tagName).substring(0, 120);
+            const parentClassSnippet = (parent.className || parent.tagName).substring(0, 80);
             this.addLog('warn', [
               `[布局问题] flex-1 元素高度为0`,
-              `元素: ${element.className || element.tagName}`,
-              `父容器高度: ${parentHeight}px`,
-              `是否有 min-h-0: ${hasMinH0}`,
+              `元素: ${classSnippet}`,
+              `父容器: ${parentClassSnippet} (${parentHeight}px)`,
               `建议: ${hasMinH0 ? '检查父容器布局' : '尝试添加 min-h-0 类'}`,
-              { element, parent },
             ]);
           }
         }

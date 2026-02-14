@@ -2,9 +2,9 @@ import React, { useState, useRef, useCallback, useEffect, useMemo } from 'react'
 import {
   Monitor, Smartphone, Tablet, FoldVertical,
   Upload, ChevronDown, Keyboard, LayoutGrid, AlertTriangle,
-  Shield, Eye, EyeOff, Info, X, Maximize,
-  Flame, Crosshair, MousePointer, BarChart3, Target, Pipette,
-  Hand, Loader2, RefreshCw, Zap,
+  Shield, Eye, EyeOff, Info, X,
+  Flame, Crosshair, MousePointer, Pipette,
+  Hand, Loader2, RefreshCw, Scan, Trash2, Plus, Box,
 } from 'lucide-react';
 import {
   DEVICE_PRESETS, MINIPROGRAM_PRESETS, KEYBOARD_HEIGHTS,
@@ -23,13 +23,18 @@ import {
 } from './contrastUtils';
 import {
   drawReachabilityOverlay, drawFittsOverlay, calculateFitts,
-  type FittsResult,
+  getPortraitReachZones, getLandscapeReachZones,
+  type FittsResult, type ReachZone,
 } from './reachability';
 import {
   generateReport, GRADE_COLORS,
   type AuditReport, type PlatformAdaptInput, type SaliencyInput,
   type ReadabilityInput, type EfficiencyInput,
 } from './auditScore';
+import {
+  detectUIElements, sampleBoxColors, computeThumbAnchors, getThumbSize,
+  type DetectedBox,
+} from './detectors';
 
 /* ============================================================
    类型
@@ -49,7 +54,38 @@ type AndroidNav = 'gesture' | 'threeButton';
 type AspectMode = 'device' | 'preset' | 'custom';
 
 /** P1 分析工具的交互模式 */
-type AnalysisMode = 'none' | 'contrast' | 'fitts';
+type AnalysisMode = 'none' | 'contrast' | 'fitts' | 'detect';
+
+/* ============================================================
+   检测元素类型
+   ============================================================ */
+interface ElementAnalysis {
+  fitts?: { id: number; distance: number; estimatedTime: number; rating: 'easy' | 'moderate' | 'hard' };
+  contrast?: { ratio: number; level: WCAGLevel; fg: [number, number, number]; bg: [number, number, number] };
+  touchTarget?: { pass: boolean; minSide: number };
+  reachZone?: ReachZone;
+  saliency?: number;
+}
+
+interface DetectedElement extends DetectedBox {
+  analysis: ElementAnalysis;
+}
+
+/** 拖拽方向控制柄 */
+type HandleDir = 'n' | 's' | 'e' | 'w' | 'ne' | 'nw' | 'se' | 'sw';
+/** 框交互模式 */
+type BoxDragMode = 'none' | 'move' | 'resize' | 'create';
+
+/** 汇总统计 */
+interface DetectionSummary {
+  totalElements: number;
+  avgFittsID: number;
+  avgTime: number;
+  contrastPassRate: number;
+  touchPassRate: number;
+  zoneDistribution: { easy: number; ok: number; hard: number };
+  misclickRisk: number;
+}
 
 /* ============================================================
    宽高比预设
@@ -165,6 +201,7 @@ const UIAudit: React.FC = () => {
   const [orientation, setOrientation] = useState<Orientation>('landscape');
   const [androidNav, setAndroidNav] = useState<AndroidNav>('gesture');
   const [selectedMiniPrograms, setSelectedMiniPrograms] = useState<Set<string>>(new Set());
+  const [showMiniProgramPanel, setShowMiniProgramPanel] = useState(false);
   const [showKeyboard, setShowKeyboard] = useState(false);
   const [showTabBar, setShowTabBar] = useState(false);
   const [showOverlays, setShowOverlays] = useState(true);
@@ -187,6 +224,24 @@ const UIAudit: React.FC = () => {
 
   // 拇指热区
   const [showReachability, setShowReachability] = useState(false);
+
+  /* ---------- P2: 智能检测状态 ---------- */
+  const [detectedElements, setDetectedElements] = useState<DetectedElement[]>([]);
+  const [selectedElementId, setSelectedElementId] = useState<string | null>(null);
+  const [hoveredElementId, setHoveredElementId] = useState<string | null>(null);
+  const [isDetecting, setIsDetecting] = useState(false);
+  const [showDetectBoxes, setShowDetectBoxes] = useState(true);
+  const [showPressureOverlay, setShowPressureOverlay] = useState(false);
+  const [thumbHand, setThumbHand] = useState<'right' | 'left'>('right');
+  // 框拖拽交互 (用 ref 避免频繁 re-render)
+  const boxDragRef = useRef<{
+    mode: BoxDragMode;
+    handle: HandleDir | '';
+    elementId: string;
+    startMouse: { x: number; y: number };
+    startBox: { x: number; y: number; w: number; h: number };
+    createStart?: { x: number; y: number };
+  }>({ mode: 'none', handle: '', elementId: '', startMouse: { x: 0, y: 0 }, startBox: { x: 0, y: 0, w: 0, h: 0 } });
 
   // 分析交互模式 (对比度取色 / Fitts 测量)
   const [analysisMode, setAnalysisMode] = useState<AnalysisMode>('none');
@@ -260,6 +315,16 @@ const UIAudit: React.FC = () => {
     [device, orientation, androidNav],
   );
 
+  /** 工具栏上显示的宽高比标签 */
+  const currentAspectLabel = useMemo(() => {
+    if (aspectMode === 'device') return `${screenSize.width}×${screenSize.height}`;
+    if (aspectMode === 'preset') {
+      const p = ASPECT_RATIO_PRESETS.find(a => a.id === selectedAspectId);
+      return p ? p.label : selectedAspectId;
+    }
+    return `${customWidth}×${customHeight}`;
+  }, [aspectMode, selectedAspectId, customWidth, customHeight, screenSize]);
+
   /* ---------- 点击外部关闭下拉 ---------- */
   useEffect(() => {
     const handler = (e: MouseEvent) => {
@@ -280,7 +345,7 @@ const UIAudit: React.FC = () => {
       const img = new Image();
       img.onload = () => {
         setImage(img);
-        // 重置 P1 分析数据
+        // 重置分析数据
         setSaliencyData(null);
         setContrastFg(null);
         setContrastBg(null);
@@ -288,6 +353,8 @@ const UIAudit: React.FC = () => {
         setFittsTo(null);
         setFittsResult(null);
         setAuditReport(null);
+        setDetectedElements([]);
+        setSelectedElementId(null);
       };
       img.src = reader.result as string;
     };
@@ -411,6 +478,181 @@ const UIAudit: React.FC = () => {
     return { ratio, level, levelLarge };
   }, [contrastFg, contrastBg]);
 
+  /* ---------- P2: 智能检测 ---------- */
+  const runAutoDetect = useCallback(() => {
+    if (!image) return;
+    setIsDetecting(true);
+    // 异步执行避免阻塞 UI
+    requestAnimationFrame(() => {
+      try {
+        const boxes = detectUIElements(image, screenSize.width, screenSize.height);
+        // 转换为 DetectedElement (analysis 后面计算)
+        const elements: DetectedElement[] = boxes.map(b => ({ ...b, analysis: {} }));
+        setDetectedElements(elements);
+        setAnalysisMode('detect');
+      } catch (err) {
+        console.error('Auto-detection failed:', err);
+      } finally {
+        setIsDetecting(false);
+      }
+    });
+  }, [image, screenSize]);
+
+  /** 分析所有检测框 (Fitts, Contrast, Touch, Reachability, Saliency) */
+  const analyzeAllElements = useCallback(() => {
+    if (detectedElements.length === 0) return;
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+
+    const sw = screenSize.width;
+    const sh = screenSize.height;
+
+    // 拇指锚点
+    const anchors = computeThumbAnchors(sw, sh, orientation, thumbHand);
+
+    // 热区分布
+    const { zones } = orientation === 'portrait'
+      ? getPortraitReachZones(sw, sh)
+      : getLandscapeReachZones(sw, sh);
+
+    const updated = detectedElements.map(el => {
+      const cx = el.x + el.w / 2;
+      const cy = el.y + el.h / 2;
+
+      // Fitts: 距最近锚点
+      let bestFitts: ElementAnalysis['fitts'] | undefined;
+      for (const anchor of anchors) {
+        const dx = cx - anchor.x;
+        const dy = cy - anchor.y;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+        const W = Math.max(Math.min(el.w, el.h), 1);
+        const id = Math.log2(dist / W + 1);
+        if (!Number.isFinite(id)) continue;
+        const mt = 50 + 150 * id;
+        const rating: 'easy' | 'moderate' | 'hard' = id > 4 ? 'hard' : id > 2.5 ? 'moderate' : 'easy';
+        if (!bestFitts || id < bestFitts.id) {
+          bestFitts = { id: Math.round(id * 100) / 100, distance: Math.round(dist), estimatedTime: Math.round(mt), rating };
+        }
+      }
+
+      // 对比度: 从画布采样 (只在框足够大时)
+      const screenX = 200; // ANNOTATION_MARGIN
+      const screenY = 20;
+      let contrastAnalysis: ElementAnalysis['contrast'] | undefined;
+      if (el.w >= 10 && el.h >= 10) {
+        const colors = sampleBoxColors(ctx, screenX + el.x, screenY + el.y, el.w, el.h);
+        if (colors) {
+          const ratio = contrastRatio(colors.fg, colors.bg);
+          if (Number.isFinite(ratio)) {
+            const level = getWCAGLevel(ratio);
+            contrastAnalysis = { ratio: Math.round(ratio * 100) / 100, level, fg: colors.fg, bg: colors.bg };
+          }
+        }
+      }
+
+      // 触控目标
+      const minSide = Math.min(el.w, el.h);
+      const touchPass = minSide >= 44;
+
+      // 热区
+      let reachZone: ReachZone = 'hard';
+      for (const z of zones) {
+        if (cx >= z.x && cx <= z.x + z.w && cy >= z.y && cy <= z.y + z.h) {
+          reachZone = z.zone;
+          break;
+        }
+      }
+
+      // 显著性
+      let saliencyAvg: number | undefined;
+      if (saliencyData) {
+        const sMap = saliencyData.saliencyMap;
+        const sW = saliencyData.width;
+        const sH = saliencyData.height;
+        const scaleX = sW / sw;
+        const scaleY = sH / sh;
+        let sum = 0, cnt = 0;
+        const sx0 = Math.max(0, Math.floor(el.x * scaleX));
+        const sy0 = Math.max(0, Math.floor(el.y * scaleY));
+        const sx1 = Math.min(sW - 1, Math.floor((el.x + el.w) * scaleX));
+        const sy1 = Math.min(sH - 1, Math.floor((el.y + el.h) * scaleY));
+        for (let sy = sy0; sy <= sy1; sy++) {
+          for (let sx = sx0; sx <= sx1; sx++) {
+            sum += sMap[sy * sW + sx];
+            cnt++;
+          }
+        }
+        if (cnt > 0) saliencyAvg = sum / cnt;
+      }
+
+      return {
+        ...el,
+        analysis: {
+          fitts: bestFitts,
+          contrast: contrastAnalysis,
+          touchTarget: { pass: touchPass, minSide: Math.round(minSide) },
+          reachZone,
+          saliency: saliencyAvg !== undefined ? Math.round(saliencyAvg * 100) / 100 : undefined,
+        },
+      };
+    });
+
+    setDetectedElements(updated);
+  }, [detectedElements, screenSize, orientation, thumbHand, saliencyData]);
+
+  // 检测元素变化时自动分析
+  useEffect(() => {
+    if (detectedElements.length > 0 && !detectedElements[0].analysis.fitts) {
+      // 延迟一帧, 等画布渲染完毕再采样颜色
+      const timer = setTimeout(analyzeAllElements, 100);
+      return () => clearTimeout(timer);
+    }
+  }, [detectedElements.length]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  /** 检测汇总统计 */
+  const detectionSummary = useMemo((): DetectionSummary | null => {
+    const els = detectedElements;
+    if (els.length === 0) return null;
+    const fittsEls = els.filter(e => e.analysis.fitts);
+    const contrastEls = els.filter(e => e.analysis.contrast);
+    const touchEls = els.filter(e => e.analysis.touchTarget);
+
+    const avgFittsID = fittsEls.length > 0
+      ? fittsEls.reduce((s, e) => s + e.analysis.fitts!.id, 0) / fittsEls.length : 0;
+    const avgTime = fittsEls.length > 0
+      ? fittsEls.reduce((s, e) => s + e.analysis.fitts!.estimatedTime, 0) / fittsEls.length : 0;
+    const contrastPass = contrastEls.filter(e => e.analysis.contrast!.level !== 'Fail').length;
+    const touchPass = touchEls.filter(e => e.analysis.touchTarget!.pass).length;
+
+    const zoneDist = { easy: 0, ok: 0, hard: 0 };
+    for (const e of els) {
+      if (e.analysis.reachZone) zoneDist[e.analysis.reachZone]++;
+    }
+
+    // 误触风险: 检测相邻元素间距 < 8px
+    let misclickCount = 0;
+    for (let i = 0; i < els.length; i++) {
+      for (let j = i + 1; j < els.length; j++) {
+        const a = els[i], b = els[j];
+        const gapX = Math.max(0, Math.max(a.x, b.x) - Math.min(a.x + a.w, b.x + b.w));
+        const gapY = Math.max(0, Math.max(a.y, b.y) - Math.min(a.y + a.h, b.y + b.h));
+        if (gapX < 8 && gapY < 8) misclickCount++;
+      }
+    }
+
+    return {
+      totalElements: els.length,
+      avgFittsID: Number.isFinite(avgFittsID) ? Math.round(avgFittsID * 100) / 100 : 0,
+      avgTime: Number.isFinite(avgTime) ? Math.round(avgTime) : 0,
+      contrastPassRate: contrastEls.length > 0 ? Math.round((contrastPass / contrastEls.length) * 100) : 0,
+      touchPassRate: touchEls.length > 0 ? Math.round((touchPass / touchEls.length) * 100) : 0,
+      zoneDistribution: zoneDist,
+      misclickRisk: misclickCount,
+    };
+  }, [detectedElements]);
+
   /* ---------- 画布渲染 ---------- */
   const ANNOTATION_MARGIN = 200; // 标注区域宽度 (设备两侧)
 
@@ -461,21 +703,23 @@ const UIAudit: React.FC = () => {
     ctx.fillStyle = '#111';
     ctx.fillRect(screenX, screenY, sw, sh);
 
-    // 2b. 截图
+    // 2b. 截图 (cover 缩放: 铺满屏幕区域, 溢出居中裁切)
+    // 计算 cover 坐标, 热力图复用同一组坐标以保持对齐
+    let imgDx = screenX, imgDy = screenY, imgDw = sw, imgDh = sh;
     if (image) {
       const imgW = image.naturalWidth;
       const imgH = image.naturalHeight;
       const scaleX = sw / imgW;
       const scaleY = sh / imgH;
       const scale = Math.max(scaleX, scaleY);
-      const dw = imgW * scale;
-      const dh = imgH * scale;
-      const dx = screenX + (sw - dw) / 2;
-      const dy = screenY + (sh - dh) / 2;
-      ctx.drawImage(image, dx, dy, dw, dh);
+      imgDw = imgW * scale;
+      imgDh = imgH * scale;
+      imgDx = screenX + (sw - imgDw) / 2;
+      imgDy = screenY + (sh - imgDh) / 2;
+      ctx.drawImage(image, imgDx, imgDy, imgDw, imgDh);
     }
 
-    // 2c. 热力图叠加
+    // 2c. 热力图叠加 — 使用与截图相同的 cover 坐标
     if (showHeatmap && saliencyData && image) {
       const heatmap = saliencyToHeatmap(
         saliencyData.saliencyMap,
@@ -483,13 +727,13 @@ const UIAudit: React.FC = () => {
         saliencyData.height,
         heatmapOpacity,
       );
-      // 将热力图绘制到临时画布再缩放
       const tmpCanvas = document.createElement('canvas');
       tmpCanvas.width = saliencyData.width;
       tmpCanvas.height = saliencyData.height;
       const tmpCtx = tmpCanvas.getContext('2d')!;
       tmpCtx.putImageData(heatmap, 0, 0);
-      ctx.drawImage(tmpCanvas, screenX, screenY, sw, sh);
+      // 热力图与截图使用完全相同的 cover 坐标, 保证对齐
+      ctx.drawImage(tmpCanvas, imgDx, imgDy, imgDw, imgDh);
     }
 
     // 2d. 拇指热区遮罩
@@ -700,11 +944,214 @@ const UIAudit: React.FC = () => {
       ctx.strokeStyle = '#fff';
       ctx.lineWidth = 2;
       ctx.stroke();
-      // 脉冲圈
       ctx.globalAlpha = 0.3;
       ctx.beginPath();
       ctx.arc(screenX + fittsFrom.x, screenY + fittsFrom.y, 12, 0, Math.PI * 2);
       ctx.fill();
+      ctx.restore();
+    }
+
+    // ========== P2: 操作压力遮罩 ==========
+    if (showPressureOverlay && detectedElements.length > 0) {
+      const anchors = computeThumbAnchors(sw, sh, orientation, thumbHand);
+      ctx.save();
+      ctx.globalAlpha = 0.18;
+      // 为每个像素行绘制渐变 (简化: 水平条带)
+      const bandH = Math.max(4, Math.ceil(sh / 60));
+      for (let by = 0; by < sh; by += bandH) {
+        for (let bx = 0; bx < sw; bx += bandH) {
+          const px = bx + bandH / 2, py = by + bandH / 2;
+          let minDist = Infinity;
+          for (const a of anchors) {
+            const d = Math.sqrt((px - a.x) ** 2 + (py - a.y) ** 2);
+            if (d < minDist) minDist = d;
+          }
+          const maxDist = Math.sqrt(sw * sw + sh * sh) * 0.6;
+          const t = Math.min(1, minDist / maxDist);
+          // 绿 → 黄 → 红
+          const r = t < 0.5 ? Math.round(t * 2 * 255) : 255;
+          const g = t < 0.5 ? 255 : Math.round((1 - (t - 0.5) * 2) * 255);
+          ctx.fillStyle = `rgb(${r},${g},0)`;
+          ctx.fillRect(screenX + bx, screenY + by, bandH, bandH);
+        }
+      }
+      ctx.restore();
+    }
+
+    // ========== P2: 检测框 + 控制柄 ==========
+    //   三层可见度:
+    //     默认: 不画任何东西 (干净画面)
+    //     showDetectBoxes=true: 极淡边框角标
+    //     hovered: 中等高亮
+    //     selected: 完整详情 + 控制柄
+    if (analysisMode === 'detect' && detectedElements.length > 0) {
+      ctx.save();
+      const HANDLE_SIZE = 5;
+
+      // 辅助: 绘制高亮框 (hover 和 selected 共用)
+      const drawHighlightBox = (el: typeof detectedElements[0], isSelected: boolean) => {
+        const bx = screenX + el.x, by = screenY + el.y;
+        let color = '#3b82f6';
+        if (el.analysis.fitts) {
+          color = el.analysis.fitts.rating === 'easy' ? '#22c55e'
+            : el.analysis.fitts.rating === 'moderate' ? '#f59e0b' : '#ef4444';
+        }
+        const touchFail = el.analysis.touchTarget && !el.analysis.touchTarget.pass;
+
+        // 边框
+        ctx.strokeStyle = color;
+        ctx.lineWidth = isSelected ? 2.5 : 1.5;
+        ctx.globalAlpha = isSelected ? 1 : 0.8;
+        ctx.setLineDash(touchFail ? [4, 3] : []);
+        ctx.strokeRect(bx, by, el.w, el.h);
+        ctx.setLineDash([]);
+
+        // 填充
+        ctx.fillStyle = color + (isSelected ? '18' : '10');
+        ctx.fillRect(bx, by, el.w, el.h);
+        ctx.globalAlpha = 1;
+
+        // 标签
+        const labelText = el.label === 'button' ? 'BTN'
+          : el.label === 'icon' ? 'ICO'
+          : el.label === 'card' ? 'CARD' : 'RGN';
+        const fittsText = el.analysis.fitts && Number.isFinite(el.analysis.fitts.id)
+          ? ` ID=${el.analysis.fitts.id}` : '';
+        ctx.font = `${isSelected ? 'bold ' : ''}10px "SF Pro Display", -apple-system, sans-serif`;
+        const fullLabel = isSelected
+          ? `${labelText} ${el.w}×${el.h}${fittsText}`
+          : `${labelText}${fittsText}`;
+        const lw = ctx.measureText(fullLabel).width + 8;
+        const lh = 15;
+        const ly = by - lh - 2 > screenY ? by - lh - 2 : by + el.h + 2;
+        // 圆角背景
+        ctx.fillStyle = color;
+        const lr = 3;
+        ctx.beginPath();
+        ctx.moveTo(bx + lr, ly);
+        ctx.lineTo(bx + lw - lr, ly);
+        ctx.quadraticCurveTo(bx + lw, ly, bx + lw, ly + lr);
+        ctx.lineTo(bx + lw, ly + lh - lr);
+        ctx.quadraticCurveTo(bx + lw, ly + lh, bx + lw - lr, ly + lh);
+        ctx.lineTo(bx + lr, ly + lh);
+        ctx.quadraticCurveTo(bx, ly + lh, bx, ly + lh - lr);
+        ctx.lineTo(bx, ly + lr);
+        ctx.quadraticCurveTo(bx, ly, bx + lr, ly);
+        ctx.fill();
+        ctx.fillStyle = '#fff';
+        ctx.textAlign = 'left';
+        ctx.textBaseline = 'top';
+        ctx.fillText(fullLabel, bx + 4, ly + 2.5);
+
+        // 选中: 8 个控制柄
+        if (isSelected) {
+          ctx.fillStyle = '#fff';
+          ctx.strokeStyle = color;
+          ctx.lineWidth = 1.5;
+          const hs = HANDLE_SIZE;
+          const handles: [number, number][] = [
+            [bx - hs, by - hs], [bx + el.w / 2 - hs, by - hs], [bx + el.w - hs, by - hs],
+            [bx - hs, by + el.h / 2 - hs], [bx + el.w - hs, by + el.h / 2 - hs],
+            [bx - hs, by + el.h - hs], [bx + el.w / 2 - hs, by + el.h - hs], [bx + el.w - hs, by + el.h - hs],
+          ];
+          for (const [hx, hy] of handles) {
+            ctx.fillRect(hx, hy, hs * 2, hs * 2);
+            ctx.strokeRect(hx, hy, hs * 2, hs * 2);
+          }
+        }
+      };
+
+      // 层1: 所有非高亮框 — showDetectBoxes 时画细虚线框 + 序号
+      if (showDetectBoxes) {
+        detectedElements.forEach((el, idx) => {
+          if (el.id === selectedElementId || el.id === hoveredElementId) return;
+          const bx = screenX + el.x, by = screenY + el.y;
+          let color = '#3b82f6';
+          if (el.analysis.fitts) {
+            color = el.analysis.fitts.rating === 'easy' ? '#22c55e'
+              : el.analysis.fitts.rating === 'moderate' ? '#f59e0b' : '#ef4444';
+          }
+
+          // 虚线边框 — 双层描边法 (暗底 + 亮色, 任何背景都清晰)
+          ctx.setLineDash([4, 3]);
+          // 底层: 深色阴影 (保证在浅色/彩色背景上可见)
+          ctx.strokeStyle = 'rgba(0,0,0,0.55)';
+          ctx.lineWidth = 2.5;
+          ctx.globalAlpha = 1;
+          ctx.strokeRect(bx, by, el.w, el.h);
+          // 上层: 彩色描边
+          ctx.strokeStyle = color;
+          ctx.lineWidth = 1.5;
+          ctx.strokeRect(bx, by, el.w, el.h);
+          ctx.setLineDash([]);
+
+          // 左上角序号标记 (圆形, 带暗边)
+          const numStr = String(idx + 1);
+          ctx.font = 'bold 9px "SF Pro Display", -apple-system, sans-serif';
+          const numW = ctx.measureText(numStr).width;
+          const badgeR = Math.max(8, (numW + 8) / 2);
+          const badgeCX = bx + badgeR + 1;
+          const badgeCY = by + badgeR + 1;
+          // 暗色外圈
+          ctx.beginPath();
+          ctx.arc(badgeCX, badgeCY, badgeR + 1.5, 0, Math.PI * 2);
+          ctx.fillStyle = 'rgba(0,0,0,0.6)';
+          ctx.fill();
+          // 彩色圆
+          ctx.beginPath();
+          ctx.arc(badgeCX, badgeCY, badgeR, 0, Math.PI * 2);
+          ctx.fillStyle = color;
+          ctx.fill();
+          // 白色数字
+          ctx.fillStyle = '#fff';
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'middle';
+          ctx.fillText(numStr, badgeCX, badgeCY + 0.5);
+        });
+      }
+
+      // 层2: hover 高亮 (来自侧边栏列表悬停)
+      if (hoveredElementId && hoveredElementId !== selectedElementId) {
+        const hoverEl = detectedElements.find(e => e.id === hoveredElementId);
+        if (hoverEl) drawHighlightBox(hoverEl, false);
+      }
+
+      // 层3: 选中框 (完整详情)
+      const selectedEl = detectedElements.find(e => e.id === selectedElementId);
+      if (selectedEl) drawHighlightBox(selectedEl, true);
+
+      // 拇指锚点 — 真实尺寸椭圆模拟
+      const anchors = computeThumbAnchors(sw, sh, orientation, thumbHand);
+      const thumbSz = getThumbSize(sw, sh, orientation);
+      // sw/sh 在画布上是 1:1 映射, 不需要额外缩放
+      const thumbRX = thumbSz.rx;
+      const thumbRY = thumbSz.ry;
+      for (const a of anchors) {
+        const cx = screenX + a.x;
+        const cy = screenY + a.y;
+        ctx.save();
+        // 绘制拇指椭圆 (肤色半透明)
+        ctx.beginPath();
+        ctx.ellipse(cx, cy, thumbRX, thumbRY, 0, 0, Math.PI * 2);
+        // 径向渐变模拟指腹压力 (中心重、边缘淡)
+        const grad = ctx.createRadialGradient(cx, cy, 0, cx, cy, Math.max(thumbRX, thumbRY));
+        grad.addColorStop(0, 'rgba(230, 175, 140, 0.55)');  // 肤色中心
+        grad.addColorStop(0.6, 'rgba(220, 160, 120, 0.35)');
+        grad.addColorStop(1, 'rgba(200, 140, 100, 0.08)');   // 边缘淡出
+        ctx.fillStyle = grad;
+        ctx.fill();
+        // 边缘描边
+        ctx.strokeStyle = 'rgba(200, 140, 100, 0.6)';
+        ctx.lineWidth = 1.5;
+        ctx.stroke();
+        // 中心小点 (锚点标识)
+        ctx.beginPath();
+        ctx.arc(cx, cy, 3, 0, Math.PI * 2);
+        ctx.fillStyle = 'rgba(180, 100, 60, 0.8)';
+        ctx.fill();
+        ctx.restore();
+      }
+
       ctx.restore();
     }
 
@@ -746,7 +1193,9 @@ const UIAudit: React.FC = () => {
   }, [image, screenSize, device, orientation, safeArea, androidNav, selectedMiniPrograms,
       showKeyboard, showTabBar, showOverlays, platform,
       showHeatmap, saliencyData, heatmapOpacity, showReachability,
-      fittsFrom, fittsTo, fittsResult]);
+      fittsFrom, fittsTo, fittsResult,
+      analysisMode, detectedElements, selectedElementId, hoveredElementId,
+      showDetectBoxes, showPressureOverlay, thumbHand]);
 
   useEffect(() => { renderCanvas(); }, [renderCanvas]);
 
@@ -856,32 +1305,106 @@ const UIAudit: React.FC = () => {
     setPan({ x: 0, y: 0 });
   }, []);
 
-  /* ---------- P1: 画布点击 (对比度取色 / Fitts 测量) ---------- */
-  const handleCanvasClick = useCallback((e: React.MouseEvent) => {
-    if (analysisMode === 'none' || !image) return;
-    if (e.button !== 0) return; // 仅左键
-
+  /* ---------- 画布坐标转换工具 ---------- */
+  const canvasToScreen = useCallback((clientX: number, clientY: number): { sx: number; sy: number } | null => {
     const canvas = canvasRef.current;
-    if (!canvas) return;
-
-    // 将鼠标坐标转换为画布逻辑坐标
+    if (!canvas) return null;
     const rect = canvas.getBoundingClientRect();
     const scaleX = canvas.width / rect.width;
     const scaleY = canvas.height / rect.height;
-    const canvasX = (e.clientX - rect.left) * scaleX;
-    const canvasY = (e.clientY - rect.top) * scaleY;
+    const cx = (clientX - rect.left) * scaleX;
+    const cy = (clientY - rect.top) * scaleY;
+    const sx = cx - ANNOTATION_MARGIN;
+    const sy = cy - 20;
+    if (sx < 0 || sx > screenSize.width || sy < 0 || sy > screenSize.height) return null;
+    return { sx, sy };
+  }, [screenSize]);
 
-    // 转换为屏幕坐标 (减去标注区域偏移)
-    const screenX = canvasX - ANNOTATION_MARGIN;
-    const screenY_logical = canvasY - 20;
+  /* ---------- P2: 检测框交互 ---------- */
+  const hitTestElement = useCallback((sx: number, sy: number): {
+    elementId: string | null;
+    handle: HandleDir | '';
+  } => {
+    const HS = 8; // handle hit area
+    for (let i = detectedElements.length - 1; i >= 0; i--) {
+      const el = detectedElements[i];
+      // 检查控制柄 (仅选中元素)
+      if (el.id === selectedElementId) {
+        const handles: { dir: HandleDir; cx: number; cy: number }[] = [
+          { dir: 'nw', cx: el.x, cy: el.y },
+          { dir: 'n', cx: el.x + el.w / 2, cy: el.y },
+          { dir: 'ne', cx: el.x + el.w, cy: el.y },
+          { dir: 'w', cx: el.x, cy: el.y + el.h / 2 },
+          { dir: 'e', cx: el.x + el.w, cy: el.y + el.h / 2 },
+          { dir: 'sw', cx: el.x, cy: el.y + el.h },
+          { dir: 's', cx: el.x + el.w / 2, cy: el.y + el.h },
+          { dir: 'se', cx: el.x + el.w, cy: el.y + el.h },
+        ];
+        for (const h of handles) {
+          if (Math.abs(sx - h.cx) <= HS && Math.abs(sy - h.cy) <= HS) {
+            return { elementId: el.id, handle: h.dir };
+          }
+        }
+      }
+      // 检查框体
+      if (sx >= el.x && sx <= el.x + el.w && sy >= el.y && sy <= el.y + el.h) {
+        return { elementId: el.id, handle: '' };
+      }
+    }
+    return { elementId: null, handle: '' };
+  }, [detectedElements, selectedElementId]);
 
-    // 确保点击在屏幕区域内
-    if (screenX < 0 || screenX > screenSize.width || screenY_logical < 0 || screenY_logical > screenSize.height) return;
+  /* ---------- 画布鼠标事件 (对比度/Fitts/检测统一入口) ---------- */
+  const handleCanvasMouseDown = useCallback((e: React.MouseEvent) => {
+    if (e.button !== 0 || !image) return;
+    const pos = canvasToScreen(e.clientX, e.clientY);
+    if (!pos) return;
 
+    if (analysisMode === 'detect') {
+      const hit = hitTestElement(pos.sx, pos.sy);
+      if (hit.handle) {
+        // 开始缩放
+        const el = detectedElements.find(e => e.id === hit.elementId);
+        if (!el) return;
+        boxDragRef.current = {
+          mode: 'resize', handle: hit.handle, elementId: el.id,
+          startMouse: pos, startBox: { x: el.x, y: el.y, w: el.w, h: el.h },
+        };
+        e.preventDefault();
+      } else if (hit.elementId) {
+        // 选中 + 开始移动
+        setSelectedElementId(hit.elementId);
+        const el = detectedElements.find(e => e.id === hit.elementId);
+        if (!el) return;
+        boxDragRef.current = {
+          mode: 'move', handle: '', elementId: el.id,
+          startMouse: pos, startBox: { x: el.x, y: el.y, w: el.w, h: el.h },
+        };
+        e.preventDefault();
+      } else {
+        // 空白区域: 开始创建新框
+        setSelectedElementId(null);
+        boxDragRef.current = {
+          mode: 'create', handle: '', elementId: '',
+          startMouse: pos, startBox: { x: pos.sx, y: pos.sy, w: 0, h: 0 },
+          createStart: pos,
+        };
+        e.preventDefault();
+      }
+      return;
+    }
+
+    // 非检测模式: P1 的点击逻辑
     if (analysisMode === 'contrast') {
-      // 从画布取色
+      const canvas = canvasRef.current;
+      if (!canvas) return;
       const ctx = canvas.getContext('2d');
       if (!ctx) return;
+      const rect = canvas.getBoundingClientRect();
+      const scaleX = canvas.width / rect.width;
+      const scaleY = canvas.height / rect.height;
+      const canvasX = (e.clientX - rect.left) * scaleX;
+      const canvasY = (e.clientY - rect.top) * scaleY;
       const color = pickAreaColor(ctx, canvasX, canvasY, 2);
 
       if (contrastPickStep === 'fg') {
@@ -895,19 +1418,103 @@ const UIAudit: React.FC = () => {
       }
     } else if (analysisMode === 'fitts') {
       if (!fittsFrom || fittsResult) {
-        // 设置起点 (或重置后的新起点)
-        setFittsFrom({ x: screenX, y: screenY_logical });
+        setFittsFrom({ x: pos.sx, y: pos.sy });
         setFittsTo(null);
         setFittsResult(null);
       } else {
-        // 设置终点并计算
-        const to = { x: screenX, y: screenY_logical };
+        const to = { x: pos.sx, y: pos.sy };
         setFittsTo(to);
-        const result = calculateFitts(fittsFrom, to, fittsTargetSize);
-        setFittsResult(result);
+        setFittsResult(calculateFitts(fittsFrom, to, fittsTargetSize));
       }
     }
-  }, [analysisMode, image, screenSize, contrastPickStep, fittsFrom, fittsResult, fittsTargetSize]);
+  }, [analysisMode, image, canvasToScreen, hitTestElement, detectedElements,
+      contrastPickStep, fittsFrom, fittsResult, fittsTargetSize]);
+
+  const handleCanvasMouseMove = useCallback((e: React.MouseEvent) => {
+    const drag = boxDragRef.current;
+    if (drag.mode === 'none') return;
+    const pos = canvasToScreen(e.clientX, e.clientY);
+    if (!pos) return;
+
+    const dx = pos.sx - drag.startMouse.x;
+    const dy = pos.sy - drag.startMouse.y;
+
+    if (drag.mode === 'move') {
+      setDetectedElements(prev => prev.map(el =>
+        el.id === drag.elementId
+          ? { ...el, x: Math.max(0, drag.startBox.x + dx), y: Math.max(0, drag.startBox.y + dy), analysis: {} }
+          : el
+      ));
+    } else if (drag.mode === 'resize') {
+      setDetectedElements(prev => prev.map(el => {
+        if (el.id !== drag.elementId) return el;
+        let { x, y, w, h } = drag.startBox;
+        const dir = drag.handle;
+        if (dir.includes('w')) { x += dx; w -= dx; }
+        if (dir.includes('e')) { w += dx; }
+        if (dir.includes('n')) { y += dy; h -= dy; }
+        if (dir.includes('s')) { h += dy; }
+        // 最小 10×10
+        if (w < 10) { if (dir.includes('w')) x = drag.startBox.x + drag.startBox.w - 10; w = 10; }
+        if (h < 10) { if (dir.includes('n')) y = drag.startBox.y + drag.startBox.h - 10; h = 10; }
+        return { ...el, x: Math.max(0, x), y: Math.max(0, y), w, h, analysis: {} };
+      }));
+    } else if (drag.mode === 'create' && drag.createStart) {
+      // 实时预览创建的框 (暂存为 temp 元素)
+      const x = Math.min(drag.createStart.sx, pos.sx);
+      const y = Math.min(drag.createStart.sy, pos.sy);
+      const w = Math.abs(pos.sx - drag.createStart.sx);
+      const h = Math.abs(pos.sy - drag.createStart.sy);
+      if (w > 5 && h > 5) {
+        const tempId = 'creating-temp';
+        setDetectedElements(prev => {
+          const rest = prev.filter(e => e.id !== tempId);
+          return [...rest, {
+            id: tempId, x, y, w, h,
+            confidence: 1, label: 'unknown' as const, source: 'manual' as const, analysis: {},
+          }];
+        });
+        setSelectedElementId(tempId);
+      }
+    }
+  }, [canvasToScreen]);
+
+  const handleCanvasMouseUp = useCallback(() => {
+    const drag = boxDragRef.current;
+    if (drag.mode === 'create') {
+      // 完成创建: 将 temp id 改为正式 id
+      setDetectedElements(prev => prev.map(el =>
+        el.id === 'creating-temp'
+          ? { ...el, id: `manual-${Date.now()}`, label: 'unknown' as const, source: 'manual' as const, analysis: {} }
+          : el
+      ).filter(el => el.w >= 10 && el.h >= 10));
+    }
+    if (drag.mode !== 'none') {
+      // 拖拽结束后重新分析
+      setTimeout(() => analyzeAllElements(), 50);
+    }
+    boxDragRef.current = { mode: 'none', handle: '', elementId: '', startMouse: { x: 0, y: 0 }, startBox: { x: 0, y: 0, w: 0, h: 0 } };
+  }, [analyzeAllElements]);
+
+  // 键盘: Delete 删除选中框
+  useEffect(() => {
+    const handleKey = (e: KeyboardEvent) => {
+      if (e.key === 'Delete' || e.key === 'Backspace') {
+        if (selectedElementId && analysisMode === 'detect') {
+          // 避免在 input 中触发
+          if ((e.target as HTMLElement).tagName === 'INPUT') return;
+          setDetectedElements(prev => prev.filter(el => el.id !== selectedElementId));
+          setSelectedElementId(null);
+          e.preventDefault();
+        }
+      }
+    };
+    window.addEventListener('keydown', handleKey);
+    return () => window.removeEventListener('keydown', handleKey);
+  }, [selectedElementId, analysisMode]);
+
+  // 向后兼容: handleCanvasClick 改为 handleCanvasMouseDown
+  const handleCanvasClick = handleCanvasMouseDown;
 
   /* ---------- P1: 生成审计报告 ---------- */
   const generateAuditReport = useCallback(() => {
@@ -1045,12 +1652,16 @@ const UIAudit: React.FC = () => {
             >
               <canvas
                 ref={canvasRef}
-                onClick={handleCanvasClick}
+                onMouseDown={handleCanvasMouseDown}
+                onMouseMove={handleCanvasMouseMove}
+                onMouseUp={handleCanvasMouseUp}
                 style={{
                   width: canvasStyle.width,
                   height: canvasStyle.height,
                   imageRendering: 'auto',
-                  cursor: analysisMode !== 'none' ? 'crosshair' : 'default',
+                  cursor: analysisMode === 'detect'
+                    ? (boxDragRef.current.mode !== 'none' ? 'grabbing' : 'crosshair')
+                    : analysisMode !== 'none' ? 'crosshair' : 'default',
                 }}
               />
               {isDragging && (
@@ -1114,364 +1725,329 @@ const UIAudit: React.FC = () => {
 
       {/* ---- 右侧: 控制面板 ---- */}
       <div className="w-80 border-l border-[#222] bg-[#141414] flex flex-col overflow-y-auto shrink-0">
-        {/* 标题 */}
-        <div className="p-4 border-b border-[#222] flex items-center gap-2">
-          <Shield size={16} className="text-blue-400" />
-          <span className="font-medium text-sm">UI 审计助手</span>
-          <span className="text-[10px] text-[#555] ml-auto">P0 + P1</span>
-        </div>
-
-        {/* == 设备选择 == */}
-        <PanelSection title="设备" icon={<Monitor size={14} />}>
-          <div className="relative" ref={dropdownRef}>
+        {/* ---- 设备配置工具栏 (设备 + 宽高比 + 方向 合一) ---- */}
+        <div className="px-3 py-2 border-b border-[#222] flex items-center gap-1.5">
+          <div className="relative flex-1 min-w-0" ref={dropdownRef}>
             <button
-              className="w-full flex items-center justify-between px-3 py-2 bg-[#1e1e1e] rounded-lg text-sm hover:bg-[#252525] transition-colors"
+              className="w-full flex items-center gap-2 px-2.5 py-1.5 bg-[#1e1e1e] rounded-lg text-xs hover:bg-[#252525] transition-colors"
               onClick={() => setDeviceDropdown(!deviceDropdown)}
             >
-              <span className="truncate">{device.name}</span>
-              <ChevronDown size={14} className={`transition-transform ${deviceDropdown ? 'rotate-180' : ''}`} />
+              <Monitor size={12} className="shrink-0 text-[#555]" />
+              <span className="truncate">
+                <span className="text-[#ccc]">{device.name}</span>
+                <span className="text-[#333] mx-1">·</span>
+                <span className="text-[#777]">{currentAspectLabel}</span>
+              </span>
+              <ChevronDown size={11} className={`ml-auto shrink-0 text-[#555] transition-transform ${deviceDropdown ? 'rotate-180' : ''}`} />
             </button>
+
             {deviceDropdown && (
-              <div className="absolute z-50 mt-1 w-full bg-[#1e1e1e] border border-[#333] rounded-lg shadow-xl max-h-72 overflow-y-auto">
-                {Object.entries(deviceGroups).map(([cat, devices]) => {
-                  const Icon = CATEGORY_ICONS[cat] || Monitor;
-                  return (
-                    <div key={cat}>
-                      <div className="px-3 py-1.5 text-[10px] text-[#666] uppercase tracking-wider flex items-center gap-1.5 sticky top-0 bg-[#1e1e1e]">
-                        <Icon size={10} />
-                        {cat === 'phone' ? '手机' : cat === 'tablet' ? '平板' : '折叠屏'}
-                      </div>
-                      {devices.map(d => (
+              <div
+                className="absolute z-50 mt-1 bg-[#1a1a1a] border border-[#333] rounded-xl shadow-2xl overflow-hidden"
+                style={{ left: 0, width: 'calc(100% + 42px)', maxHeight: '75vh' }}
+              >
+                <div className="overflow-y-auto" style={{ maxHeight: '75vh' }}>
+                  {/* ── 设备 ── */}
+                  <div className="px-3 py-1.5 text-[10px] text-[#555] uppercase tracking-wider bg-[#1a1a1a] border-b border-[#252525]">
+                    设备
+                  </div>
+                  <div className="max-h-48 overflow-y-auto">
+                    {Object.entries(deviceGroups).map(([cat, devices]) => {
+                      const Icon = CATEGORY_ICONS[cat] || Monitor;
+                      return (
+                        <div key={cat}>
+                          <div className="px-3 py-1 text-[10px] text-[#555] flex items-center gap-1.5 bg-[#1a1a1a]">
+                            <Icon size={10} />
+                            {cat === 'phone' ? '手机' : cat === 'tablet' ? '平板' : '折叠屏'}
+                          </div>
+                          {devices.map(d => (
+                            <button
+                              key={d.id}
+                              className={`w-full text-left px-3 py-1 text-xs hover:bg-[#252525] transition-colors flex items-center gap-1.5 ${
+                                d.id === selectedDeviceId ? 'text-blue-400 bg-blue-500/10' : 'text-[#ccc]'
+                              }`}
+                              onClick={() => setSelectedDeviceId(d.id)}
+                            >
+                              <span className="truncate">{d.name}</span>
+                              <span className="text-[#555] shrink-0">{d.screen.width}×{d.screen.height}</span>
+                              {d.cutout && d.cutout.type !== 'none' && (
+                                <span className="ml-auto shrink-0 text-[9px] px-1 py-0.5 rounded bg-[#2a2020] text-red-400/70">
+                                  {getCutoutName(d.cutout.type)}
+                                </span>
+                              )}
+                            </button>
+                          ))}
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                  {/* ── 宽高比 ── */}
+                  <div className="px-3 py-1.5 text-[10px] text-[#555] uppercase tracking-wider bg-[#1a1a1a] border-t border-b border-[#252525]">
+                    宽高比
+                  </div>
+                  <div className="p-2.5 space-y-2">
+                    <div className="flex bg-[#222] rounded-lg overflow-hidden">
+                      {(['device', 'preset', 'custom'] as AspectMode[]).map(mode => (
                         <button
-                          key={d.id}
-                          className={`w-full text-left px-3 py-1.5 text-xs hover:bg-[#2a2a2a] transition-colors ${
-                            d.id === selectedDeviceId ? 'text-blue-400 bg-[#1a2332]' : 'text-[#ccc]'
+                          key={mode}
+                          className={`flex-1 px-2 py-1 text-[11px] transition-colors ${
+                            aspectMode === mode ? 'bg-blue-500/20 text-blue-400' : 'text-[#666] hover:text-white'
                           }`}
-                          onClick={() => { setSelectedDeviceId(d.id); setDeviceDropdown(false); }}
+                          onClick={() => setAspectMode(mode)}
                         >
-                          <span>{d.name}</span>
-                          <span className="ml-2 text-[#555]">{d.screen.width}×{d.screen.height}</span>
+                          {mode === 'device' ? '跟随设备' : mode === 'preset' ? '预设' : '自定义'}
                         </button>
                       ))}
                     </div>
-                  );
-                })}
+
+                    {aspectMode === 'preset' && (
+                      <div className="grid grid-cols-3 gap-1">
+                        {ASPECT_RATIO_PRESETS.map(p => (
+                          <button
+                            key={p.id}
+                            className={`px-1.5 py-1 rounded text-center transition-colors ${
+                              selectedAspectId === p.id
+                                ? 'bg-blue-500/15 text-blue-400 ring-1 ring-blue-500/30'
+                                : 'bg-[#222] text-[#aaa] hover:bg-[#2a2a2a]'
+                            }`}
+                            onClick={() => setSelectedAspectId(p.id)}
+                            title={p.desc}
+                          >
+                            <div className="text-[11px] font-medium leading-tight">{p.label}</div>
+                            <div className="text-[9px] text-[#555] truncate">{p.desc}</div>
+                          </button>
+                        ))}
+                      </div>
+                    )}
+
+                    {aspectMode === 'custom' && (
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-[10px] text-[#555]">W</span>
+                        <input
+                          type="number" value={customWidth}
+                          onChange={e => setCustomWidth(parseInt(e.target.value) || 100)}
+                          className="w-14 px-1.5 py-0.5 bg-[#222] border border-[#333] rounded text-[11px] text-white text-center focus:border-blue-500 focus:outline-none"
+                          min={100} max={3000}
+                        />
+                        <X size={8} className="text-[#444]" />
+                        <span className="text-[10px] text-[#555]">H</span>
+                        <input
+                          type="number" value={customHeight}
+                          onChange={e => setCustomHeight(parseInt(e.target.value) || 100)}
+                          className="w-14 px-1.5 py-0.5 bg-[#222] border border-[#333] rounded text-[11px] text-white text-center focus:border-blue-500 focus:outline-none"
+                          min={100} max={3000}
+                        />
+                        <span className="text-[10px] text-[#555]">pt</span>
+                      </div>
+                    )}
+
+                    <div className="text-[10px] text-[#444] pt-0.5">
+                      {screenSize.width}×{screenSize.height}pt
+                      {aspectMode !== 'device' && ` (${(screenSize.width / screenSize.height).toFixed(2)})`}
+                    </div>
+                  </div>
+
+                  {/* ── Android 导航模式 ── */}
+                  {device.androidNavBar && (
+                    <div className="border-t border-[#252525]">
+                      <div className="px-3 py-1.5 text-[10px] text-[#555] uppercase tracking-wider">导航模式</div>
+                      <div className="px-2.5 pb-2.5">
+                        <div className="flex bg-[#222] rounded-lg overflow-hidden">
+                          <button
+                            className={`flex-1 px-3 py-1 text-[11px] transition-colors ${
+                              androidNav === 'gesture' ? 'bg-blue-500/20 text-blue-400' : 'text-[#666] hover:text-white'
+                            }`}
+                            onClick={() => setAndroidNav('gesture')}
+                          >手势</button>
+                          <button
+                            className={`flex-1 px-3 py-1 text-[11px] transition-colors ${
+                              androidNav === 'threeButton' ? 'bg-blue-500/20 text-blue-400' : 'text-[#666] hover:text-white'
+                            }`}
+                            onClick={() => setAndroidNav('threeButton')}
+                          >三键</button>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
               </div>
             )}
           </div>
 
-          {/* 方向切换 */}
-          <div className="flex items-center gap-2 mt-3">
-            <span className="text-xs text-[#888]">方向</span>
-            <div className="flex bg-[#1e1e1e] rounded-lg overflow-hidden">
-              <button
-                className={`px-3 py-1.5 text-xs transition-colors ${
-                  orientation === 'portrait' ? 'bg-blue-500/20 text-blue-400' : 'text-[#888] hover:text-white'
-                }`}
-                onClick={() => setOrientation('portrait')}
-              >
-                竖屏
-              </button>
-              <button
-                className={`px-3 py-1.5 text-xs transition-colors ${
-                  orientation === 'landscape' ? 'bg-blue-500/20 text-blue-400' : 'text-[#888] hover:text-white'
-                }`}
-                onClick={() => setOrientation('landscape')}
-              >
-                横屏
-              </button>
-            </div>
-          </div>
-
-          {/* Android 导航 */}
-          {device.androidNavBar && (
-            <div className="flex items-center gap-2 mt-2">
-              <span className="text-xs text-[#888]">导航栏</span>
-              <div className="flex bg-[#1e1e1e] rounded-lg overflow-hidden">
-                <button
-                  className={`px-3 py-1.5 text-xs transition-colors ${
-                    androidNav === 'gesture' ? 'bg-blue-500/20 text-blue-400' : 'text-[#888] hover:text-white'
-                  }`}
-                  onClick={() => setAndroidNav('gesture')}
-                >
-                  手势
-                </button>
-                <button
-                  className={`px-3 py-1.5 text-xs transition-colors ${
-                    androidNav === 'threeButton' ? 'bg-blue-500/20 text-blue-400' : 'text-[#888] hover:text-white'
-                  }`}
-                  onClick={() => setAndroidNav('threeButton')}
-                >
-                  三键
-                </button>
-              </div>
-            </div>
-          )}
-        </PanelSection>
-
-        {/* == 宽高比 == */}
-        <PanelSection title="宽高比" icon={<Maximize size={14} />}>
-          {/* 模式切换 */}
-          <div className="flex bg-[#1e1e1e] rounded-lg overflow-hidden mb-3">
+          {/* 方向: 图标切换 */}
+          <div className="flex bg-[#1e1e1e] rounded-lg overflow-hidden shrink-0">
             <button
-              className={`flex-1 px-2 py-1.5 text-xs transition-colors ${
-                aspectMode === 'device' ? 'bg-blue-500/20 text-blue-400' : 'text-[#888] hover:text-white'
+              className={`p-1.5 transition-colors ${
+                orientation === 'portrait' ? 'bg-blue-500/20 text-blue-400' : 'text-[#555] hover:text-white'
               }`}
-              onClick={() => setAspectMode('device')}
+              onClick={() => setOrientation('portrait')}
+              title="竖屏"
             >
-              跟随设备
+              <Smartphone size={14} />
             </button>
+            <div className="w-px bg-[#2a2a2a]" />
             <button
-              className={`flex-1 px-2 py-1.5 text-xs transition-colors ${
-                aspectMode === 'preset' ? 'bg-blue-500/20 text-blue-400' : 'text-[#888] hover:text-white'
+              className={`p-1.5 transition-colors ${
+                orientation === 'landscape' ? 'bg-blue-500/20 text-blue-400' : 'text-[#555] hover:text-white'
               }`}
-              onClick={() => setAspectMode('preset')}
+              onClick={() => setOrientation('landscape')}
+              title="横屏"
             >
-              预设
-            </button>
-            <button
-              className={`flex-1 px-2 py-1.5 text-xs transition-colors ${
-                aspectMode === 'custom' ? 'bg-blue-500/20 text-blue-400' : 'text-[#888] hover:text-white'
-              }`}
-              onClick={() => setAspectMode('custom')}
-            >
-              自定义
+              <Smartphone size={14} className="rotate-90" />
             </button>
           </div>
+        </div>
 
-          {/* 预设列表 */}
-          {aspectMode === 'preset' && (
-            <div className="grid grid-cols-3 gap-1.5 mb-2">
-              {ASPECT_RATIO_PRESETS.map(p => (
+        {/* == 小程序安全区 (开关 + 多选列表) == */}
+        <div className="border-b border-[#1e1e1e] px-4 py-2.5">
+          <label className="flex items-center gap-2 cursor-pointer">
+            <ToggleSwitch
+              checked={showMiniProgramPanel}
+              onChange={(v) => {
+                setShowMiniProgramPanel(v);
+                if (!v) setSelectedMiniPrograms(new Set());
+              }}
+            />
+            <LayoutGrid size={13} className="text-[#666]" />
+            <span className="text-xs text-[#aaa]">小程序安全区</span>
+            {selectedMiniPrograms.size > 0 && (
+              <span className="text-[10px] text-blue-400 ml-auto">{selectedMiniPrograms.size} 个</span>
+            )}
+          </label>
+          {showMiniProgramPanel && (
+            <div className="mt-2 grid grid-cols-2 gap-1">
+              {MINIPROGRAM_PRESETS.map(mp => (
                 <button
-                  key={p.id}
-                  className={`px-2 py-2 rounded-lg text-center transition-colors ${
-                    selectedAspectId === p.id
-                      ? 'bg-blue-500/15 text-blue-400 ring-1 ring-blue-500/30'
-                      : 'bg-[#1e1e1e] text-[#aaa] hover:bg-[#252525]'
+                  key={mp.id}
+                  className={`flex items-center gap-1.5 px-2 py-1 rounded text-[11px] transition-colors ${
+                    selectedMiniPrograms.has(mp.id)
+                      ? 'bg-blue-500/15 text-blue-400'
+                      : 'text-[#666] hover:text-[#999] hover:bg-[#1a1a1a]'
                   }`}
-                  onClick={() => setSelectedAspectId(p.id)}
-                  title={p.desc}
+                  onClick={() => toggleMiniProgram(mp.id)}
                 >
-                  <div className="text-xs font-medium">{p.label}</div>
-                  <div className="text-[10px] text-[#666] mt-0.5 truncate">{p.desc}</div>
+                  <span className="text-[10px]">{mp.icon}</span>
+                  <span className="truncate">{mp.name.replace('小程序', '')}</span>
                 </button>
               ))}
             </div>
           )}
-
-          {/* 自定义输入 */}
-          {aspectMode === 'custom' && (
-            <div className="flex items-center gap-2">
-              <div className="flex items-center gap-1.5">
-                <span className="text-[10px] text-[#666]">W</span>
-                <input
-                  type="number"
-                  value={customWidth}
-                  onChange={e => setCustomWidth(parseInt(e.target.value) || 100)}
-                  className="w-16 px-2 py-1 bg-[#1e1e1e] border border-[#333] rounded text-xs text-white text-center focus:border-blue-500 focus:outline-none"
-                  min={100}
-                  max={3000}
-                />
-              </div>
-              <X size={10} className="text-[#555]" />
-              <div className="flex items-center gap-1.5">
-                <span className="text-[10px] text-[#666]">H</span>
-                <input
-                  type="number"
-                  value={customHeight}
-                  onChange={e => setCustomHeight(parseInt(e.target.value) || 100)}
-                  className="w-16 px-2 py-1 bg-[#1e1e1e] border border-[#333] rounded text-xs text-white text-center focus:border-blue-500 focus:outline-none"
-                  min={100}
-                  max={3000}
-                />
-              </div>
-              <span className="text-[10px] text-[#555]">pt</span>
-            </div>
-          )}
-
-          {/* 当前比例显示 */}
-          <div className="mt-2 text-[10px] text-[#555]">
-            当前: {screenSize.width}×{screenSize.height}pt
-            {aspectMode !== 'device' && (
-              <span className="ml-1">
-                ({(screenSize.width / screenSize.height).toFixed(2)})
-              </span>
-            )}
-          </div>
-        </PanelSection>
-
-        {/* == 异形屏 == */}
-        <PanelSection title="异形屏" icon={<Smartphone size={14} />}>
-          <div className="flex items-center gap-2 text-xs text-[#aaa]">
-            {device.cutout ? (
-              <>
-                <span className="inline-block w-2 h-2 rounded-full bg-red-400" />
-                <span>{getCutoutName(device.cutout.type)}</span>
-                <span className="text-[#555]">({device.cutout.width}×{device.cutout.height}pt)</span>
-              </>
-            ) : (
-              <>
-                <span className="inline-block w-2 h-2 rounded-full bg-green-400" />
-                <span>无异形屏</span>
-              </>
-            )}
-          </div>
-          {device.foldCrease && (
-            <div className="flex items-center gap-2 text-xs text-[#aaa] mt-1">
-              <span className="inline-block w-2 h-2 rounded-full bg-yellow-400" />
-              <span>折痕: {device.foldCrease.position === 'vertical' ? '垂直' : '水平'} @{device.foldCrease.offset}pt</span>
-            </div>
-          )}
-        </PanelSection>
-
-        {/* == 小程序安全区 == */}
-        <PanelSection title="小程序安全区" icon={<LayoutGrid size={14} />}>
-          <div className="grid grid-cols-2 gap-1.5">
-            {MINIPROGRAM_PRESETS.map(mp => (
-              <button
-                key={mp.id}
-                className={`flex items-center gap-1.5 px-2 py-1.5 rounded-lg text-xs transition-colors ${
-                  selectedMiniPrograms.has(mp.id)
-                    ? 'bg-blue-500/15 text-blue-400 ring-1 ring-blue-500/30'
-                    : 'bg-[#1e1e1e] text-[#aaa] hover:bg-[#252525]'
-                }`}
-                onClick={() => toggleMiniProgram(mp.id)}
-              >
-                <span>{mp.icon}</span>
-                <span className="truncate">{mp.name.replace('小程序', '')}</span>
-              </button>
-            ))}
-          </div>
-          {selectedMiniPrograms.size > 0 && (
-            <button
-              className="mt-2 text-xs text-[#666] hover:text-[#999] transition-colors"
-              onClick={() => setSelectedMiniPrograms(new Set())}
-            >
-              清除全部
-            </button>
-          )}
-        </PanelSection>
-
-        {/* == 场景模拟 == */}
-        <PanelSection title="场景模拟" icon={<Keyboard size={14} />}>
-          <label className="flex items-center gap-2 cursor-pointer">
-            <ToggleSwitch checked={showKeyboard} onChange={setShowKeyboard} />
-            <span className="text-xs text-[#aaa]">键盘弹出</span>
-          </label>
-          <label className="flex items-center gap-2 cursor-pointer mt-2">
-            <ToggleSwitch checked={showTabBar} onChange={setShowTabBar} />
-            <span className="text-xs text-[#aaa]">底部 TabBar</span>
-          </label>
-        </PanelSection>
-
-        {/* == 遮罩控制 == */}
-        <PanelSection title="显示控制" icon={showOverlays ? <Eye size={14} /> : <EyeOff size={14} />}>
-          <label className="flex items-center gap-2 cursor-pointer">
-            <ToggleSwitch checked={showOverlays} onChange={setShowOverlays} />
-            <span className="text-xs text-[#aaa]">显示安全区遮罩</span>
-          </label>
-        </PanelSection>
-
-        {/* ====== P1 分析工具 ====== */}
-        <div className="border-b border-[#1e1e1e] px-4 py-2 mt-1">
-          <div className="flex items-center gap-2 text-[10px] text-[#555] uppercase tracking-wider">
-            <Zap size={10} />
-            <span>P1 分析工具</span>
-          </div>
         </div>
 
-        {/* == 视觉显著性热力图 == */}
-        <PanelSection title="视觉显著性" icon={<Flame size={14} />}>
-          <div className="space-y-3">
-            <div className="flex items-center justify-between">
-              <label className="flex items-center gap-2 cursor-pointer">
-                <ToggleSwitch checked={showHeatmap} onChange={(v) => {
-                  setShowHeatmap(v);
-                  if (v && !saliencyData && image) runSaliencyAnalysis();
-                }} />
-                <span className="text-xs text-[#aaa]">热力图</span>
-              </label>
-              {heatmapLoading && (
-                <Loader2 size={14} className="text-amber-400 animate-spin" />
+        {/* == 场景模拟 (安全区遮罩 开关 + 子项列表) == */}
+        <div className="border-b border-[#1e1e1e] px-4 py-2.5">
+          <label className="flex items-center gap-2 cursor-pointer">
+            <ToggleSwitch checked={showOverlays} onChange={setShowOverlays} />
+            <Keyboard size={13} className="text-[#666]" />
+            <span className="text-xs text-[#aaa]">安全区遮罩</span>
+          </label>
+          {showOverlays && (
+            <div className="mt-2 grid grid-cols-2 gap-1">
+              <button
+                className={`flex items-center gap-1.5 px-2 py-1 rounded text-[11px] transition-colors ${
+                  showKeyboard
+                    ? 'bg-purple-500/15 text-purple-400'
+                    : 'text-[#666] hover:text-[#999] hover:bg-[#1a1a1a]'
+                }`}
+                onClick={() => setShowKeyboard(!showKeyboard)}
+              >
+                <Keyboard size={11} />
+                <span>键盘弹出</span>
+              </button>
+              <button
+                className={`flex items-center gap-1.5 px-2 py-1 rounded text-[11px] transition-colors ${
+                  showTabBar
+                    ? 'bg-purple-500/15 text-purple-400'
+                    : 'text-[#666] hover:text-[#999] hover:bg-[#1a1a1a]'
+                }`}
+                onClick={() => setShowTabBar(!showTabBar)}
+              >
+                <LayoutGrid size={11} />
+                <span>底部 TabBar</span>
+              </button>
+            </div>
+          )}
+        </div>
+
+        {/* == 热力图 (toggle 即入口, 无多余标题) == */}
+        <div className="border-b border-[#1e1e1e] px-4 py-2.5">
+          <div className="flex items-center justify-between">
+            <label className="flex items-center gap-2 cursor-pointer">
+              <ToggleSwitch checked={showHeatmap} onChange={(v) => {
+                setShowHeatmap(v);
+                if (v && !saliencyData && image) runSaliencyAnalysis();
+              }} />
+              <Flame size={13} className="text-[#666]" />
+              <span className="text-xs text-[#aaa]">热力图</span>
+            </label>
+            <div className="flex items-center gap-2">
+              {heatmapLoading && <Loader2 size={14} className="text-amber-400 animate-spin" />}
+              {showHeatmap && saliencyData && (
+                <button
+                  className="text-[#555] hover:text-[#999] transition-colors"
+                  onClick={runSaliencyAnalysis}
+                  title="重新分析"
+                >
+                  <RefreshCw size={12} />
+                </button>
               )}
             </div>
-
-            {showHeatmap && (
-              <>
-                <div className="flex items-center gap-2">
-                  <span className="text-[10px] text-[#666]">透明度</span>
-                  <input
-                    type="range"
-                    min={0.1}
-                    max={1}
-                    step={0.05}
-                    value={heatmapOpacity}
-                    onChange={e => setHeatmapOpacity(parseFloat(e.target.value))}
-                    className="flex-1 h-1 accent-amber-500"
-                  />
-                  <span className="text-[10px] text-[#666] w-8 text-right">{Math.round(heatmapOpacity * 100)}%</span>
-                </div>
-                {!saliencyData && !heatmapLoading && image && (
-                  <button
-                    className="w-full py-1.5 bg-amber-500/15 text-amber-400 text-xs rounded-lg hover:bg-amber-500/25 transition-colors"
-                    onClick={runSaliencyAnalysis}
-                  >
-                    开始分析
-                  </button>
-                )}
-                {saliencyData && (
-                  <button
-                    className="flex items-center gap-1 text-[10px] text-[#666] hover:text-[#999] transition-colors"
-                    onClick={runSaliencyAnalysis}
-                  >
-                    <RefreshCw size={10} />
-                    重新分析
-                  </button>
-                )}
-              </>
-            )}
-
-            {/* 色阶图例 */}
-            {showHeatmap && saliencyData && (
+          </div>
+          {showHeatmap && (
+            <div className="mt-2.5 space-y-2">
+              <div className="flex items-center gap-2">
+                <input
+                  type="range" min={0.1} max={1} step={0.05}
+                  value={heatmapOpacity}
+                  onChange={e => setHeatmapOpacity(parseFloat(e.target.value))}
+                  className="flex-1 h-1 accent-amber-500"
+                />
+                <span className="text-[10px] text-[#555] w-7 text-right">{Math.round(heatmapOpacity * 100)}%</span>
+              </div>
+              {!saliencyData && !heatmapLoading && image && (
+                <button
+                  className="w-full py-1.5 bg-amber-500/15 text-amber-400 text-xs rounded-lg hover:bg-amber-500/25 transition-colors"
+                  onClick={runSaliencyAnalysis}
+                >开始分析</button>
+              )}
               <div className="flex items-center gap-1.5">
                 <span className="text-[9px] text-[#555]">低</span>
-                <div className="flex-1 h-2 rounded-sm overflow-hidden" style={{
+                <div className="flex-1 h-1.5 rounded-sm overflow-hidden" style={{
                   background: 'linear-gradient(to right, #0000ff, #00ffff, #00ff00, #ffff00, #ff0000)',
                 }} />
                 <span className="text-[9px] text-[#555]">高</span>
               </div>
-            )}
-          </div>
-        </PanelSection>
+            </div>
+          )}
+        </div>
 
-        {/* == 拇指热区 == */}
-        <PanelSection title="拇指热区" icon={<Hand size={14} />}>
-          <div className="space-y-2">
-            <label className="flex items-center gap-2 cursor-pointer">
-              <ToggleSwitch checked={showReachability} onChange={setShowReachability} />
-              <span className="text-xs text-[#aaa]">
-                {orientation === 'portrait' ? '单手操作热区' : '双手操作热区'}
-              </span>
-            </label>
-            {showReachability && (
-              <div className="flex items-center gap-3 text-[10px]">
-                <div className="flex items-center gap-1">
-                  <div className="w-2.5 h-2.5 rounded-sm bg-green-500/40" />
-                  <span className="text-[#888]">舒适</span>
-                </div>
-                <div className="flex items-center gap-1">
-                  <div className="w-2.5 h-2.5 rounded-sm bg-yellow-400/40" />
-                  <span className="text-[#888]">可达</span>
-                </div>
-                <div className="flex items-center gap-1">
-                  <div className="w-2.5 h-2.5 rounded-sm bg-red-500/40" />
-                  <span className="text-[#888]">困难</span>
-                </div>
+        {/* == 拇指热区 (toggle 即入口) == */}
+        <div className="border-b border-[#1e1e1e] px-4 py-2.5">
+          <label className="flex items-center gap-2 cursor-pointer">
+            <ToggleSwitch checked={showReachability} onChange={setShowReachability} />
+            <Hand size={13} className="text-[#666]" />
+            <span className="text-xs text-[#aaa]">
+              {orientation === 'portrait' ? '拇指热区' : '双手热区'}
+            </span>
+          </label>
+          {showReachability && (
+            <div className="flex items-center gap-3 text-[10px] mt-2 ml-10">
+              <div className="flex items-center gap-1">
+                <div className="w-2 h-2 rounded-sm bg-green-500/40" />
+                <span className="text-[#777]">舒适</span>
               </div>
-            )}
-          </div>
-        </PanelSection>
+              <div className="flex items-center gap-1">
+                <div className="w-2 h-2 rounded-sm bg-yellow-400/40" />
+                <span className="text-[#777]">可达</span>
+              </div>
+              <div className="flex items-center gap-1">
+                <div className="w-2 h-2 rounded-sm bg-red-500/40" />
+                <span className="text-[#777]">困难</span>
+              </div>
+            </div>
+          )}
+        </div>
 
         {/* == WCAG 对比度 == */}
         <PanelSection title="对比度检测" icon={<Pipette size={14} />}>
@@ -1587,174 +2163,344 @@ const UIAudit: React.FC = () => {
           </div>
         </PanelSection>
 
-        {/* == Fitts's Law == */}
-        <PanelSection title="操作效率" icon={<Target size={14} />}>
-          <div className="space-y-3">
-            <div className="flex items-center justify-between">
-              <button
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs transition-colors ${
-                  analysisMode === 'fitts'
-                    ? 'bg-emerald-500/20 text-emerald-400 ring-1 ring-emerald-500/30'
-                    : 'bg-[#1e1e1e] text-[#aaa] hover:bg-[#252525]'
-                }`}
-                onClick={() => {
-                  setAnalysisMode(analysisMode === 'fitts' ? 'none' : 'fitts');
-                  setFittsFrom(null);
-                  setFittsTo(null);
-                  setFittsResult(null);
-                }}
-              >
-                <MousePointer size={12} />
-                {analysisMode === 'fitts' ? '测量中...' : 'Fitts 测量'}
-              </button>
+        {/* == Fitts 测量 (按钮即入口, 无多余标题) == */}
+        <div className="border-b border-[#1e1e1e] px-4 py-2.5">
+          <div className="flex items-center justify-between">
+            <button
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs transition-colors ${
+                analysisMode === 'fitts'
+                  ? 'bg-emerald-500/20 text-emerald-400 ring-1 ring-emerald-500/30'
+                  : 'bg-[#1e1e1e] text-[#aaa] hover:bg-[#252525]'
+              }`}
+              onClick={() => {
+                setAnalysisMode(analysisMode === 'fitts' ? 'none' : 'fitts');
+                setFittsFrom(null);
+                setFittsTo(null);
+                setFittsResult(null);
+              }}
+            >
+              <MousePointer size={12} />
+              Fitts 测量
+            </button>
+            <div className="flex items-center gap-2">
+              {analysisMode === 'fitts' && (
+                <span className="text-[10px] text-emerald-400 animate-pulse">测量中</span>
+              )}
               {fittsResult && (
                 <button
-                  className="text-[10px] text-[#666] hover:text-[#999] transition-colors"
+                  className="text-[10px] text-[#555] hover:text-[#999] transition-colors"
                   onClick={() => { setFittsFrom(null); setFittsTo(null); setFittsResult(null); }}
-                >
-                  重置
-                </button>
+                >重置</button>
               )}
             </div>
-
-            {/* 目标宽度 */}
-            <div className="flex items-center gap-2">
-              <span className="text-[10px] text-[#666]">目标宽度</span>
-              <input
-                type="number"
-                value={fittsTargetSize}
-                onChange={e => setFittsTargetSize(Math.max(8, parseInt(e.target.value) || 44))}
-                className="w-14 px-2 py-1 bg-[#1e1e1e] border border-[#333] rounded text-xs text-white text-center focus:border-emerald-500 focus:outline-none"
-              />
-              <span className="text-[10px] text-[#666]">px</span>
-            </div>
-
-            {/* 状态提示 */}
-            {analysisMode === 'fitts' && !fittsFrom && (
-              <div className="text-[10px] text-[#666] flex items-center gap-1">
-                <MousePointer size={10} />
-                点击画面设置起点
-              </div>
-            )}
-            {analysisMode === 'fitts' && fittsFrom && !fittsTo && (
-              <div className="text-[10px] text-emerald-400 flex items-center gap-1">
-                <MousePointer size={10} />
-                点击画面设置终点
-              </div>
-            )}
-
-            {/* 结果面板 */}
-            {fittsResult && (
-              <div className="bg-[#1a1a1a] rounded-lg p-3 space-y-2">
-                <div className="flex items-center justify-between">
-                  <span className="text-xs text-[#888]">难度指数 (ID)</span>
-                  <span className={`text-sm font-bold ${
-                    fittsResult.rating === 'easy' ? 'text-green-400'
-                    : fittsResult.rating === 'moderate' ? 'text-amber-400'
-                    : 'text-red-400'
-                  }`}>
-                    {fittsResult.indexOfDifficulty} bits
-                  </span>
-                </div>
-                <div className="grid grid-cols-2 gap-2 text-[10px]">
-                  <div className="flex justify-between">
-                    <span className="text-[#666]">距离</span>
-                    <span className="text-[#aaa]">{fittsResult.distance}px</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-[#666]">时间</span>
-                    <span className="text-[#aaa]">~{fittsResult.estimatedTime}ms</span>
-                  </div>
-                </div>
-                <div className="flex items-center gap-1.5">
-                  <span className="text-[10px] text-[#666]">评级</span>
-                  <span className={`text-xs px-2 py-0.5 rounded ${
-                    fittsResult.rating === 'easy' ? 'bg-green-500/15 text-green-400'
-                    : fittsResult.rating === 'moderate' ? 'bg-amber-500/15 text-amber-400'
-                    : 'bg-red-500/15 text-red-400'
-                  }`}>
-                    {fittsResult.rating === 'easy' ? '轻松' : fittsResult.rating === 'moderate' ? '中等' : '困难'}
-                  </span>
-                </div>
-                <div className="text-[9px] text-[#555] mt-1 leading-relaxed">
-                  Fitts's Law: ID = log₂(D/W + 1) = log₂({fittsResult.distance}/{fittsTargetSize} + 1)
-                </div>
-              </div>
-            )}
           </div>
-        </PanelSection>
 
-        {/* == 综合审计报告 == */}
-        <PanelSection title="审计报告" icon={<BarChart3 size={14} />}>
-          <div className="space-y-3">
+          {(analysisMode === 'fitts' || fittsResult) && (
+            <div className="mt-2.5 space-y-2.5">
+              <div className="flex items-center gap-2">
+                <span className="text-[10px] text-[#555]">目标宽度</span>
+                <input
+                  type="number"
+                  value={fittsTargetSize}
+                  onChange={e => setFittsTargetSize(Math.max(8, parseInt(e.target.value) || 44))}
+                  className="w-14 px-2 py-0.5 bg-[#1e1e1e] border border-[#333] rounded text-[11px] text-white text-center focus:border-emerald-500 focus:outline-none"
+                />
+                <span className="text-[10px] text-[#555]">px</span>
+              </div>
+
+              {analysisMode === 'fitts' && !fittsFrom && (
+                <div className="text-[10px] text-[#555] flex items-center gap-1">
+                  <MousePointer size={10} />
+                  点击画面设置起点
+                </div>
+              )}
+              {analysisMode === 'fitts' && fittsFrom && !fittsTo && (
+                <div className="text-[10px] text-emerald-400 flex items-center gap-1">
+                  <MousePointer size={10} />
+                  点击画面设置终点
+                </div>
+              )}
+
+              {fittsResult && (
+                <div className="bg-[#1a1a1a] rounded-lg p-2.5 space-y-1.5">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[10px] text-[#666]">难度 (ID)</span>
+                    <span className={`text-sm font-bold ${
+                      fittsResult.rating === 'easy' ? 'text-green-400'
+                      : fittsResult.rating === 'moderate' ? 'text-amber-400'
+                      : 'text-red-400'
+                    }`}>
+                      {fittsResult.indexOfDifficulty} bits
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-3 text-[10px]">
+                    <span className="text-[#555]">{fittsResult.distance}px</span>
+                    <span className="text-[#555]">~{fittsResult.estimatedTime}ms</span>
+                    <span className={`ml-auto px-1.5 py-0.5 rounded text-[10px] ${
+                      fittsResult.rating === 'easy' ? 'bg-green-500/15 text-green-400'
+                      : fittsResult.rating === 'moderate' ? 'bg-amber-500/15 text-amber-400'
+                      : 'bg-red-500/15 text-red-400'
+                    }`}>
+                      {fittsResult.rating === 'easy' ? '轻松' : fittsResult.rating === 'moderate' ? '中等' : '困难'}
+                    </span>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* == P2: 智能检测 == */}
+        <div className="border-b border-[#1e1e1e] px-4 py-2.5">
+          <div className="flex items-center justify-between">
             <button
-              className="w-full py-2 bg-blue-500/15 text-blue-400 text-xs rounded-lg hover:bg-blue-500/25 transition-colors flex items-center justify-center gap-2"
-              onClick={generateAuditReport}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs transition-colors ${
+                analysisMode === 'detect'
+                  ? 'bg-cyan-500/20 text-cyan-400 ring-1 ring-cyan-500/30'
+                  : 'bg-[#1e1e1e] text-[#aaa] hover:bg-[#252525]'
+              }`}
+              onClick={() => {
+                if (analysisMode === 'detect') {
+                  setAnalysisMode('none');
+                } else {
+                  setAnalysisMode('detect');
+                  // 激活模式时自动触发检测
+                  if (image && !isDetecting) {
+                    runAutoDetect();
+                  }
+                }
+              }}
             >
-              <BarChart3 size={14} />
-              生成综合报告
+              <Scan size={12} />
+              智能检测
             </button>
+            <div className="flex items-center gap-1.5">
+              {isDetecting && <Loader2 size={14} className="text-cyan-400 animate-spin" />}
+              {analysisMode === 'detect' && detectedElements.length > 0 && (
+                <span className="text-[10px] text-cyan-400">{detectedElements.length} 个</span>
+              )}
+            </div>
+          </div>
 
-            {auditReport && (
-              <div className="space-y-3">
-                {/* 总分大数字 */}
-                <div className="flex items-center justify-center gap-4 py-3">
-                  <div className="text-center">
-                    <div
-                      className="text-4xl font-bold tabular-nums"
-                      style={{ color: GRADE_COLORS[auditReport.grade] }}
-                    >
-                      {auditReport.totalScore}
+          {analysisMode === 'detect' && (
+            <div className="mt-2.5 space-y-2.5">
+              {/* 操作按钮行 */}
+              <div className="flex items-center gap-1.5">
+                <button
+                  className="flex-1 py-1.5 bg-cyan-500/15 text-cyan-400 text-[11px] rounded-lg hover:bg-cyan-500/25 transition-colors flex items-center justify-center gap-1"
+                  onClick={runAutoDetect}
+                  disabled={!image || isDetecting}
+                >
+                  <Scan size={11} />
+                  {detectedElements.length > 0 ? '重新检测' : '自动检测'}
+                </button>
+                <button
+                  className="px-2.5 py-1.5 bg-[#1e1e1e] text-[#aaa] text-[11px] rounded-lg hover:bg-[#252525] transition-colors"
+                  onClick={analyzeAllElements}
+                  disabled={detectedElements.length === 0}
+                  title="重新分析所有元素"
+                >
+                  <RefreshCw size={11} />
+                </button>
+                {detectedElements.length > 0 && (
+                  <button
+                    className="px-2.5 py-1.5 bg-red-500/10 text-red-400 text-[11px] rounded-lg hover:bg-red-500/20 transition-colors"
+                    onClick={() => { setDetectedElements([]); setSelectedElementId(null); }}
+                    title="清除所有"
+                  >
+                    <Trash2 size={11} />
+                  </button>
+                )}
+              </div>
+
+              {/* 操作提示 */}
+              <div className="text-[10px] text-[#555] space-y-0.5">
+                <div>拖拽空白区域画框 · 拖拽框体移动 · 拖拽控制柄缩放</div>
+                <div>Delete 删除选中框</div>
+              </div>
+
+              {/* 操控选项 */}
+              <div className="flex items-center gap-3">
+                <label className="flex items-center gap-1.5 cursor-pointer">
+                  <ToggleSwitch checked={showPressureOverlay} onChange={setShowPressureOverlay} />
+                  <span className="text-[10px] text-[#aaa]">压力遮罩</span>
+                </label>
+                <div className="flex items-center gap-1 text-[10px]">
+                  <Hand size={10} className="text-[#555]" />
+                  <button
+                    className={`px-1.5 py-0.5 rounded text-[10px] transition-colors ${
+                      thumbHand === 'right' ? 'bg-purple-500/20 text-purple-400' : 'text-[#555] hover:text-white'
+                    }`}
+                    onClick={() => setThumbHand('right')}
+                  >右手</button>
+                  <button
+                    className={`px-1.5 py-0.5 rounded text-[10px] transition-colors ${
+                      thumbHand === 'left' ? 'bg-purple-500/20 text-purple-400' : 'text-[#555] hover:text-white'
+                    }`}
+                    onClick={() => setThumbHand('left')}
+                  >左手</button>
+                </div>
+              </div>
+
+              {/* 汇总统计面板 */}
+              {detectionSummary && (
+                <div className="bg-[#1a1a1a] rounded-lg p-2.5 space-y-2">
+                  <div className="text-[10px] text-[#666] uppercase tracking-wider">汇总统计</div>
+                  <div className="grid grid-cols-2 gap-x-3 gap-y-1.5 text-[10px]">
+                    <div className="flex justify-between">
+                      <span className="text-[#777]">目标数</span>
+                      <span className="text-white font-medium">{detectionSummary.totalElements}</span>
                     </div>
-                    <div className="text-[10px] text-[#666] mt-1">总分</div>
+                    <div className="flex justify-between">
+                      <span className="text-[#777]">均 ID</span>
+                      <span className={`font-medium ${
+                        detectionSummary.avgFittsID < 2.5 ? 'text-green-400'
+                        : detectionSummary.avgFittsID < 4 ? 'text-amber-400' : 'text-red-400'
+                      }`}>{detectionSummary.avgFittsID}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-[#777]">均耗时</span>
+                      <span className="text-white font-medium">~{detectionSummary.avgTime}ms</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-[#777]">误触风险</span>
+                      <span className={`font-medium ${detectionSummary.misclickRisk === 0 ? 'text-green-400' : 'text-red-400'}`}>
+                        {detectionSummary.misclickRisk}
+                      </span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-[#777]">对比度</span>
+                      <span className={`font-medium ${
+                        detectionSummary.contrastPassRate >= 80 ? 'text-green-400'
+                        : detectionSummary.contrastPassRate >= 50 ? 'text-amber-400' : 'text-red-400'
+                      }`}>{detectionSummary.contrastPassRate}%</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-[#777]">触控尺寸</span>
+                      <span className={`font-medium ${
+                        detectionSummary.touchPassRate >= 80 ? 'text-green-400'
+                        : detectionSummary.touchPassRate >= 50 ? 'text-amber-400' : 'text-red-400'
+                      }`}>{detectionSummary.touchPassRate}%</span>
+                    </div>
+                  </div>
+                  {/* 热区分布 */}
+                  <div className="flex items-center gap-2 text-[10px]">
+                    <span className="text-[#555]">热区:</span>
+                    <div className="flex items-center gap-1">
+                      <div className="w-2 h-2 rounded-sm bg-green-500/60" />
+                      <span className="text-green-400">{detectionSummary.zoneDistribution.easy}</span>
+                    </div>
+                    <div className="flex items-center gap-1">
+                      <div className="w-2 h-2 rounded-sm bg-yellow-400/60" />
+                      <span className="text-yellow-400">{detectionSummary.zoneDistribution.ok}</span>
+                    </div>
+                    <div className="flex items-center gap-1">
+                      <div className="w-2 h-2 rounded-sm bg-red-500/60" />
+                      <span className="text-red-400">{detectionSummary.zoneDistribution.hard}</span>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* 框线开关 + 元素列表 */}
+              {detectedElements.length > 0 && (
+                <>
+                  <div className="flex items-center justify-between mb-1.5">
+                    <label className="flex items-center gap-1.5 cursor-pointer">
+                      <ToggleSwitch checked={showDetectBoxes} onChange={setShowDetectBoxes} />
+                      <span className="text-[10px] text-[#aaa]">显示框线</span>
+                    </label>
+                    <span className="text-[10px] text-[#555]">悬停列表查看</span>
                   </div>
                   <div
-                    className="text-5xl font-bold opacity-80"
-                    style={{ color: GRADE_COLORS[auditReport.grade] }}
+                    className="max-h-36 overflow-y-auto space-y-0.5"
+                    onMouseLeave={() => setHoveredElementId(null)}
                   >
-                    {auditReport.grade}
-                  </div>
-                </div>
-
-                {/* 维度条形图 */}
-                <div className="space-y-2">
-                  {auditReport.dimensions.map(dim => (
-                    <div key={dim.id} className="space-y-1">
-                      <div className="flex items-center justify-between text-[10px]">
-                        <span className="text-[#aaa]">{dim.icon} {dim.name}</span>
-                        <span style={{ color: GRADE_COLORS[dim.grade] }}>
-                          {dim.score} ({dim.grade})
+                    {detectedElements.map((el, idx) => (
+                      <button
+                        key={el.id}
+                        className={`w-full text-left px-2 py-1 rounded text-[10px] transition-colors flex items-center gap-1.5 ${
+                          el.id === selectedElementId ? 'bg-cyan-500/15 text-cyan-400'
+                          : el.id === hoveredElementId ? 'bg-[#1e1e1e] text-white'
+                          : 'text-[#aaa] hover:bg-[#1e1e1e]'
+                        }`}
+                        onClick={() => setSelectedElementId(el.id === selectedElementId ? null : el.id)}
+                        onMouseEnter={() => setHoveredElementId(el.id)}
+                      >
+                        <span className="w-4 h-4 rounded-full bg-[#333] text-[8px] text-[#999] flex items-center justify-center shrink-0 font-bold">
+                          {idx + 1}
                         </span>
-                      </div>
-                      <div className="h-1.5 bg-[#1e1e1e] rounded-full overflow-hidden">
-                        <div
-                          className="h-full rounded-full transition-all duration-500"
-                          style={{
-                            width: `${dim.score}%`,
-                            backgroundColor: GRADE_COLORS[dim.grade],
-                          }}
-                        />
-                      </div>
-                      {dim.details.length > 0 && (
-                        <div className="text-[9px] text-[#555] leading-relaxed pl-4">
-                          {dim.details.map((d, i) => <div key={i}>{d}</div>)}
-                        </div>
-                      )}
-                    </div>
-                  ))}
-                </div>
+                        <span className="truncate">
+                          {el.label} {el.w || 0}×{el.h || 0}
+                        </span>
+                        {el.analysis.fitts && Number.isFinite(el.analysis.fitts.id) && (
+                          <span className={`ml-auto shrink-0 ${
+                            el.analysis.fitts.rating === 'easy' ? 'text-green-400'
+                            : el.analysis.fitts.rating === 'moderate' ? 'text-amber-400' : 'text-red-400'
+                          }`}>
+                            ID={el.analysis.fitts.id}
+                          </span>
+                        )}
+                        {el.analysis.touchTarget && !el.analysis.touchTarget.pass && (
+                          <span className="text-red-400 shrink-0">⚠</span>
+                        )}
+                      </button>
+                    ))}
+                  </div>
+                </>
+              )}
+            </div>
+          )}
+        </div>
 
-                {/* 建议 */}
-                <div className="border-t border-[#1e1e1e] pt-2 space-y-1">
-                  <div className="text-[10px] text-[#666] mb-1">改进建议</div>
-                  {auditReport.suggestions.map((s, i) => (
-                    <div key={i} className="text-[10px] text-[#aaa] leading-relaxed">{s}</div>
-                  ))}
-                </div>
+        {/* == 综合审计报告 (仅按钮 + 展开结果) == */}
+        <div className="border-b border-[#1e1e1e] px-4 py-2.5">
+          <button
+            className="w-full py-2 bg-blue-500/15 text-blue-400 text-xs rounded-lg hover:bg-blue-500/25 transition-colors"
+            onClick={generateAuditReport}
+          >
+            生成综合报告
+          </button>
+          {auditReport && (
+            <div className="mt-3 space-y-2.5">
+              <div className="flex items-center justify-between">
+                <span
+                  className="text-2xl font-bold tabular-nums"
+                  style={{ color: GRADE_COLORS[auditReport.grade] }}
+                >
+                  {auditReport.totalScore}
+                </span>
+                <span
+                  className="text-3xl font-bold opacity-80"
+                  style={{ color: GRADE_COLORS[auditReport.grade] }}
+                >
+                  {auditReport.grade}
+                </span>
               </div>
-            )}
-          </div>
-        </PanelSection>
+              <div className="space-y-1.5">
+                {auditReport.dimensions.map(dim => (
+                  <div key={dim.id}>
+                    <div className="flex items-center justify-between text-[10px] mb-0.5">
+                      <span className="text-[#aaa]">{dim.icon} {dim.name}</span>
+                      <span style={{ color: GRADE_COLORS[dim.grade] }}>{dim.score}</span>
+                    </div>
+                    <div className="h-1 bg-[#1e1e1e] rounded-full overflow-hidden">
+                      <div
+                        className="h-full rounded-full transition-all duration-500"
+                        style={{ width: `${dim.score}%`, backgroundColor: GRADE_COLORS[dim.grade] }}
+                      />
+                    </div>
+                  </div>
+                ))}
+              </div>
+              {auditReport.suggestions.length > 0 && (
+                <div className="text-[9px] text-[#555] leading-relaxed space-y-0.5">
+                  {auditReport.suggestions.map((s, i) => <div key={i}>{s}</div>)}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
 
         {/* == 检测结果 == */}
         <PanelSection title="检测结果" icon={<AlertTriangle size={14} />}>
@@ -2168,13 +2914,17 @@ function drawMiniProgramOverlay(
     ctx.fillStyle = mp.color;
     ctx.fillRect(ox, oy + statusBarH, sw, navH);
 
-    // 胶囊按钮
+    // 胶囊按钮 (iOS/Android 独立尺寸)
     if (mp.capsule) {
       const cap = mp.capsule;
-      const capTop = oy + statusBarH + cap.top;
-      const capLeft = ox + sw - cap.right - cap.width;
+      const capW = platform === 'ios' ? cap.width.ios : cap.width.android;
+      const capH = platform === 'ios' ? cap.height.ios : cap.height.android;
+      const capTopGap = platform === 'ios' ? cap.top.ios : cap.top.android;
+      const capRight = platform === 'ios' ? cap.right.ios : cap.right.android;
+      const capTop = oy + statusBarH + capTopGap;
+      const capLeft = ox + sw - capRight - capW;
       ctx.fillStyle = mp.color.replace(/[\d.]+\)$/, '0.45)');
-      simpleRoundRect(ctx, capLeft, capTop, cap.width, cap.height, cap.borderRadius);
+      simpleRoundRect(ctx, capLeft, capTop, capW, capH, cap.borderRadius);
       ctx.fill();
       ctx.strokeStyle = mp.color.replace(/[\d.]+\)$/, '0.6)');
       ctx.lineWidth = 1;
@@ -2190,13 +2940,17 @@ function drawMiniProgramOverlay(
     ctx.fillStyle = mp.color;
     ctx.fillRect(navLeft, navTop, navWidth, navH);
 
-    // 胶囊按钮 (横屏时贴右侧安全区内边缘)
+    // 胶囊按钮 (横屏, iOS/Android 独立尺寸)
     if (mp.capsule) {
       const cap = mp.capsule;
-      const capTop = navTop + cap.top;
-      const capLeft = navLeft + navWidth - cap.right - cap.width;
+      const capW = platform === 'ios' ? cap.width.ios : cap.width.android;
+      const capH = platform === 'ios' ? cap.height.ios : cap.height.android;
+      const capTopGap = platform === 'ios' ? cap.top.ios : cap.top.android;
+      const capRight = platform === 'ios' ? cap.right.ios : cap.right.android;
+      const capTop = navTop + capTopGap;
+      const capLeft = navLeft + navWidth - capRight - capW;
       ctx.fillStyle = mp.color.replace(/[\d.]+\)$/, '0.45)');
-      simpleRoundRect(ctx, capLeft, capTop, cap.width, cap.height, cap.borderRadius);
+      simpleRoundRect(ctx, capLeft, capTop, capW, capH, cap.borderRadius);
       ctx.fill();
       ctx.strokeStyle = mp.color.replace(/[\d.]+\)$/, '0.6)');
       ctx.lineWidth = 1;

@@ -5,6 +5,8 @@ use tauri::{Manager, WindowBuilder, PhysicalPosition, PhysicalSize};
 use serde::{Deserialize, Serialize};
 use std::sync::Mutex;
 
+mod asset_manager;
+
 #[cfg(target_os = "windows")]
 use winapi::um::winuser::{
     MonitorFromPoint, GetMonitorInfoW, MONITOR_DEFAULTTONEAREST,
@@ -2203,7 +2205,22 @@ fn main() {
         })
         .setup(|app| {
             println!("=== Tauri setup started ===");
-            
+
+            // ---- 初始化资源管理器 ----
+            {
+                let app_data = app.path_resolver().app_data_dir()
+                    .expect("Failed to get app data dir");
+                let am_dir = app_data.join("asset_manager");
+                let thumb_dir = am_dir.join("thumbnails");
+                std::fs::create_dir_all(&thumb_dir).ok();
+                let db_path = am_dir.join("assets.db");
+
+                let am_state = asset_manager::AssetManagerState::new(db_path, thumb_dir)
+                    .expect("Failed to init asset manager database");
+                app.manage(am_state);
+                println!("Asset manager initialized");
+            }
+
             // 检查主窗口
             if let Some(main_window) = app.get_window("main") {
                 println!("Main window found, label: {}", main_window.label());
@@ -2257,6 +2274,24 @@ fn main() {
                 }
             }
             
+            // 启动时显示主窗口
+            if let Some(main_window) = app.get_window("main") {
+                println!("Showing main window on startup...");
+                let _ = main_window.show();
+                let _ = main_window.center();
+                let _ = main_window.set_focus();
+                // 确认窗口可见
+                let is_visible = main_window.is_visible().unwrap_or(false);
+                println!("Main window visible after show: {}", is_visible);
+                if !is_visible {
+                    // 重试一次
+                    std::thread::sleep(std::time::Duration::from_millis(100));
+                    let _ = main_window.show();
+                    let _ = main_window.set_focus();
+                    println!("Main window show retry done");
+                }
+            }
+
             println!("=== Tauri setup completed ===");
             Ok(())
         })
@@ -2289,7 +2324,43 @@ fn main() {
             get_cursor_position,
             verify_user,
             check_auth,
-            auth_logout
+            auth_logout,
+            asset_manager::asset_get_folders,
+            asset_manager::asset_add_folder,
+            asset_manager::asset_remove_folder,
+            asset_manager::asset_scan_folder,
+            asset_manager::asset_query,
+            asset_manager::asset_get_stats,
+            asset_manager::asset_get_tags,
+            asset_manager::asset_create_tag,
+            asset_manager::asset_update_tag,
+            asset_manager::asset_delete_tag,
+            asset_manager::asset_add_tag,
+            asset_manager::asset_remove_tag,
+            asset_manager::asset_batch_add_tag,
+            asset_manager::asset_set_rating,
+            asset_manager::asset_set_note,
+            asset_manager::asset_get_detail,
+            asset_manager::asset_get_smart_folders,
+            asset_manager::asset_create_smart_folder,
+            asset_manager::asset_update_smart_folder,
+            asset_manager::asset_delete_smart_folder,
+            asset_manager::team_check_lock,
+            asset_manager::team_acquire_lock,
+            asset_manager::team_release_lock,
+            asset_manager::team_refresh_heartbeat,
+            asset_manager::team_get_all_locks,
+            asset_manager::team_get_history,
+            asset_manager::team_create_version,
+            asset_manager::team_restore_version,
+            asset_manager::team_log_action,
+            asset_manager::team_read_actions,
+            asset_manager::team_load_permissions,
+            asset_manager::team_set_permission,
+            asset_manager::team_get_user_role,
+            asset_manager::ffmpeg_check,
+            asset_manager::ffmpeg_download,
+            asset_manager::ffmpeg_extract_thumbnail
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

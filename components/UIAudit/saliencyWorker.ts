@@ -1,19 +1,24 @@
 /**
- * 视觉显著性分析 — 游戏 UI 专用
+ * 视觉显著性分析 — 游戏 UI 专用 (v5)
  *
  * 三路信号融合:
  *   S = w1 × CenterSurround  +  w2 × ColorRarity  +  w3 × Saturation
  *
  * 1. CenterSurround (多尺度局部对比度)
- *    ||I(x,y) − I_σk(x,y)||  在 3 个尺度 (σ = 3%/10%/25% minDim)
+ *    ||I(x,y) − I_σk(x,y)||  在 3 个尺度 (σ = 4%/10%/25% minDim)
  *    → 检测"什么和周围不一样" (按钮从背景中突出, 文字从色块中突出)
+ *    小尺度权重仅 0.10, 避免精细纹理(金框花纹等)产生噪点
  *
  * 2. ColorRarity (色彩稀缺度)
- *    基于量化 Lab 直方图的信息论"惊奇度"
+ *    基于量化 Lab 直方图的信息论"惊奇度", σ=3% 平滑
  *    → 检测"什么颜色在画面中稀有" (角色独特配色 > 重复的扑克牌)
  *
  * 3. Saturation (饱和度加权)
  *    高饱和 = 游戏 UI 设计意图上的焦点
+ *
+ * 4. ★ 注意力区域空间平滑 (σ = 4% minDim)
+ *    融合后对显著图做 Gaussian blur, 将像素级碎片聚合成
+ *    连贯的"注意力区域", 模拟人眼注视焦点 (~3-5% 画面尺寸)
  *
  * 采样: maxDim=400 (横屏游戏截图约 400×171, 足够精确又保持 <300ms)
  */
@@ -114,10 +119,11 @@ function computeCenterSurround(
   const result = new Float32Array(n);
 
   // 3 个尺度: 细节 / 元素 / 构图
+  // 小尺度 σ 下限提高到 5, 减少精细纹理噪声 (金框花纹等)
   const scales = [
-    { sigma: Math.max(3, minDim * 0.03),  weight: 0.15 }, // 文字笔画、小图标
+    { sigma: Math.max(5, minDim * 0.04),  weight: 0.10 }, // 文字笔画、小图标
     { sigma: Math.max(10, minDim * 0.10), weight: 0.35 }, // 按钮、角色、卡牌
-    { sigma: Math.max(25, minDim * 0.25), weight: 0.50 }, // 整体构图、大区域差异
+    { sigma: Math.max(25, minDim * 0.25), weight: 0.55 }, // 整体构图、大区域差异
   ];
 
   for (const { sigma, weight } of scales) {
@@ -183,8 +189,8 @@ function computeColorRarity(
   // 归一化到 [0, 1]
   if (maxR > 0) for (let i = 0; i < n; i++) rarity[i] /= maxR;
 
-  // 轻微平滑, 减少单像素噪点
-  gaussBlur(rarity, w, h, Math.max(2, Math.min(w, h) * 0.01));
+  // 平滑色彩稀缺度, 合并相邻同类区域
+  gaussBlur(rarity, w, h, Math.max(4, Math.min(w, h) * 0.03));
 
   // 平滑后再次归一化
   let maxR2 = 0;
@@ -232,6 +238,11 @@ function computeSaliency(data: Uint8ClampedArray, w: number, h: number): Float32
     // 饱和度: 低饱和 ×0.6, 高饱和 ×1.2
     saliency[i] = base * (0.6 + 0.6 * Math.min(sat[i], 1));
   }
+
+  // 3.5 ★ 关键: 注意力区域空间平滑
+  //     人眼注视的焦点半径约占画面 3-5%,
+  //     将像素级碎片热点聚合成连贯的"注意力区域"
+  gaussBlur(saliency, w, h, Math.max(6, minDim * 0.04));
 
   // 4. 归一化
   let maxS = 0;
@@ -301,8 +312,8 @@ export function analyzeSaliency(
       const minDim = Math.min(w, h);
       console.log(
         `Saliency: ${elapsed}ms (${w}×${h}) ` +
-        `σ=[${Math.max(3, minDim * 0.03).toFixed(0)}, ${Math.max(10, minDim * 0.10).toFixed(0)}, ${Math.max(25, minDim * 0.25).toFixed(0)}] ` +
-        `bins=12³`,
+        `σ_cs=[${Math.max(5, minDim * 0.04).toFixed(0)}, ${Math.max(10, minDim * 0.10).toFixed(0)}, ${Math.max(25, minDim * 0.25).toFixed(0)}] ` +
+        `σ_smooth=${Math.max(6, minDim * 0.04).toFixed(0)} bins=12³`,
       );
 
       resolve({ type: 'result', saliencyMap, width: w, height: h });

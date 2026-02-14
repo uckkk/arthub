@@ -8,7 +8,8 @@ import { openUrl } from '../services/windowService';
 interface TodoItem {
   id: string;
   text: string;
-  quadrant: 'urgent-important' | 'not-urgent-important' | 'urgent-not-important' | 'not-urgent-not-important';
+  quadrant: 'urgent-important' | 'not-urgent-important' | 'urgent-not-important' | 'not-urgent-not-important' | 'uncategorized';
+  completed?: boolean;
   createdAt: number;
   updatedAt: number;
   linkedPaths?: string[]; // 关联的路径ID列表
@@ -21,10 +22,11 @@ const QuadrantTodo: React.FC = () => {
     return saved ? JSON.parse(saved) : [];
   });
 
+  const [hideCompleted, setHideCompleted] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editText, setEditText] = useState('');
   const [editUrl, setEditUrl] = useState('');
-  const [newTodoQuadrant, setNewTodoQuadrant] = useState<TodoItem['quadrant']>('urgent-important');
+  const [newTodoQuadrant, setNewTodoQuadrant] = useState<TodoItem['quadrant']>('uncategorized');
   const [newTodoText, setNewTodoText] = useState('');
   const [showAddModal, setShowAddModal] = useState(false);
   const [draggedTodo, setDraggedTodo] = useState<TodoItem | null>(null);
@@ -41,12 +43,14 @@ const QuadrantTodo: React.FC = () => {
     'not-urgent-important': '',
     'urgent-not-important': '',
     'not-urgent-not-important': '',
+    'uncategorized': '',
   });
   const [showQuickAdd, setShowQuickAdd] = useState<Record<TodoItem['quadrant'], boolean>>({
     'urgent-important': false,
     'not-urgent-important': false,
     'urgent-not-important': false,
     'not-urgent-not-important': false,
+    'uncategorized': false,
   });
   
   // 删除确认状态
@@ -60,6 +64,7 @@ const QuadrantTodo: React.FC = () => {
     'not-urgent-important': false,
     'urgent-not-important': false,
     'not-urgent-not-important': false,
+    'uncategorized': false,
   });
 
   const scrollContainerRef = useMiddleMouseScroll<HTMLDivElement>({
@@ -291,12 +296,14 @@ const QuadrantTodo: React.FC = () => {
     }
   };
 
-  const quadrants: { key: TodoItem['quadrant']; title: string; color: string; bgColor: string }[] = [
+  const allQuadrants: { key: TodoItem['quadrant']; title: string; color: string; bgColor: string }[] = [
+    { key: 'uncategorized', title: '未分类', color: 'text-[#888]', bgColor: 'bg-[#222]' },
     { key: 'urgent-important', title: '重要且紧急', color: 'text-red-400', bgColor: 'bg-red-500/10' },
     { key: 'not-urgent-important', title: '重要不紧急', color: 'text-blue-400', bgColor: 'bg-blue-500/10' },
     { key: 'urgent-not-important', title: '紧急不重要', color: 'text-yellow-400', bgColor: 'bg-yellow-500/10' },
     { key: 'not-urgent-not-important', title: '不紧急不重要', color: 'text-gray-400', bgColor: 'bg-gray-500/10' },
   ];
+  const quadrants = allQuadrants.filter(q => q.key !== 'uncategorized');
 
   const handleAddTodo = async () => {
     if (!newTodoText.trim()) return;
@@ -892,344 +899,335 @@ const QuadrantTodo: React.FC = () => {
     }
   };
 
-  const getTodosByQuadrant = (quadrant: TodoItem['quadrant']) => {
-    return todos.filter(t => t.quadrant === quadrant);
+  const toggleCompleted = (id: string) => {
+    setTodos(todos.map(t =>
+      t.id === id ? { ...t, completed: !t.completed, updatedAt: Date.now() } : t
+    ));
   };
+
+  const getTodosByQuadrant = (quadrant: TodoItem['quadrant']) => {
+    return todos
+      .filter(t => t.quadrant === quadrant)
+      .filter(t => !hideCompleted || !t.completed);
+  };
+
+  /* ---------- 渲染单条 Todo 项（通用） ---------- */
+  const renderTodoItem = (todo: TodoItem, quadrantKey: TodoItem['quadrant']) => {
+    const todoUrl = todo.url || extractUrl(todo.text);
+    const isClickable = !!todoUrl || (todo.linkedPaths && todo.linkedPaths.length > 0);
+    const isDragged = draggedTodo?.id === todo.id;
+    const isDragOverItem = dragOverTodoId === todo.id;
+    const isSameQuadrantDrag = draggedTodo && draggedTodo.quadrant === quadrantKey;
+
+    return (
+      <React.Fragment key={todo.id}>
+        {isDragOverItem && isSameQuadrantDrag && !isDragged && dragOverPosition === 'above' && (
+          <div className="h-0.5 bg-blue-500 rounded-full mx-1 my-0.5 animate-pulse" />
+        )}
+        <div
+          data-todo-id={todo.id}
+          onClick={(e) => {
+            if (isDragging || draggedTodo || dragStartRef.current) {
+              e.preventDefault(); e.stopPropagation(); return;
+            }
+            if (isClickable) handleTodoClick(todo, e);
+          }}
+          className={`
+            group relative px-2 py-1.5 rounded border transition-all text-xs
+            ${isDragged
+              ? 'opacity-50 cursor-move border-blue-500/50 bg-[#1a1a1a]'
+              : isDragOverItem && isSameQuadrantDrag
+              ? 'border-blue-500 bg-blue-500/10'
+              : isClickable
+              ? 'cursor-pointer border-[#222] hover:border-[#333] bg-[#141414] hover:bg-[#1a1a1a]'
+              : 'cursor-move border-[#222] hover:border-[#333] bg-[#141414]'
+            }
+          `}
+        >
+          {isDragOverItem && isSameQuadrantDrag && !isDragged && dragOverPosition === 'below' && (
+            <div className="absolute -bottom-0.5 left-0 right-0 h-0.5 bg-blue-500 rounded-full animate-pulse" />
+          )}
+          {editingId === todo.id ? (
+            <div className="space-y-1.5">
+              {availablePaths.length > 0 && (
+                <div className="flex items-center justify-end">
+                  <button type="button" onClick={() => setShowPathSelectorEdit(!showPathSelectorEdit)}
+                    className="flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] text-blue-400 hover:text-blue-300 hover:bg-blue-500/10 transition-colors">
+                    <LinkIcon size={10} /><span>路径</span>
+                    {showPathSelectorEdit ? <ChevronUp size={10} /> : <ChevronDown size={10} />}
+                  </button>
+                </div>
+              )}
+              {showPathSelectorEdit && availablePaths.length > 0 && (
+                <div className="p-1.5 rounded bg-[#0f0f0f] border border-[#222] max-h-28 overflow-y-auto">
+                  {availablePaths.map((path) => (
+                    <button key={path.id} type="button"
+                      onClick={() => { insertPathToText(path, true); setShowPathSelectorEdit(false); }}
+                      className="w-full text-left px-1.5 py-0.5 rounded text-[10px] text-[#a0a0a0] hover:text-white hover:bg-[#1a1a1a] transition-colors flex items-center gap-1.5">
+                      <LinkIcon size={9} className="text-blue-400 flex-shrink-0" />
+                      <span className="flex-1 truncate">{path.name}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
+              <textarea value={editText} onChange={(e) => setEditText(e.target.value)}
+                className="w-full px-2 py-1 rounded bg-[#0f0f0f] border border-[#222] text-white placeholder-[#555] focus:outline-none focus:border-blue-500 resize-none text-xs"
+                rows={2} autoFocus placeholder="任务标题..."
+                onKeyDown={(e) => { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) handleSaveEdit(); else if (e.key === 'Escape') handleCancelEdit(); }}
+              />
+              <input type="url" value={editUrl} onChange={(e) => setEditUrl(e.target.value)}
+                className="w-full px-2 py-1 rounded bg-[#0f0f0f] border border-[#222] text-white placeholder-[#555] focus:outline-none focus:border-blue-500 text-[10px]"
+                placeholder="URL（可选）"
+                onKeyDown={(e) => { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) handleSaveEdit(); else if (e.key === 'Escape') handleCancelEdit(); }}
+              />
+              <div className="flex items-center gap-1.5">
+                <button onClick={handleSaveEdit} className="px-2 py-0.5 rounded bg-blue-600 hover:bg-blue-700 text-white text-[10px] transition-colors">保存</button>
+                <button onClick={handleCancelEdit} className="px-2 py-0.5 rounded bg-[#1a1a1a] border border-[#222] text-[#999] hover:text-white text-[10px] transition-colors">取消</button>
+              </div>
+            </div>
+          ) : (
+            <>
+              <div className="flex items-center gap-1.5">
+                {/* 勾选框 */}
+                <button
+                  onClick={(e) => { e.stopPropagation(); toggleCompleted(todo.id); }}
+                  className={`w-3.5 h-3.5 rounded border flex-shrink-0 flex items-center justify-center transition-colors ${
+                    todo.completed
+                      ? 'bg-green-600 border-green-600 text-white'
+                      : 'border-[#444] hover:border-[#666] bg-transparent'
+                  }`}
+                >
+                  {todo.completed && (
+                    <svg width="8" height="8" viewBox="0 0 12 12" fill="none">
+                      <path d="M2 6l3 3 5-6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                    </svg>
+                  )}
+                </button>
+                {/* 拖动手柄 */}
+                <GripVertical size={12} data-drag-handle
+                  className="text-[#555] cursor-grab active:cursor-grabbing flex-shrink-0 opacity-0 group-hover:opacity-100 transition-opacity"
+                  onMouseDown={(e) => {
+                    if (e.button === 0) {
+                      e.preventDefault(); e.stopPropagation();
+                      const dragInfo = { todoId: todo.id, startY: e.clientY, startX: e.clientX };
+                      dragStartRef.current = dragInfo;
+                      setDragStartState(dragInfo);
+                      setDraggedTodo(todo);
+                    }
+                  }}
+                />
+                <div className={`flex-1 break-words leading-tight ${todo.completed ? 'line-through text-[#555]' : 'text-[#ccc]'}`}>
+                  <div className="flex items-start gap-1">
+                    <span className="flex-1">{renderTextWithPaths(todo.text)}</span>
+                    {todoUrl && (
+                      <ExternalLink size={11} className="text-blue-400 flex-shrink-0 mt-0.5 opacity-60 hover:opacity-100 transition-opacity" title={todoUrl} />
+                    )}
+                  </div>
+                </div>
+                {/* 操作按钮 */}
+                <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0">
+                  <button onClick={() => handleStartEdit(todo)} className="p-0.5 rounded text-[#555] hover:text-blue-400 transition-colors" title="编辑">
+                    <Edit2 size={11} />
+                  </button>
+                  <button onClick={() => handleDelete(todo.id)} className="p-0.5 rounded text-[#555] hover:text-red-400 transition-colors" title="删除">
+                    <Trash2 size={11} />
+                  </button>
+                </div>
+              </div>
+            </>
+          )}
+        </div>
+      </React.Fragment>
+    );
+  };
+
+  /* ---------- 渲染快速添加框（通用） ---------- */
+  const renderQuickAdd = (quadrantKey: TodoItem['quadrant']) => {
+    if (!showQuickAdd[quadrantKey]) return null;
+    return (
+      <div className="mb-1.5 p-2 rounded bg-[#161616] border border-[#222]">
+        <div className="flex items-center justify-between mb-1">
+          <span className="text-[10px] text-[#888]">快速添加</span>
+          {availablePaths.length > 0 && (
+            <button type="button"
+              onClick={() => setShowPathSelectorQuick({ ...showPathSelectorQuick, [quadrantKey]: !showPathSelectorQuick[quadrantKey] })}
+              className="flex items-center gap-0.5 px-1 py-0.5 rounded text-[10px] text-blue-400 hover:text-blue-300 hover:bg-blue-500/10 transition-colors">
+              <LinkIcon size={9} /><span>路径</span>
+              {showPathSelectorQuick[quadrantKey] ? <ChevronUp size={9} /> : <ChevronDown size={9} />}
+            </button>
+          )}
+        </div>
+        {showPathSelectorQuick[quadrantKey] && availablePaths.length > 0 && (
+          <div className="mb-1.5 p-1.5 rounded bg-[#0f0f0f] border border-[#222] max-h-24 overflow-y-auto">
+            {availablePaths.map((path) => (
+              <button key={path.id} type="button"
+                onClick={() => { insertPathToQuickAdd(path, quadrantKey); setShowPathSelectorQuick({ ...showPathSelectorQuick, [quadrantKey]: false }); }}
+                className="w-full text-left px-1.5 py-0.5 rounded text-[10px] text-[#a0a0a0] hover:text-white hover:bg-[#1a1a1a] transition-colors flex items-center gap-1.5">
+                <LinkIcon size={9} className="text-blue-400 flex-shrink-0" />
+                <span className="flex-1 truncate">{path.name}</span>
+              </button>
+            ))}
+          </div>
+        )}
+        <textarea id={`quick-add-${quadrantKey}`} value={quickAddTexts[quadrantKey]}
+          onChange={(e) => setQuickAddTexts({ ...quickAddTexts, [quadrantKey]: e.target.value })}
+          className="w-full px-2 py-1 rounded bg-[#0f0f0f] border border-[#222] text-white placeholder-[#555] focus:outline-none focus:border-blue-500 resize-none text-xs"
+          rows={1} placeholder="输入后 Ctrl+Enter 创建" autoFocus
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); handleQuickAddTodo(quadrantKey); }
+            else if (e.key === 'Escape') {
+              setShowQuickAdd({ ...showQuickAdd, [quadrantKey]: false });
+              setQuickAddTexts({ ...quickAddTexts, [quadrantKey]: '' });
+              setShowPathSelectorQuick({ ...showPathSelectorQuick, [quadrantKey]: false });
+            }
+          }}
+        />
+        <div className="flex items-center justify-end gap-1.5 mt-1">
+          <button onClick={() => {
+            setShowQuickAdd({ ...showQuickAdd, [quadrantKey]: false });
+            setQuickAddTexts({ ...quickAddTexts, [quadrantKey]: '' });
+            setShowPathSelectorQuick({ ...showPathSelectorQuick, [quadrantKey]: false });
+          }} className="px-1.5 py-0.5 rounded text-[10px] text-[#666] hover:text-white hover:bg-[#222] transition-colors">取消</button>
+          <button onClick={() => handleQuickAddTodo(quadrantKey)}
+            disabled={!quickAddTexts[quadrantKey].trim()}
+            className="px-1.5 py-0.5 rounded text-[10px] bg-blue-600 hover:bg-blue-700 text-white disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center gap-0.5">
+            <Plus size={10} />添加
+          </button>
+        </div>
+      </div>
+    );
+  };
+
+  const uncategorizedTodos = getTodosByQuadrant('uncategorized');
+  const completedCount = todos.filter(t => t.completed).length;
 
   return (
     <div className="h-full flex flex-col overflow-hidden bg-[#0a0a0a]">
       {/* 顶部工具栏 */}
-      <div className="flex items-center justify-end p-6 border-b border-[#1a1a1a] shrink-0">
+      <div className="flex items-center justify-between px-4 py-2 border-b border-[#1a1a1a] shrink-0">
+        <div className="flex items-center gap-3">
+          {/* 隐藏已完成开关 */}
+          <label className="flex items-center gap-1.5 cursor-pointer select-none">
+            <button
+              onClick={() => setHideCompleted(!hideCompleted)}
+              className={`w-7 h-4 rounded-full relative transition-colors ${hideCompleted ? 'bg-green-600' : 'bg-[#333]'}`}
+            >
+              <span className={`absolute top-0.5 w-3 h-3 rounded-full bg-white transition-transform ${hideCompleted ? 'left-3.5' : 'left-0.5'}`} />
+            </button>
+            <span className="text-[11px] text-[#888]">隐藏已完成</span>
+          </label>
+          {completedCount > 0 && (
+            <span className="text-[10px] text-[#555]">{completedCount} 项已完成</span>
+          )}
+        </div>
         <button
           onClick={() => setShowAddModal(true)}
-          className="flex items-center gap-2 px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-medium transition-colors"
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-xs font-medium transition-colors"
         >
-          <Plus size={18} />
-          添加TODO
+          <Plus size={14} />
+          添加
         </button>
       </div>
 
-      {/* 四象限网格 */}
-      <div 
-        ref={scrollContainerRef}
-        className="flex-1 grid grid-cols-2 gap-4 p-6 overflow-auto"
-        style={{ scrollbarWidth: 'thin', scrollbarColor: '#2a2a2a #0a0a0a' }}
-      >
-        {quadrants.map((quadrant) => {
-          const quadrantTodos = getTodosByQuadrant(quadrant.key);
-          const isDragOver = dragOverQuadrant === quadrant.key;
-          
-          return (
-            <div
-              key={quadrant.key}
-              data-quadrant={quadrant.key}
-              className={
-                'rounded-lg border-2 border-dashed p-4 min-h-[300px] transition-all duration-200 ' +
-                (isDragOver ? 'border-blue-500 bg-blue-500/10' : 'border-[#2a2a2a] bg-[#0f0f0f]')
-              }
-              onDragOver={(e) => handleDragOver(e, quadrant.key)}
-              onDragLeave={handleDragLeave}
-              onDrop={(e) => handleDrop(e, quadrant.key)}
-            >
-              {/* 象限标题 */}
-              <div className={`flex items-center justify-between mb-4 pb-3 border-b border-[#2a2a2a]`}>
-                <h2 className={`text-lg font-semibold ${quadrant.color}`}>
-                  {quadrant.title}
-                </h2>
-                <div className="flex items-center gap-3">
-                  <span className="text-sm text-[#666666]">
-                    {quadrantTodos.length} 项
-                  </span>
-                  {!showQuickAdd[quadrant.key] && (
-                    <button
-                      onClick={() => setShowQuickAdd({ ...showQuickAdd, [quadrant.key]: true })}
-                      className="p-1.5 rounded text-[#666666] hover:text-blue-400 hover:bg-blue-500/10 transition-colors"
-                      title="快速添加"
-                    >
-                      <Plus size={16} />
-                    </button>
-                  )}
-                </div>
-              </div>
+      {/* 主区域: 左侧未分类 + 右侧四象限 */}
+      <div ref={scrollContainerRef} className="flex-1 flex overflow-hidden"
+        style={{ scrollbarWidth: 'thin', scrollbarColor: '#2a2a2a #0a0a0a' }}>
 
-              {/* 快速添加输入框 */}
-              {showQuickAdd[quadrant.key] && (
-                <div className="mb-3 p-3 rounded-lg bg-[#1a1a1a] border border-[#2a2a2a]">
-                  <div className="flex items-center justify-between mb-2">
-                    <span className="text-xs text-[#a0a0a0]">快速添加</span>
-                    {availablePaths.length > 0 && (
+        {/* 左侧：未分类列表 */}
+        <div
+          data-quadrant="uncategorized"
+          className={`w-[220px] shrink-0 flex flex-col border-r border-[#1a1a1a] transition-colors ${
+            dragOverQuadrant === 'uncategorized' ? 'bg-blue-500/5' : ''
+          }`}
+          onDragOver={(e) => handleDragOver(e, 'uncategorized')}
+          onDragLeave={handleDragLeave}
+          onDrop={(e) => handleDrop(e, 'uncategorized')}
+        >
+          <div className="flex items-center justify-between px-3 py-2 border-b border-[#1a1a1a]">
+            <span className="text-[11px] font-medium text-[#888]">未分类</span>
+            <div className="flex items-center gap-1.5">
+              <span className="text-[10px] text-[#555]">{uncategorizedTodos.length}</span>
+              {!showQuickAdd['uncategorized'] && (
+                <button
+                  onClick={() => setShowQuickAdd({ ...showQuickAdd, uncategorized: true })}
+                  className="p-0.5 rounded text-[#555] hover:text-blue-400 hover:bg-blue-500/10 transition-colors"
+                >
+                  <Plus size={12} />
+                </button>
+              )}
+            </div>
+          </div>
+          <div className="flex-1 overflow-y-auto px-2 py-1.5 space-y-1"
+            style={{ scrollbarWidth: 'thin', scrollbarColor: '#2a2a2a transparent' }}>
+            {renderQuickAdd('uncategorized')}
+            {uncategorizedTodos.length === 0 ? (
+              <div className={`text-center py-6 text-[10px] ${
+                dragOverQuadrant === 'uncategorized' ? 'text-blue-400' : 'text-[#444]'
+              }`}>
+                {dragOverQuadrant === 'uncategorized' ? '松开以添加' : '拖拽到此处\n或点击+添加'}
+              </div>
+            ) : (
+              uncategorizedTodos.map(todo => renderTodoItem(todo, 'uncategorized'))
+            )}
+          </div>
+        </div>
+
+        {/* 右侧：四象限网格 */}
+        <div className="flex-1 grid grid-cols-2 gap-1.5 p-2 overflow-auto"
+          style={{ scrollbarWidth: 'thin', scrollbarColor: '#2a2a2a #0a0a0a' }}>
+          {quadrants.map((quadrant) => {
+            const quadrantTodos = getTodosByQuadrant(quadrant.key);
+            const isDragOverQ = dragOverQuadrant === quadrant.key;
+
+            return (
+              <div
+                key={quadrant.key}
+                data-quadrant={quadrant.key}
+                className={
+                  'rounded-lg border border-dashed p-2 min-h-[160px] transition-all duration-200 flex flex-col ' +
+                  (isDragOverQ ? 'border-blue-500 bg-blue-500/8' : 'border-[#222] bg-[#0d0d0d]')
+                }
+                onDragOver={(e) => handleDragOver(e, quadrant.key)}
+                onDragLeave={handleDragLeave}
+                onDrop={(e) => handleDrop(e, quadrant.key)}
+              >
+                {/* 象限标题 */}
+                <div className="flex items-center justify-between mb-1.5 pb-1 border-b border-[#1e1e1e]">
+                  <span className={`text-[11px] font-semibold ${quadrant.color}`}>
+                    {quadrant.title}
+                  </span>
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-[10px] text-[#555]">{quadrantTodos.length}</span>
+                    {!showQuickAdd[quadrant.key] && (
                       <button
-                        type="button"
-                        onClick={() => setShowPathSelectorQuick({ ...showPathSelectorQuick, [quadrant.key]: !showPathSelectorQuick[quadrant.key] })}
-                        className="flex items-center gap-1 px-1.5 py-0.5 rounded text-xs text-blue-400 hover:text-blue-300 hover:bg-blue-500/10 transition-colors"
+                        onClick={() => setShowQuickAdd({ ...showQuickAdd, [quadrant.key]: true })}
+                        className="p-0.5 rounded text-[#555] hover:text-blue-400 hover:bg-blue-500/10 transition-colors"
                       >
-                        <LinkIcon size={10} />
-                        <span>路径</span>
-                        {showPathSelectorQuick[quadrant.key] ? <ChevronUp size={10} /> : <ChevronDown size={10} />}
+                        <Plus size={12} />
                       </button>
                     )}
                   </div>
-                  {showPathSelectorQuick[quadrant.key] && availablePaths.length > 0 && (
-                    <div className="mb-2 p-2 rounded-lg bg-[#0f0f0f] border border-[#2a2a2a] max-h-32 overflow-y-auto">
-                      <div className="space-y-1">
-                        {availablePaths.map((path) => (
-                          <button
-                            key={path.id}
-                            type="button"
-                            onClick={() => {
-                              insertPathToQuickAdd(path, quadrant.key);
-                              setShowPathSelectorQuick({ ...showPathSelectorQuick, [quadrant.key]: false });
-                            }}
-                            className="w-full text-left px-2 py-1 rounded text-xs text-[#a0a0a0] hover:text-white hover:bg-[#1a1a1a] transition-colors flex items-center gap-2"
-                          >
-                            <LinkIcon size={10} className="text-blue-400 flex-shrink-0" />
-                            <span className="flex-1 truncate">{path.name}</span>
-                            <span className="text-[10px] text-[#666666] truncate max-w-[120px]">{path.path}</span>
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-                  <textarea
-                    id={`quick-add-${quadrant.key}`}
-                    value={quickAddTexts[quadrant.key]}
-                    onChange={(e) => setQuickAddTexts({ ...quickAddTexts, [quadrant.key]: e.target.value })}
-                    className="w-full px-2 py-1.5 rounded-lg bg-[#0f0f0f] border border-[#2a2a2a] text-white placeholder-[#666666] focus:outline-none focus:border-blue-500 resize-none text-sm"
-                    rows={2}
-                    placeholder="输入TODO内容，按Enter创建..."
-                    autoFocus
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
-                        e.preventDefault();
-                        handleQuickAddTodo(quadrant.key);
-                      } else if (e.key === 'Escape') {
-                        setShowQuickAdd({ ...showQuickAdd, [quadrant.key]: false });
-                        setQuickAddTexts({ ...quickAddTexts, [quadrant.key]: '' });
-                        setShowPathSelectorQuick({ ...showPathSelectorQuick, [quadrant.key]: false });
-                      }
-                    }}
-                  />
-                  <div className="flex items-center justify-end gap-2 mt-2">
-                    <button
-                      onClick={() => {
-                        setShowQuickAdd({ ...showQuickAdd, [quadrant.key]: false });
-                        setQuickAddTexts({ ...quickAddTexts, [quadrant.key]: '' });
-                        setShowPathSelectorQuick({ ...showPathSelectorQuick, [quadrant.key]: false });
-                      }}
-                      className="px-2 py-1 rounded text-xs text-[#666666] hover:text-white hover:bg-[#2a2a2a] transition-colors"
-                    >
-                      取消
-                    </button>
-                    <button
-                      onClick={() => handleQuickAddTodo(quadrant.key)}
-                      disabled={!quickAddTexts[quadrant.key].trim()}
-                      className="px-2 py-1 rounded text-xs bg-blue-600 hover:bg-blue-700 text-white disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center gap-1"
-                    >
-                      <Plus size={12} />
-                      添加
-                    </button>
-                  </div>
                 </div>
-              )}
 
-              {/* TODO列表 */}
-              <div className="space-y-2 min-h-[100px]">
-                {quadrantTodos.length === 0 ? (
-                  <div className={`text-center py-8 text-sm transition-colors ${
-                    isDragOver ? 'text-blue-400' : 'text-[#666666]'
-                  }`}>
-                    {isDragOver ? '松开以添加任务' : '暂无TODO，点击右上角添加或拖拽链接到这里'}
-                  </div>
-                ) : (
-                  quadrantTodos.map((todo, todoIndex) => {
-                    const todoUrl = todo.url || extractUrl(todo.text);
-                    const isClickable = !!todoUrl || (todo.linkedPaths && todo.linkedPaths.length > 0);
-                    const isDragged = draggedTodo?.id === todo.id;
-                    const isDragOver = dragOverTodoId === todo.id;
-                    const isSameQuadrantDrag = draggedTodo && draggedTodo.quadrant === quadrant.key;
-                    
-                    return (
-                      <React.Fragment key={todo.id}>
-                        {/* 插入位置指示器（在目标任务项上方） */}
-                        {isDragOver && isSameQuadrantDrag && !isDragged && dragOverPosition === 'above' && (
-                          <div className="h-0.5 bg-blue-500 rounded-full mx-2 my-1 animate-pulse" />
-                        )}
-                        <div
-                          data-todo-id={todo.id}
-                          onClick={(e) => {
-                            // 拖动时不触发点击
-                            if (isDragging || draggedTodo || dragStartRef.current) {
-                              e.preventDefault();
-                              e.stopPropagation();
-                              return;
-                            }
-                            if (isClickable) {
-                              handleTodoClick(todo, e);
-                            }
-                          }}
-                          className={`
-                            group relative p-3 rounded-lg bg-[#1a1a1a] border transition-all
-                            ${isDragged 
-                              ? 'opacity-50 cursor-move border-blue-500/50' 
-                              : isDragOver && isSameQuadrantDrag
-                              ? 'border-blue-500 bg-blue-500/10'
-                              : isClickable 
-                              ? 'cursor-pointer border-[#2a2a2a] hover:border-[#3a3a3a] hover:bg-[#1f1f1f]' 
-                              : 'cursor-move border-[#2a2a2a] hover:border-[#3a3a3a]'
-                            }
-                          `}
-                        >
-                          {/* 插入位置指示器（在目标任务项下方） */}
-                          {isDragOver && isSameQuadrantDrag && !isDragged && dragOverPosition === 'below' && (
-                            <div className="absolute -bottom-1 left-0 right-0 h-0.5 bg-blue-500 rounded-full animate-pulse" />
-                          )}
-                      {editingId === todo.id ? (
-                        <div className="space-y-2">
-                          {availablePaths.length > 0 && (
-                            <div className="flex items-center justify-end">
-                              <button
-                                type="button"
-                                onClick={() => setShowPathSelectorEdit(!showPathSelectorEdit)}
-                                className="flex items-center gap-1 px-2 py-1 rounded text-xs text-blue-400 hover:text-blue-300 hover:bg-blue-500/10 transition-colors"
-                              >
-                                <LinkIcon size={12} />
-                                <span>插入路径</span>
-                                {showPathSelectorEdit ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
-                              </button>
-                            </div>
-                          )}
-                          {showPathSelectorEdit && availablePaths.length > 0 && (
-                            <div className="p-2 rounded-lg bg-[#0f0f0f] border border-[#2a2a2a] max-h-32 overflow-y-auto">
-                              <div className="space-y-1">
-                                {availablePaths.map((path) => (
-                                  <button
-                                    key={path.id}
-                                    type="button"
-                                    onClick={() => {
-                                      insertPathToText(path, true);
-                                      setShowPathSelectorEdit(false);
-                                    }}
-                                    className="w-full text-left px-2 py-1 rounded text-xs text-[#a0a0a0] hover:text-white hover:bg-[#1a1a1a] transition-colors flex items-center gap-2"
-                                  >
-                                    <LinkIcon size={10} className="text-blue-400 flex-shrink-0" />
-                                    <span className="flex-1 truncate">{path.name}</span>
-                                    <span className="text-[10px] text-[#666666] truncate max-w-[150px]">{path.path}</span>
-                                  </button>
-                                ))}
-                              </div>
-                            </div>
-                          )}
-                          <div className="space-y-2">
-                            <div>
-                              <label className="block text-xs text-[#808080] mb-1">任务标题</label>
-                              <textarea
-                                value={editText}
-                                onChange={(e) => setEditText(e.target.value)}
-                                className="w-full px-3 py-2 rounded-lg bg-[#0f0f0f] border border-[#2a2a2a] text-white placeholder-[#666666] focus:outline-none focus:border-blue-500 resize-none"
-                                rows={2}
-                                autoFocus
-                                placeholder="输入任务标题..."
-                                onKeyDown={(e) => {
-                                  if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
-                                    handleSaveEdit();
-                                  } else if (e.key === 'Escape') {
-                                    handleCancelEdit();
-                                  }
-                                }}
-                              />
-                            </div>
-                            <div>
-                              <label className="block text-xs text-[#808080] mb-1">URL链接（可选）</label>
-                              <input
-                                type="url"
-                                value={editUrl}
-                                onChange={(e) => setEditUrl(e.target.value)}
-                                className="w-full px-3 py-2 rounded-lg bg-[#0f0f0f] border border-[#2a2a2a] text-white placeholder-[#666666] focus:outline-none focus:border-blue-500 text-sm"
-                                placeholder="https://example.com"
-                                onKeyDown={(e) => {
-                                  if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
-                                    handleSaveEdit();
-                                  } else if (e.key === 'Escape') {
-                                    handleCancelEdit();
-                                  }
-                                }}
-                              />
-                            </div>
-                          </div>
-                          <div className="flex items-center gap-2">
-                            <button
-                              onClick={handleSaveEdit}
-                              className="px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-sm transition-colors"
-                            >
-                              保存
-                            </button>
-                            <button
-                              onClick={handleCancelEdit}
-                              className="px-3 py-1.5 rounded-lg bg-[#1a1a1a] border border-[#2a2a2a] text-[#a0a0a0] hover:text-white text-sm transition-colors"
-                            >
-                              取消
-                            </button>
-                          </div>
-                        </div>
-                      ) : (
-                        <>
-                          <div className="flex items-start gap-2">
-                            <GripVertical 
-                              size={16} 
-                              data-drag-handle
-                              className="text-[#666666] mt-1 cursor-grab active:cursor-grabbing flex-shrink-0"
-                              onMouseDown={(e) => {
-                                // 启动自定义拖动
-                                if (e.button === 0) {
-                                  e.preventDefault();
-                                  e.stopPropagation();
-                                  const dragInfo = { todoId: todo.id, startY: e.clientY, startX: e.clientX };
-                                  dragStartRef.current = dragInfo;
-                                  setDragStartState(dragInfo);
-                                  setDraggedTodo(todo);
-                                }
-                              }}
-                            />
-                            <div className="flex-1 text-white text-sm break-words">
-                              <div className="flex items-start gap-1.5">
-                                <span className="flex-1">{renderTextWithPaths(todo.text)}</span>
-                                {todoUrl && (
-                                  <ExternalLink 
-                                    size={14} 
-                                    className="text-blue-400 flex-shrink-0 mt-0.5 opacity-70 hover:opacity-100 transition-opacity"
-                                    title={`点击打开: ${todoUrl}`}
-                                  />
-                                )}
-                              </div>
-                            </div>
-                          </div>
-                          <div className="flex items-center gap-2 mt-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                            <button
-                              onClick={() => handleStartEdit(todo)}
-                              className="p-1.5 rounded text-[#666666] hover:text-blue-400 hover:bg-[#2a2a2a] transition-colors"
-                              title="编辑"
-                            >
-                              <Edit2 size={14} />
-                            </button>
-                            <button
-                              onClick={() => handleDelete(todo.id)}
-                              className="p-1.5 rounded text-[#666666] hover:text-red-400 hover:bg-[#2a2a2a] transition-colors"
-                              title="删除"
-                            >
-                              <Trash2 size={14} />
-                            </button>
-                          </div>
-                        </>
-                      )}
+                {/* 快速添加 */}
+                {renderQuickAdd(quadrant.key)}
+
+                {/* TODO列表 */}
+                <div className="space-y-1 flex-1 overflow-y-auto" style={{ scrollbarWidth: 'thin', scrollbarColor: '#2a2a2a transparent' }}>
+                  {quadrantTodos.length === 0 ? (
+                    <div className={`text-center py-4 text-[10px] transition-colors ${
+                      isDragOverQ ? 'text-blue-400' : 'text-[#444]'
+                    }`}>
+                      {isDragOverQ ? '松开以添加' : '拖拽到此处'}
                     </div>
-                    </React.Fragment>
-                    );
-                  })
-                )}
+                  ) : (
+                    quadrantTodos.map(todo => renderTodoItem(todo, quadrant.key))
+                  )}
+                </div>
               </div>
-            </div>
-          );
-        })}
+            );
+          })}
+        </div>
       </div>
 
       {/* 添加TODO模态框 */}
@@ -1260,7 +1258,7 @@ const QuadrantTodo: React.FC = () => {
                   onChange={(e) => setNewTodoQuadrant(e.target.value as TodoItem['quadrant'])}
                   className="w-full px-4 py-2.5 rounded-lg bg-[#0f0f0f] border border-[#2a2a2a] text-white focus:outline-none focus:border-blue-500 transition-colors"
                 >
-                  {quadrants.map(q => (
+                  {allQuadrants.map(q => (
                     <option key={q.key} value={q.key}>{q.title}</option>
                   ))}
                 </select>
