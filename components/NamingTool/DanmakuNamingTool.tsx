@@ -16,6 +16,7 @@ import { SpecialSuffixSelector } from './SpecialSuffixSelector';
 import { NamingPreview } from './NamingPreview';
 import { Input } from '../common';
 import { useToast } from '../Toast';
+import { Skeleton, SkeletonText } from '../ui/Skeleton';
 
 // 统一的下拉组件（与 FormatSelector 中的 Dropdown 样式一致）
 interface UnifiedDropdownProps {
@@ -578,19 +579,20 @@ const DanmakuNamingTool: React.FC<DanmakuNamingToolProps> = ({
     }
   }, [resourceTypes, selectedResourceType, onResourceTypeChange]);
 
-  if (resourceTypes.length === 0) {
+  if (resourceTypes.length === 0 || !selectedResourceType) {
     return (
-      <div className="text-center py-12 text-slate-400">
-        <p>正在加载资源类型...</p>
-      </div>
-    );
-  }
-
-  // 如果 selectedResourceType 为 null，显示加载提示
-  if (!selectedResourceType) {
-    return (
-      <div className="text-center py-12 text-slate-400">
-        <p>正在初始化资源类型...</p>
+      <div className="py-6 space-y-4">
+        <div className="flex gap-2">
+          <Skeleton className="h-9 w-32 rounded-lg" />
+          <Skeleton className="h-9 w-24 rounded-lg" />
+        </div>
+        <Skeleton className="h-10 w-full rounded-lg" />
+        <SkeletonText lines={4} />
+        <div className="grid grid-cols-2 gap-2">
+          <Skeleton className="h-9 rounded-lg" />
+          <Skeleton className="h-9 rounded-lg" />
+        </div>
+        <Skeleton className="h-32 w-full rounded-lg" />
       </div>
     );
   }

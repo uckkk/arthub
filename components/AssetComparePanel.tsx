@@ -204,7 +204,7 @@ export default function AssetComparePanel({ assets, onClose }: { assets: AssetEn
         <span className="text-[#888]">{'\u538B\u7F29\u540E'} <span className={tR < 1 ? 'text-[#22c55e]' : 'text-[#ccc]'}>{fS(tC)}</span></span>
         <span className={'font-medium ' + (tR < 1 ? 'text-[#22c55e]' : 'text-[#ef4444]')}>{fR(tR)}</span></div>)}
       {lc < ia.length && (<div className="flex-none px-5 py-2 border-b border-[#1a1a1a] text-[11px] text-[#888] flex items-center gap-2">
-        <Loader2 size={12} className="animate-spin text-[#3b82f6]" />{'\u52A0\u8F7D\u56FE\u7247'} {lc}/{ia.length}</div>)}
+        <div className="w-3 h-3 skeleton-shimmer rounded-full bg-[#1a1a1a]" />{'\u52A0\u8F7D\u56FE\u7247'} {lc}/{ia.length}</div>)}
       <div className="flex-1 overflow-auto p-4">
         {vw === 'grid' ? (
           <div className="grid gap-3" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(' + (ld.length <= 2 ? '400px' : ld.length <= 4 ? '320px' : '260px') + ', 1fr))' }}>

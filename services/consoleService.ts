@@ -56,10 +56,13 @@ class ConsoleService {
 
     // 拦截 console.warn（警告日志）- 警告也可能表示潜在问题
     console.warn = (...args: any[]) => {
-      // 过滤 tldraw 内部 Radix UI ToggleGroup 的 controlled/uncontrolled 警告
+      // 过滤内部库的常见警告，只输出到原始控制台
       const firstArg = args[0];
-      if (typeof firstArg === 'string' && firstArg.includes('ToggleGroup is changing from')) {
-        // 仅输出到原始控制台，不记录到应用日志
+      if (typeof firstArg === 'string' && (
+        firstArg.includes('ToggleGroup is changing from') ||
+        firstArg.startsWith('THREE.') ||
+        firstArg.includes('Image analysis skipped')
+      )) {
         this.originalConsole.warn(...args);
         return;
       }
@@ -96,6 +99,8 @@ class ConsoleService {
 
     // 拦截未捕获的错误（包含更详细的堆栈信息）
     window.addEventListener('error', (event) => {
+      // Skip resource loading errors (handled by the dedicated listener below)
+      if (event.target && (event.target as any).tagName && !event.message) return;
       const errorDetails = {
         message: event.message,
         filename: event.filename,
@@ -126,17 +131,20 @@ class ConsoleService {
       ]);
     });
 
-    // 拦截资源加载错误
+    // 拦截资源加载错误（忽略 Tauri asset:// 协议的图片加载失败，这些由组件自行处理）
     window.addEventListener('error', (event) => {
       if (event.target && (event.target as any).tagName) {
         const target = event.target as HTMLElement;
         const tagName = target.tagName;
         if (['IMG', 'SCRIPT', 'LINK', 'IFRAME'].includes(tagName)) {
           const src = (target as any).src || (target as any).href || 'unknown';
+          // Skip Tauri asset protocol image errors (handled by components with SkeletonImage/onError)
+          if (tagName === 'IMG' && (typeof src === 'string') && (src.startsWith('https://asset.localhost') || src.startsWith('asset://'))) {
+            return;
+          }
           this.addLog('error', [
             `[资源加载失败] ${tagName}`,
-            `资源: ${src}`,
-            { target, error: event.error },
+            `资源: ${typeof src === 'string' ? src : 'unknown'}`,
           ]);
         }
       }

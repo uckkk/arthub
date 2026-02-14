@@ -15,6 +15,7 @@ import TraditionalNamingTool from './TraditionalNamingTool';
 import DanmakuNamingRulesPanel from '../DanmakuNamingRulesPanel';
 import { useMiddleMouseScroll } from '../../utils/useMiddleMouseScroll';
 import { consoleService } from '../../services/consoleService';
+import { Skeleton, SkeletonText } from '../ui/Skeleton';
 
 // 预设下拉框组件（与 FilterDropdown 样式一致）
 interface PresetDropdownProps {
@@ -314,11 +315,19 @@ const NamingTool: React.FC = () => {
         </div>
       )}
 
-      {/* 加载提示 */}
+      {/* 加载骨架屏 */}
       {isLoadingPreset && (
-        <div className="mx-6 mt-4 p-3 bg-blue-500/10 border border-blue-500/30 rounded-lg text-blue-400 text-sm flex items-center gap-2">
-          <RefreshCw size={16} className="animate-spin" />
-          <span>正在加载数据...</span>
+        <div className="mx-6 mt-4 space-y-3">
+          <div className="flex gap-2">
+            <Skeleton className="h-9 w-32 rounded-lg" />
+            <Skeleton className="h-9 w-24 rounded-lg" />
+          </div>
+          <Skeleton className="h-10 w-full rounded-lg" />
+          <SkeletonText lines={4} className="mt-2" />
+          <div className="grid grid-cols-2 gap-2 mt-3">
+            <Skeleton className="h-9 rounded-lg" />
+            <Skeleton className="h-9 rounded-lg" />
+          </div>
         </div>
       )}
 

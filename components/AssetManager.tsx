@@ -14,6 +14,7 @@ import { listen } from '@tauri-apps/api/event';
 import { open } from '@tauri-apps/api/dialog';
 import { useToast } from './Toast';
 import AssetComparePanel from './AssetComparePanel';
+import { SkeletonImage, Skeleton, SkeletonMasonryGrid, SkeletonDetailPanel, SkeletonPreview, SkeletonText, SkeletonList } from './ui/Skeleton';
 
 const LazyModelViewer3D = React.lazy(() => import('./ModelViewer3D'));
 
@@ -389,7 +390,7 @@ const TagManagerPanel: React.FC<{
 // ============================================================
 // Image Analysis Section (toggle in detail sidebar)
 // ============================================================
-const ImageAnalysisSection: React.FC<{ filePath: string }> = ({ filePath }) => {
+const ImageAnalysisSection: React.FC<{ filePath: string; thumbPath?: string }> = ({ filePath, thumbPath }) => {
   const [enabled, setEnabled] = useState(false);
   const [analysisData, setAnalysisData] = useState<{
     colors: { hex: string; pct: number }[];
@@ -398,15 +399,44 @@ const ImageAnalysisSection: React.FC<{ filePath: string }> = ({ filePath }) => {
     colorCount: number;
   } | null>(null);
   const [analyzing, setAnalyzing] = useState(false);
+  const [analysisError, setAnalysisError] = useState<string | null>(null);
 
   const runAnalysis = useCallback(async () => {
-    if (analysisData) return; // already analyzed
+    if (analysisData || analysisError) return; // already analyzed or failed
     setAnalyzing(true);
+    setAnalysisError(null);
     try {
-      const url = convertFileSrc(filePath);
-      const img = await new Promise<HTMLImageElement>((ok, f) => {
-        const i = new Image(); i.crossOrigin = 'anonymous'; i.onload = () => ok(i); i.onerror = f; i.src = url;
+      // Determine which source to use for analysis
+      // Browser-renderable extensions (can be loaded via <img>)
+      const ext = filePath.split('.').pop()?.toLowerCase() || '';
+      const browserRenderable = new Set(['png','jpg','jpeg','gif','webp','bmp','svg','ico','avif']);
+      const useOriginal = browserRenderable.has(ext);
+
+      const loadImg = (url: string): Promise<HTMLImageElement> => new Promise((ok, fail) => {
+        const i = new Image();
+        i.onload = () => ok(i);
+        i.onerror = () => fail(new Error('Image load failed: ' + url.slice(0, 80)));
+        i.src = url;
       });
+
+      let img: HTMLImageElement;
+      if (useOriginal) {
+        // Try original first, fallback to thumbnail
+        try {
+          img = await loadImg(convertFileSrc(filePath));
+        } catch {
+          if (thumbPath) {
+            img = await loadImg(convertFileSrc(thumbPath));
+          } else {
+            throw new Error('Cannot load image for analysis: ' + filePath);
+          }
+        }
+      } else if (thumbPath) {
+        // Non-browser format (PSD, DDS, etc.) — use thumbnail only
+        img = await loadImg(convertFileSrc(thumbPath));
+      } else {
+        throw new Error('No thumbnail available for non-browser format: ' + ext);
+      }
       // Downsample for analysis
       const maxDim = 200;
       const scale = Math.min(1, maxDim / Math.max(img.width, img.height));
@@ -438,13 +468,17 @@ const ImageAnalysisSection: React.FC<{ filePath: string }> = ({ filePath }) => {
       }
       const contrastScore = Math.min(100, Math.round(Math.sqrt(variance / totalPx) / 128 * 100));
       setAnalysisData({ colors, avgBrightness: Math.round(avgB), contrastScore, colorCount: colorMap.size });
-    } catch (e) { console.error('Analysis failed:', e); }
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      console.warn('Image analysis skipped for', filePath, ':', msg);
+      setAnalysisError(msg);
+    }
     setAnalyzing(false);
-  }, [filePath, analysisData]);
+  }, [filePath, thumbPath, analysisData, analysisError]);
 
   useEffect(() => { if (enabled) runAnalysis(); }, [enabled, runAnalysis]);
   // Reset when file changes
-  useEffect(() => { setAnalysisData(null); setEnabled(false); }, [filePath]);
+  useEffect(() => { setAnalysisData(null); setAnalysisError(null); setEnabled(false); }, [filePath]);
 
   return (
     <>
@@ -464,10 +498,28 @@ const ImageAnalysisSection: React.FC<{ filePath: string }> = ({ filePath }) => {
         </div>
         {enabled && (
           <div className="space-y-3">
-            {analyzing && (
-              <div className="flex items-center gap-2 text-[11px] text-[#888]">
-                <Loader2 size={12} className="animate-spin" /> 分析中...
+            {analyzing && !analysisData && (
+              <div className="space-y-3">
+                <div>
+                  <Skeleton className="h-2.5 w-12 mb-1.5" />
+                  <div className="flex flex-wrap gap-1">
+                    {Array.from({ length: 8 }).map((_, i) => (
+                      <Skeleton key={i} className="w-6 h-6 rounded" />
+                    ))}
+                  </div>
+                </div>
+                <div>
+                  <Skeleton className="h-2.5 w-8 mb-1.5" />
+                  <Skeleton className="h-4 w-full rounded-full" />
+                </div>
+                <div>
+                  <Skeleton className="h-2.5 w-10 mb-1.5" />
+                  <Skeleton className="h-4 w-full rounded-full" />
+                </div>
               </div>
+            )}
+            {analysisError && (
+              <div className="text-[11px] text-[#666] py-2">此格式暂不支持图片分析</div>
             )}
             {analysisData && (
               <>
@@ -570,7 +622,14 @@ const AssetDetailSidebar: React.FC<{
       <div className="p-3">
         <div className="w-full rounded-lg overflow-hidden bg-[#1a1a1a] border border-[#2a2a2a]" style={{ aspectRatio: asset.width && asset.height ? `${asset.width}/${asset.height}` : '1/1', maxHeight: 300 }}>
           {thumbUrl ? (
-            <img src={thumbUrl} alt={asset.file_name} className="w-full h-full object-contain" />
+            <SkeletonImage
+              src={thumbUrl}
+              alt={asset.file_name}
+              className="w-full h-full"
+              imgClassName="w-full h-full object-contain"
+              fadeDuration={250}
+              fallback={<div className="text-[#444]">{React.createElement(getFileIcon(asset.file_ext), { size: 48 })}</div>}
+            />
           ) : (
             <div className="w-full h-full flex items-center justify-center text-[#444]">
               {React.createElement(getFileIcon(asset.file_ext), { size: 48 })}
@@ -733,7 +792,7 @@ const AssetDetailSidebar: React.FC<{
       )}
 
       {/* Image Analysis (toggle) */}
-      {IMAGE_EXTS.has(asset.file_ext) && <ImageAnalysisSection filePath={asset.file_path} />}
+      {IMAGE_EXTS.has(asset.file_ext) && <ImageAnalysisSection filePath={asset.file_path} thumbPath={asset.thumb_path} />}
     </div>
   );
 };
@@ -1195,6 +1254,15 @@ const VirtualGrid: React.FC<VirtualGridProps> = ({ assets, containerRef, onClick
   const [containerWidth, setContainerWidth] = useState(800);
   const [containerHeight, setContainerHeight] = useState(600);
 
+  // Reset scroll state when assets change (e.g. folder switch)
+  const prevAssetsRef = useRef(assets);
+  useEffect(() => {
+    if (prevAssetsRef.current !== assets) {
+      prevAssetsRef.current = assets;
+      setScrollTop(0);
+    }
+  }, [assets]);
+
   // Box select state
   const [boxStart, setBoxStart] = useState<{ x: number; y: number } | null>(null);
   const [boxEnd, setBoxEnd] = useState<{ x: number; y: number } | null>(null);
@@ -1303,13 +1371,13 @@ const VirtualGrid: React.FC<VirtualGridProps> = ({ assets, containerRef, onClick
             style={{ height: li.thumbH }}
           >
             {hasThumbnail ? (
-              <img
+              <SkeletonImage
                 src={thumbUrl}
                 alt={asset.file_name}
-                className="w-full h-full object-cover"
-                loading="lazy"
-                decoding="async"
-                style={{ contentVisibility: 'auto' }}
+                className="w-full h-full"
+                imgClassName="w-full h-full object-cover"
+                fadeDuration={250}
+                fallback={<div className="flex flex-col items-center text-[#555]"><Icon size={32} /><span className="text-xs mt-1 uppercase">{asset.file_ext}</span></div>}
               />
             ) : (
               <div className="w-full h-full flex flex-col items-center justify-center text-[#555]">
@@ -1666,20 +1734,18 @@ const PreviewModal: React.FC<PreviewProps> = ({ asset, assets, currentIndex, onC
       {/* Content */}
       <div className="max-w-[90vw] max-h-[85vh] flex items-center justify-center" onClick={e => e.stopPropagation()}>
         {canPreviewImage ? (
-          <>
-            {!loaded && (
-              <div className="flex items-center justify-center w-64 h-64">
-                <Loader2 className="animate-spin text-[#555]" size={40} />
-              </div>
-            )}
-            <img
-              src={previewSrc}
-              alt={asset.file_name}
-              className={`max-w-[90vw] max-h-[85vh] object-contain rounded-lg shadow-2xl ${loaded ? '' : 'hidden'}`}
-              onLoad={() => setLoaded(true)}
-              draggable={false}
-            />
-          </>
+          <SkeletonImage
+            src={previewSrc}
+            alt={asset.file_name}
+            className="max-w-[90vw] max-h-[85vh] rounded-lg shadow-2xl"
+            imgClassName="max-w-[90vw] max-h-[85vh] object-contain rounded-lg"
+            skeletonClassName="min-w-[256px] min-h-[256px]"
+            fadeDuration={300}
+            draggable={false}
+            loading="eager"
+            onLoad={() => setLoaded(true)}
+            fallback={<div className="flex flex-col items-center justify-center text-[#666] gap-3 p-12">{React.createElement(getFileIcon(asset.file_ext), { size: 64 })}<span className="text-lg">图片加载失败</span></div>}
+          />
         ) : isVideo ? (
           <VideoPlayer key={asset.id} src={imgUrl} />
         ) : isAudio ? (
@@ -1699,7 +1765,7 @@ const PreviewModal: React.FC<PreviewProps> = ({ asset, assets, currentIndex, onC
           </div>
         ) : is3D ? (
           <div className="w-[80vw] h-[75vh]" onClick={e => e.stopPropagation()}>
-            <React.Suspense fallback={<div className="w-full h-full flex items-center justify-center"><Loader2 className="animate-spin text-white" size={40} /></div>}>
+            <React.Suspense fallback={<SkeletonPreview className="w-full h-full" />}>
               <LazyModelViewer3D filePath={asset.file_path} fileExt={asset.file_ext} fileName={asset.file_name} />
             </React.Suspense>
           </div>
@@ -1866,8 +1932,20 @@ export default function AssetManager() {
   const [currentPage, setCurrentPage] = useState(1);
 
   // ---- Load assets ----
+  // Use a ref to track the latest request and avoid stale results
+  const loadRequestRef = useRef(0);
+
   const loadAssets = useCallback(async (append = false) => {
-    setLoading(true);
+    const requestId = ++loadRequestRef.current;
+    if (!append) {
+      // Immediately clear assets and reset scroll for a clean transition
+      setAssets([]);
+      setLoading(true);
+      // Reset scroll position to top
+      if (scrollRef.current) scrollRef.current.scrollTop = 0;
+    } else {
+      setLoading(true);
+    }
     try {
       const page = append ? currentPage + 1 : 1;
       const result = await invoke<QueryResult>('asset_query', {
@@ -1886,6 +1964,8 @@ export default function AssetManager() {
           page_size: PAGE_SIZE,
         },
       });
+      // Only apply result if this is still the latest request (avoids stale data from race conditions)
+      if (requestId !== loadRequestRef.current) return;
       if (append) {
         setAssets(prev => [...prev, ...result.assets]);
       } else {
@@ -1894,15 +1974,53 @@ export default function AssetManager() {
       setTotalAssets(result.total);
       setCurrentPage(page);
     } catch (e) {
+      if (requestId !== loadRequestRef.current) return;
       console.error('加载资源失败:', e);
     }
-    setLoading(false);
+    if (requestId === loadRequestRef.current) {
+      setLoading(false);
+    }
   }, [selectedFolderId, searchText, formatFilter, sortBy, sortDesc, currentPage, filterByTag, filterMinRating, filterFavorites]);
 
-  // Load when filters change
+  // Load when filters change — use a dedicated effect that directly queries
   useEffect(() => {
+    const requestId = ++loadRequestRef.current;
     setCurrentPage(1);
-    loadAssets(false);
+    setAssets([]);
+    setLoading(true);
+    // Reset scroll position
+    if (scrollRef.current) scrollRef.current.scrollTop = 0;
+
+    (async () => {
+      try {
+        const result = await invoke<QueryResult>('asset_query', {
+          params: {
+            folder_id: selectedFolderId,
+            search: searchText || null,
+            extensions: formatFilter.length > 0 ? formatFilter : null,
+            min_width: null,
+            max_width: null,
+            tag_ids: filterByTag ? [filterByTag] : null,
+            min_rating: filterMinRating > 0 ? filterMinRating : null,
+            favorite_only: filterFavorites || null,
+            sort_by: sortBy,
+            sort_order: sortDesc ? 'desc' : 'asc',
+            page: 1,
+            page_size: PAGE_SIZE,
+          },
+        });
+        if (requestId !== loadRequestRef.current) return;
+        setAssets(result.assets);
+        setTotalAssets(result.total);
+        setCurrentPage(1);
+      } catch (e) {
+        if (requestId !== loadRequestRef.current) return;
+        console.error('加载资源失败:', e);
+      }
+      if (requestId === loadRequestRef.current) {
+        setLoading(false);
+      }
+    })();
   }, [selectedFolderId, space, searchText, formatFilter, sortBy, sortDesc, filterByTag, filterMinRating, filterFavorites]);
 
   // Load stats
@@ -2982,7 +3100,9 @@ export default function AssetManager() {
                 lockedPaths={new Set(activeLocks.map(l => l.file_path))}
                 thumbSize={thumbSize}
               />
-            ) : !loading ? (
+            ) : loading ? (
+              <SkeletonMasonryGrid columns={thumbSize === 'large' ? 3 : 5} items={15} gap={12} className="p-1" />
+            ) : (
               <div className="flex flex-col items-center justify-center h-full text-[#444]">
                 {spaceFolders.length === 0 ? (
                   <>
@@ -3026,7 +3146,7 @@ export default function AssetManager() {
                   </>
                 )}
               </div>
-            ) : null}
+            )}
           </div>
         </div>
 

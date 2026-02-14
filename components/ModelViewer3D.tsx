@@ -72,7 +72,19 @@ function ModelFromUrl({ url, ext }: { url: string; ext: string }) {
           const mesh = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ color: 0x888888, metalness: 0.3, roughness: 0.6 }));
           if (!cancelled) setObj(mesh);
         }
-      } catch (e: any) { if (!cancelled) setError(e?.message || 'Load failed'); }
+      } catch (e: any) {
+        if (cancelled) return;
+        const msg = e?.message || 'Load failed';
+        // Provide user-friendly error messages
+        if (msg.includes('FBX version not supported')) {
+          const ver = msg.match(/FileVersion:\s*(\d+)/)?.[1] || '';
+          setError(`不支持的 FBX 版本 (${ver})\n仅支持 FBX 7.x (2011+)\n请用 DCC 工具重新导出为 FBX 2014/2019 格式`);
+        } else if (msg.includes('Unexpected token')) {
+          setError('文件格式解析失败\n文件可能已损坏或格式不正确');
+        } else {
+          setError(msg);
+        }
+      }
     };
     load();
     return () => { cancelled = true; };
@@ -90,7 +102,20 @@ function ModelFromUrl({ url, ext }: { url: string; ext: string }) {
 
   useFrame((_, delta) => { mixer?.update(delta); });
 
-  if (error) return <Html center><div className='text-red-400 text-sm'>{error}</div></Html>;
+  if (error) return (
+    <Html center>
+      <div className="flex flex-col items-center gap-2 text-center max-w-xs">
+        <div className="w-12 h-12 rounded-full bg-red-500/10 flex items-center justify-center">
+          <Box size={24} className="text-red-400" />
+        </div>
+        {error.split('\n').map((line, i) => (
+          <div key={i} className={i === 0 ? 'text-red-400 text-sm font-medium' : 'text-[#888] text-xs'}>
+            {line}
+          </div>
+        ))}
+      </div>
+    </Html>
+  );
   if (!obj) return <Html center><Loader2 className='animate-spin text-white' size={32} /></Html>;
   return <Center><primitive object={obj} /></Center>;
 }

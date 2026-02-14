@@ -14,3 +14,17 @@ export { Sidebar } from './Sidebar';
 export type { MenuItem, MenuGroup } from './Sidebar';
 
 export { SkeletonScreen, ContentFadeIn } from './SkeletonScreen';
+
+// Global skeleton primitives
+export {
+  Skeleton,
+  SkeletonCircle,
+  SkeletonText,
+  SkeletonImage,
+  SkeletonCard,
+  SkeletonMasonryGrid,
+  SkeletonList,
+  SkeletonDetailPanel,
+  SkeletonPreview,
+  ContentTransition,
+} from './Skeleton';

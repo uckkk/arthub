@@ -13,6 +13,7 @@ import { formatName } from './utils/nameFormatter';
 import { SpecialSuffixSelector } from './SpecialSuffixSelector';
 import { NamingPreview } from './NamingPreview';
 import { Input } from '../common';
+import { Skeleton, SkeletonText } from '../ui/Skeleton';
 
 interface TraditionalNamingToolProps {
   presetId: string;
@@ -314,8 +315,20 @@ const TraditionalNamingTool: React.FC<TraditionalNamingToolProps> = ({
 
   if (isLoading) {
     return (
-      <div className="text-center py-12 text-slate-400">
-        <p>正在加载数据...</p>
+      <div className="py-6 space-y-4">
+        <div className="flex gap-2">
+          <Skeleton className="h-9 w-28 rounded-lg" />
+          <Skeleton className="h-9 w-20 rounded-lg" />
+          <Skeleton className="h-9 w-20 rounded-lg" />
+        </div>
+        <Skeleton className="h-10 w-full rounded-lg" />
+        <SkeletonText lines={3} />
+        <div className="grid grid-cols-3 gap-2">
+          {Array.from({ length: 6 }).map((_, i) => (
+            <Skeleton key={i} className="h-8 rounded-lg" />
+          ))}
+        </div>
+        <Skeleton className="h-24 w-full rounded-lg" />
       </div>
     );
   }
