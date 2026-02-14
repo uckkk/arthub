@@ -81,6 +81,9 @@ export default defineConfig(({ mode }) => {
           'lucide-react',
         ],
       },
+      worker: {
+        format: 'es',
+      },
       build: {
         commonjsOptions: {
           include: [/node_modules/],
