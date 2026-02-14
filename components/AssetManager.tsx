@@ -13,6 +13,9 @@ import { convertFileSrc } from '@tauri-apps/api/tauri';
 import { listen } from '@tauri-apps/api/event';
 import { open } from '@tauri-apps/api/dialog';
 import { useToast } from './Toast';
+import AssetComparePanel from './AssetComparePanel';
+
+const LazyModelViewer3D = React.lazy(() => import('./ModelViewer3D'));
 
 // ============================================================
 // Types
@@ -384,6 +387,135 @@ const TagManagerPanel: React.FC<{
 };
 
 // ============================================================
+// Image Analysis Section (toggle in detail sidebar)
+// ============================================================
+const ImageAnalysisSection: React.FC<{ filePath: string }> = ({ filePath }) => {
+  const [enabled, setEnabled] = useState(false);
+  const [analysisData, setAnalysisData] = useState<{
+    colors: { hex: string; pct: number }[];
+    avgBrightness: number;
+    contrastScore: number;
+    colorCount: number;
+  } | null>(null);
+  const [analyzing, setAnalyzing] = useState(false);
+
+  const runAnalysis = useCallback(async () => {
+    if (analysisData) return; // already analyzed
+    setAnalyzing(true);
+    try {
+      const url = convertFileSrc(filePath);
+      const img = await new Promise<HTMLImageElement>((ok, f) => {
+        const i = new Image(); i.crossOrigin = 'anonymous'; i.onload = () => ok(i); i.onerror = f; i.src = url;
+      });
+      // Downsample for analysis
+      const maxDim = 200;
+      const scale = Math.min(1, maxDim / Math.max(img.width, img.height));
+      const w = Math.round(img.width * scale), h = Math.round(img.height * scale);
+      const c = document.createElement('canvas'); c.width = w; c.height = h;
+      const ctx = c.getContext('2d')!;
+      ctx.drawImage(img, 0, 0, w, h);
+      const data = ctx.getImageData(0, 0, w, h).data;
+      // Color extraction: simple quantization
+      const colorMap = new Map<string, number>();
+      let totalBright = 0;
+      for (let i = 0; i < data.length; i += 4) {
+        const r = data[i], g = data[i + 1], b = data[i + 2];
+        // Quantize to 32-step
+        const qr = (r >> 3) << 3, qg = (g >> 3) << 3, qb = (b >> 3) << 3;
+        const hex = '#' + [qr, qg, qb].map(v => v.toString(16).padStart(2, '0')).join('');
+        colorMap.set(hex, (colorMap.get(hex) || 0) + 1);
+        totalBright += (r * 0.299 + g * 0.587 + b * 0.114);
+      }
+      const totalPx = w * h;
+      const sorted = [...colorMap.entries()].sort((a, b) => b[1] - a[1]);
+      const colors = sorted.slice(0, 8).map(([hex, cnt]) => ({ hex, pct: Math.round(cnt / totalPx * 100) }));
+      // Contrast: std deviation of brightness
+      const avgB = totalBright / totalPx;
+      let variance = 0;
+      for (let i = 0; i < data.length; i += 4) {
+        const b = data[i] * 0.299 + data[i + 1] * 0.587 + data[i + 2] * 0.114;
+        variance += (b - avgB) ** 2;
+      }
+      const contrastScore = Math.min(100, Math.round(Math.sqrt(variance / totalPx) / 128 * 100));
+      setAnalysisData({ colors, avgBrightness: Math.round(avgB), contrastScore, colorCount: colorMap.size });
+    } catch (e) { console.error('Analysis failed:', e); }
+    setAnalyzing(false);
+  }, [filePath, analysisData]);
+
+  useEffect(() => { if (enabled) runAnalysis(); }, [enabled, runAnalysis]);
+  // Reset when file changes
+  useEffect(() => { setAnalysisData(null); setEnabled(false); }, [filePath]);
+
+  return (
+    <>
+      <div className="border-t border-[#1a1a1a]" />
+      <div className="px-3 py-3">
+        <div className="flex items-center justify-between mb-2">
+          <div className="flex items-center gap-2">
+            <Sparkles size={12} className="text-[#666]" />
+            <span className="text-[11px] text-[#888]">图片分析</span>
+          </div>
+          <button
+            onClick={() => setEnabled(!enabled)}
+            className={'relative w-8 h-4 rounded-full transition-colors ' + (enabled ? 'bg-[#3b82f6]' : 'bg-[#333]')}
+          >
+            <div className={'absolute top-0.5 w-3 h-3 rounded-full bg-white transition-all ' + (enabled ? 'left-4.5' : 'left-0.5')} style={{ left: enabled ? 18 : 2 }} />
+          </button>
+        </div>
+        {enabled && (
+          <div className="space-y-3">
+            {analyzing && (
+              <div className="flex items-center gap-2 text-[11px] text-[#888]">
+                <Loader2 size={12} className="animate-spin" /> 分析中...
+              </div>
+            )}
+            {analysisData && (
+              <>
+                {/* Color palette */}
+                <div>
+                  <span className="text-[10px] text-[#666] uppercase tracking-wider">主色调</span>
+                  <div className="flex flex-wrap gap-1 mt-1">
+                    {analysisData.colors.map((c, i) => (
+                      <div key={i} className="group relative">
+                        <div className="w-6 h-6 rounded border border-[#333]" style={{ background: c.hex }} title={`${c.hex} (${c.pct}%)`} />
+                        <div className="absolute -top-6 left-1/2 -translate-x-1/2 hidden group-hover:block bg-black/80 rounded px-1.5 py-0.5 text-[9px] text-white whitespace-nowrap z-10">
+                          {c.hex} {c.pct}%
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+                {/* Stats */}
+                <div className="grid grid-cols-2 gap-2 text-[11px]">
+                  <div className="bg-[#111] rounded p-2">
+                    <div className="text-[#666] text-[9px] uppercase">亮度</div>
+                    <div className="text-[#ccc] font-medium">{analysisData.avgBrightness}/255</div>
+                    <div className="mt-1 h-1 bg-[#222] rounded-full overflow-hidden">
+                      <div className="h-full bg-yellow-500 rounded-full" style={{ width: `${(analysisData.avgBrightness / 255) * 100}%` }} />
+                    </div>
+                  </div>
+                  <div className="bg-[#111] rounded p-2">
+                    <div className="text-[#666] text-[9px] uppercase">对比度</div>
+                    <div className="text-[#ccc] font-medium">{analysisData.contrastScore}%</div>
+                    <div className="mt-1 h-1 bg-[#222] rounded-full overflow-hidden">
+                      <div className={'h-full rounded-full ' + (analysisData.contrastScore > 60 ? 'bg-green-500' : analysisData.contrastScore > 30 ? 'bg-yellow-500' : 'bg-red-500')} style={{ width: `${analysisData.contrastScore}%` }} />
+                    </div>
+                  </div>
+                  <div className="bg-[#111] rounded p-2 col-span-2">
+                    <div className="text-[#666] text-[9px] uppercase">色彩丰富度</div>
+                    <div className="text-[#ccc] font-medium">{analysisData.colorCount} 种色值</div>
+                  </div>
+                </div>
+              </>
+            )}
+          </div>
+        )}
+      </div>
+    </>
+  );
+};
+
+// ============================================================
 // Asset Detail Sidebar
 // ============================================================
 
@@ -599,6 +731,9 @@ const AssetDetailSidebar: React.FC<{
           </div>
         </>
       )}
+
+      {/* Image Analysis (toggle) */}
+      {IMAGE_EXTS.has(asset.file_ext) && <ImageAnalysisSection filePath={asset.file_path} />}
     </div>
   );
 };
@@ -1035,10 +1170,11 @@ const FfmpegSettingsPanel: React.FC<{
 // Virtual Scroll Grid
 // ============================================================
 
-const ITEM_HEIGHT = 210; // thumbnail card total height (px)
-const ITEM_MIN_WIDTH = 180;
-const GAP = 8;
-const BUFFER_ROWS = 3;
+// Masonry / Waterfall layout constants
+const MASONRY_MIN_COL_W = 180;
+const MASONRY_GAP = 8;
+const MASONRY_LABEL_H = 36; // space for filename + size below thumbnail
+const MASONRY_BUFFER_PX = 600; // render buffer above/below viewport
 
 interface VirtualGridProps {
   assets: AssetEntry[];
@@ -1047,32 +1183,67 @@ interface VirtualGridProps {
   onDoubleClickAsset: (asset: AssetEntry, index: number) => void;
   onContextMenu: (asset: AssetEntry, index: number, e: React.MouseEvent) => void;
   selectedIds: Set<number>;
+  onBoxSelect: (ids: Set<number>) => void;
   assetTagsMap: Map<number, TagInfo[]>;
   assetRatingsMap: Map<number, number>;
   lockedPaths: Set<string>;
   thumbSize: 'small' | 'large';
 }
 
-const VirtualGrid: React.FC<VirtualGridProps> = ({ assets, containerRef, onClickAsset, onDoubleClickAsset, onContextMenu, selectedIds, assetTagsMap, assetRatingsMap, lockedPaths, thumbSize }) => {
+const VirtualGrid: React.FC<VirtualGridProps> = ({ assets, containerRef, onClickAsset, onDoubleClickAsset, onContextMenu, selectedIds, onBoxSelect, assetTagsMap, assetRatingsMap, lockedPaths, thumbSize }) => {
   const [scrollTop, setScrollTop] = useState(0);
   const [containerWidth, setContainerWidth] = useState(800);
   const [containerHeight, setContainerHeight] = useState(600);
 
-  const itemMinW = thumbSize === 'large' ? 240 : ITEM_MIN_WIDTH;
-  const itemH = thumbSize === 'large' ? 260 : ITEM_HEIGHT;
+  // Box select state
+  const [boxStart, setBoxStart] = useState<{ x: number; y: number } | null>(null);
+  const [boxEnd, setBoxEnd] = useState<{ x: number; y: number } | null>(null);
+  const boxSelectRef = useRef(false);
+
+  const colMinW = thumbSize === 'large' ? 240 : MASONRY_MIN_COL_W;
+  const gap = MASONRY_GAP;
+  const labelH = MASONRY_LABEL_H;
 
   // Calculate columns
-  const cols = Math.max(1, Math.floor((containerWidth + GAP) / (itemMinW + GAP)));
-  const itemW = (containerWidth - GAP * (cols - 1)) / cols;
-  const rowH = itemH + GAP;
-  const totalRows = Math.ceil(assets.length / cols);
-  const totalHeight = totalRows * rowH;
+  const cols = Math.max(1, Math.floor((containerWidth + gap) / (colMinW + gap)));
+  const colW = (containerWidth - gap * (cols - 1)) / cols;
 
-  // Visible range
-  const startRow = Math.max(0, Math.floor(scrollTop / rowH) - BUFFER_ROWS);
-  const endRow = Math.min(totalRows, Math.ceil((scrollTop + containerHeight) / rowH) + BUFFER_ROWS);
-  const startIdx = startRow * cols;
-  const endIdx = Math.min(assets.length, endRow * cols);
+  // ---- Masonry layout computation ----
+  const layout = useMemo(() => {
+    const colHeights = new Array(cols).fill(0);
+    const items: { x: number; y: number; w: number; h: number; thumbH: number; idx: number }[] = [];
+    for (let i = 0; i < assets.length; i++) {
+      const a = assets[i];
+      // Calculate thumbnail height based on aspect ratio
+      let thumbH: number;
+      if (a.width > 0 && a.height > 0) {
+        const ratio = a.height / a.width;
+        // Clamp ratio to avoid extremely tall/short items
+        const clampedRatio = Math.max(0.4, Math.min(2.5, ratio));
+        thumbH = Math.round(colW * clampedRatio);
+      } else {
+        thumbH = Math.round(colW * 0.75); // default 4:3
+      }
+      const totalH = thumbH + labelH;
+      // Find shortest column
+      let minCol = 0;
+      for (let c = 1; c < cols; c++) {
+        if (colHeights[c] < colHeights[minCol]) minCol = c;
+      }
+      const x = minCol * (colW + gap);
+      const y = colHeights[minCol];
+      items.push({ x, y, w: colW, h: totalH, thumbH, idx: i });
+      colHeights[minCol] += totalH + gap;
+    }
+    const totalHeight = Math.max(...colHeights, 0);
+    return { items, totalHeight };
+  }, [assets, cols, colW, gap, labelH]);
+
+  const { items: layoutItems, totalHeight } = layout;
+
+  // Visible range (binary search-ish: just filter by y range)
+  const viewTop = scrollTop - MASONRY_BUFFER_PX;
+  const viewBottom = scrollTop + containerHeight + MASONRY_BUFFER_PX;
 
   // Observe container size
   useEffect(() => {
@@ -1098,14 +1269,11 @@ const VirtualGrid: React.FC<VirtualGridProps> = ({ assets, containerRef, onClick
   }, [containerRef]);
 
   const visibleItems = useMemo(() => {
-    const items: React.ReactNode[] = [];
-    for (let i = startIdx; i < endIdx; i++) {
-      const asset = assets[i];
-      const row = Math.floor(i / cols);
-      const col = i % cols;
-      const x = col * (itemW + GAP);
-      const y = row * rowH;
-
+    const nodes: React.ReactNode[] = [];
+    for (const li of layoutItems) {
+      // Skip items outside viewport
+      if (li.y + li.h < viewTop || li.y > viewBottom) continue;
+      const asset = assets[li.idx];
       const hasThumbnail = !!asset.thumb_path;
       const thumbUrl = hasThumbnail ? convertFileSrc(asset.thumb_path) : '';
       const Icon = getFileIcon(asset.file_ext);
@@ -1114,31 +1282,31 @@ const VirtualGrid: React.FC<VirtualGridProps> = ({ assets, containerRef, onClick
       const assetRating = assetRatingsMap.get(asset.id) || 0;
       const isLocked = lockedPaths.has(asset.file_path);
 
-      items.push(
+      nodes.push(
         <div
           key={asset.id}
-          className={`absolute group cursor-pointer ${isSelected ? 'ring-2 ring-[#3b82f6] rounded-lg' : ''}`}
+          data-asset-item
+          className={'absolute group cursor-pointer' + (isSelected ? ' ring-2 ring-[#3b82f6] rounded-lg' : '')}
           style={{
-            transform: `translate(${x}px, ${y}px)`,
-            width: itemW,
-            height: itemH,
+            transform: `translate(${li.x}px, ${li.y}px)`,
+            width: li.w,
+            height: li.h,
           }}
-          onClick={() => onClickAsset(asset, i)}
-          onDoubleClick={() => onDoubleClickAsset(asset, i)}
-          onContextMenu={e => onContextMenu(asset, i, e)}
+          onClick={() => onClickAsset(asset, li.idx)}
+          onDoubleClick={() => onDoubleClickAsset(asset, li.idx)}
+          onContextMenu={e => onContextMenu(asset, li.idx, e)}
         >
-          {/* Thumbnail */}
+          {/* Thumbnail - variable height */}
           <div
-            className={`w-full rounded-lg overflow-hidden bg-[#1a1a1a] border transition-colors relative ${
-              isSelected ? 'border-[#3b82f6]' : 'border-[#2a2a2a] group-hover:border-[#3b82f6]'
-            }`}
-            style={{ height: itemH - 40 }}
+            className={'w-full rounded-lg overflow-hidden bg-[#1a1a1a] border transition-colors relative ' +
+              (isSelected ? 'border-[#3b82f6]' : 'border-[#2a2a2a] group-hover:border-[#3b82f6]')}
+            style={{ height: li.thumbH }}
           >
             {hasThumbnail ? (
               <img
                 src={thumbUrl}
                 alt={asset.file_name}
-                className="w-full h-full object-contain"
+                className="w-full h-full object-cover"
                 loading="lazy"
                 decoding="async"
                 style={{ contentVisibility: 'auto' }}
@@ -1156,7 +1324,7 @@ const VirtualGrid: React.FC<VirtualGridProps> = ({ assets, containerRef, onClick
             >
               {asset.file_ext}
             </span>
-            {/* Rating stars (top-left) */}
+            {/* Rating stars */}
             {assetRating > 0 && (
               <div className="absolute top-1.5 left-1.5 flex">
                 {Array.from({ length: assetRating }, (_, i) => (
@@ -1170,19 +1338,13 @@ const VirtualGrid: React.FC<VirtualGridProps> = ({ assets, containerRef, onClick
                 <Lock size={10} className="text-white" />
               </div>
             )}
-            {/* Favorite indicator */}
-            {favoriteIds.has(asset.id) && (
-              <div className="absolute top-1.5 right-10 text-[#f59e0b] drop-shadow">
-                <Bookmark size={12} className="fill-[#f59e0b]" />
-              </div>
-            )}
             {/* Dimensions badge */}
             {asset.width > 0 && (
               <span className="absolute bottom-1.5 left-1.5 text-[10px] px-1 py-0.5 rounded bg-black/50 text-[#aaa]">
-                {asset.width}×{asset.height}
+                {asset.width}x{asset.height}
               </span>
             )}
-            {/* Tags (bottom-right, only first 2) */}
+            {/* Tags (bottom-right, first 2) */}
             {assetTags.length > 0 && (
               <div className="absolute bottom-1.5 right-1.5 flex gap-0.5">
                 {assetTags.slice(0, 2).map(tag => (
@@ -1218,12 +1380,211 @@ const VirtualGrid: React.FC<VirtualGridProps> = ({ assets, containerRef, onClick
         </div>
       );
     }
-    return items;
-  }, [startIdx, endIdx, assets, cols, itemW, rowH, itemH, selectedIds, assetTagsMap, assetRatingsMap, lockedPaths]);
+    return nodes;
+  }, [layoutItems, viewTop, viewBottom, assets, selectedIds, assetTagsMap, assetRatingsMap, lockedPaths, onClickAsset, onDoubleClickAsset, onContextMenu]);
+
+  // Box select handlers
+  const handleMouseDown = useCallback((e: React.MouseEvent) => {
+    // Only left button, not on an asset element
+    if (e.button !== 0) return;
+    const target = e.target as HTMLElement;
+    if (target.closest('[data-asset-item]')) return;
+    const rect = e.currentTarget.getBoundingClientRect();
+    const el = containerRef.current;
+    const x = e.clientX - rect.left;
+    const y = e.clientY - rect.top + (el ? el.scrollTop : 0);
+    setBoxStart({ x, y });
+    setBoxEnd({ x, y });
+    boxSelectRef.current = false;
+  }, [containerRef]);
+
+  const handleMouseMove = useCallback((e: React.MouseEvent) => {
+    if (!boxStart) return;
+    const rect = e.currentTarget.getBoundingClientRect();
+    const el = containerRef.current;
+    const x = e.clientX - rect.left;
+    const y = e.clientY - rect.top + (el ? el.scrollTop : 0);
+    setBoxEnd({ x, y });
+    boxSelectRef.current = true;
+  }, [boxStart, containerRef]);
+
+  const handleMouseUp = useCallback(() => {
+    if (!boxStart || !boxEnd || !boxSelectRef.current) {
+      setBoxStart(null); setBoxEnd(null); return;
+    }
+    const minX = Math.min(boxStart.x, boxEnd.x);
+    const maxX = Math.max(boxStart.x, boxEnd.x);
+    const minY = Math.min(boxStart.y, boxEnd.y);
+    const maxY = Math.max(boxStart.y, boxEnd.y);
+    const ids = new Set<number>();
+    for (const li of layoutItems) {
+      if (li.x < maxX && (li.x + li.w) > minX && li.y < maxY && (li.y + li.h) > minY) {
+        ids.add(assets[li.idx].id);
+      }
+    }
+    onBoxSelect(ids);
+    setBoxStart(null);
+    setBoxEnd(null);
+  }, [boxStart, boxEnd, layoutItems, assets, onBoxSelect]);
+
+  // Box rect for rendering
+  const boxRect = boxStart && boxEnd && boxSelectRef.current ? {
+    left: Math.min(boxStart.x, boxEnd.x),
+    top: Math.min(boxStart.y, boxEnd.y),
+    width: Math.abs(boxEnd.x - boxStart.x),
+    height: Math.abs(boxEnd.y - boxStart.y),
+  } : null;
 
   return (
-    <div className="relative" style={{ height: totalHeight, minHeight: '100%' }}>
+    <div
+      className="relative"
+      style={{ height: totalHeight, minHeight: '100%' }}
+      onMouseDown={handleMouseDown}
+      onMouseMove={handleMouseMove}
+      onMouseUp={handleMouseUp}
+      onMouseLeave={handleMouseUp}
+    >
       {visibleItems}
+      {boxRect && boxRect.width > 5 && boxRect.height > 5 && (
+        <div
+          className="absolute pointer-events-none border border-[#3b82f6] bg-[#3b82f6]/10 rounded z-30"
+          style={boxRect}
+        />
+      )}
+    </div>
+  );
+};
+
+// ============================================================
+// Multi-Video Simultaneous Playback Panel
+// ============================================================
+const MultiVideoPanel: React.FC<{ assets: AssetEntry[]; onClose: () => void }> = ({ assets, onClose }) => {
+  const videoRefs = useRef<(HTMLVideoElement | null)[]>([]);
+  const [syncPlay, setSyncPlay] = useState(true);
+
+  // Calculate optimal grid layout
+  const count = assets.length;
+  const calcGrid = () => {
+    if (count <= 1) return { cols: 1, rows: 1 };
+    if (count === 2) return { cols: 2, rows: 1 };
+    if (count <= 4) return { cols: 2, rows: Math.ceil(count / 2) };
+    if (count <= 6) return { cols: 3, rows: 2 };
+    if (count <= 9) return { cols: 3, rows: 3 };
+    const c = Math.ceil(Math.sqrt(count));
+    return { cols: c, rows: Math.ceil(count / c) };
+  };
+  const { cols } = calcGrid();
+
+  const playAll = () => videoRefs.current.forEach(v => v?.play());
+  const pauseAll = () => videoRefs.current.forEach(v => v?.pause());
+  const seekAll = (t: number) => videoRefs.current.forEach(v => { if (v) v.currentTime = t; });
+
+  useEffect(() => {
+    const h = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
+    window.addEventListener('keydown', h);
+    return () => window.removeEventListener('keydown', h);
+  }, [onClose]);
+
+  return (
+    <div className="fixed inset-0 z-50 bg-[#0a0a0a]/95 flex flex-col">
+      <div className="flex-none flex items-center gap-4 px-5 py-3 border-b border-[#222] bg-[#111]">
+        <h2 className="text-sm font-medium text-[#eee]">{count} 个视频同时播放</h2>
+        <div className="flex items-center gap-2 ml-4">
+          <button onClick={playAll} className="text-xs px-2 py-1 rounded bg-[#22c55e]/20 text-[#22c55e] hover:bg-[#22c55e]/30">全部播放</button>
+          <button onClick={pauseAll} className="text-xs px-2 py-1 rounded bg-[#f59e0b]/20 text-[#f59e0b] hover:bg-[#f59e0b]/30">全部暂停</button>
+          <button onClick={() => seekAll(0)} className="text-xs px-2 py-1 rounded bg-[#3b82f6]/20 text-[#3b82f6] hover:bg-[#3b82f6]/30">回到开头</button>
+        </div>
+        <button onClick={onClose} className="ml-auto text-[#666] hover:text-white transition-colors p-1"><X size={18} /></button>
+      </div>
+      <div className="flex-1 overflow-auto p-3">
+        <div className="grid gap-2 h-full" style={{ gridTemplateColumns: `repeat(${cols}, 1fr)` }}>
+          {assets.map((a, i) => (
+            <div key={a.id} className="relative flex flex-col rounded-lg overflow-hidden bg-[#111] border border-[#222]">
+              <video
+                ref={el => { videoRefs.current[i] = el; }}
+                src={convertFileSrc(a.file_path)}
+                controls
+                autoPlay={syncPlay}
+                muted
+                className="flex-1 w-full object-contain bg-black"
+              />
+              <div className="flex-none px-2 py-1 bg-[#0d0d0d] text-[11px] text-[#aaa] truncate">{a.file_name}</div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// ============================================================
+// Video Player with Frame-by-Frame
+// ============================================================
+const VideoPlayer: React.FC<{ src: string }> = ({ src }) => {
+  const vidRef = useRef<HTMLVideoElement>(null);
+  const [playing, setPlaying] = useState(true);
+  const [currentTime, setCurrentTime] = useState(0);
+  const [duration, setDuration] = useState(0);
+  const [playbackRate, setPlaybackRate] = useState(1);
+  const fps = 30; // assume 30fps for frame stepping
+
+  const stepFrame = (dir: number) => {
+    const v = vidRef.current; if (!v) return;
+    v.pause(); setPlaying(false);
+    v.currentTime = Math.max(0, Math.min(v.duration, v.currentTime + dir / fps));
+  };
+
+  const togglePlay = () => {
+    const v = vidRef.current; if (!v) return;
+    if (v.paused) { v.play(); setPlaying(true); }
+    else { v.pause(); setPlaying(false); }
+  };
+
+  const fmtTime = (t: number) => {
+    const m = Math.floor(t / 60); const s = Math.floor(t % 60);
+    return `${m}:${s.toString().padStart(2, '0')}`;
+  };
+
+  return (
+    <div className="flex flex-col items-center gap-2" onClick={e => e.stopPropagation()}>
+      <video
+        ref={vidRef}
+        src={src}
+        autoPlay
+        className="max-w-[90vw] max-h-[75vh] rounded-lg shadow-2xl"
+        style={{ outline: 'none' }}
+        onTimeUpdate={() => { if (vidRef.current) setCurrentTime(vidRef.current.currentTime); }}
+        onLoadedMetadata={() => { if (vidRef.current) setDuration(vidRef.current.duration); }}
+        onPlay={() => setPlaying(true)}
+        onPause={() => setPlaying(false)}
+      />
+      {/* Custom controls */}
+      <div className="flex items-center gap-3 bg-black/70 backdrop-blur-sm rounded-full px-4 py-2">
+        <button onClick={() => stepFrame(-1)} className="text-white/60 hover:text-white text-xs px-1" title="上一帧 (,)">
+          <ChevronLeft size={16} />
+        </button>
+        <button onClick={togglePlay} className="text-white hover:text-[#3b82f6] px-1" title="播放/暂停">
+          {playing ? '⏸' : '▶'}
+        </button>
+        <button onClick={() => stepFrame(1)} className="text-white/60 hover:text-white text-xs px-1" title="下一帧 (.)">
+          <ChevronRight size={16} />
+        </button>
+        <span className="text-[11px] text-[#aaa] min-w-[80px] text-center">{fmtTime(currentTime)} / {fmtTime(duration)}</span>
+        {/* Seek bar */}
+        <input
+          type="range" min={0} max={duration || 1} step={0.001} value={currentTime}
+          onChange={e => { if (vidRef.current) vidRef.current.currentTime = +e.target.value; }}
+          className="w-40 accent-[#3b82f6]"
+        />
+        {/* Speed */}
+        <select
+          value={playbackRate}
+          onChange={e => { const r = +e.target.value; setPlaybackRate(r); if (vidRef.current) vidRef.current.playbackRate = r; }}
+          className="bg-transparent text-[11px] text-[#aaa] outline-none cursor-pointer"
+        >
+          {[0.25, 0.5, 1, 1.5, 2].map(r => <option key={r} value={r}>{r}x</option>)}
+        </select>
+      </div>
     </div>
   );
 };
@@ -1320,14 +1681,7 @@ const PreviewModal: React.FC<PreviewProps> = ({ asset, assets, currentIndex, onC
             />
           </>
         ) : isVideo ? (
-          <video
-            key={asset.id}
-            src={imgUrl}
-            controls
-            autoPlay
-            className="max-w-[90vw] max-h-[85vh] rounded-lg shadow-2xl"
-            style={{ outline: 'none' }}
-          />
+          <VideoPlayer key={asset.id} src={imgUrl} />
         ) : isAudio ? (
           <div className="flex flex-col items-center justify-center gap-6 p-12 bg-[#111] rounded-2xl">
             <div className="w-32 h-32 rounded-full bg-gradient-to-br from-[#3b82f6] to-[#8b5cf6] flex items-center justify-center">
@@ -1344,16 +1698,10 @@ const PreviewModal: React.FC<PreviewProps> = ({ asset, assets, currentIndex, onC
             />
           </div>
         ) : is3D ? (
-          <div className="flex flex-col items-center justify-center text-[#888] gap-4 p-12 bg-[#111] rounded-2xl">
-            <Box size={64} className="text-[#22d3ee]" />
-            <span className="text-lg font-medium">{asset.file_name}</span>
-            <span className="text-sm text-[#666]">{asset.file_ext.toUpperCase()} 3D 模型</span>
-            <p className="text-xs text-[#555] max-w-sm text-center">
-              3D 模型预览需要 WebGL 渲染器。当前版本暂支持缩略图预览，完整 3D 查看器将在后续版本中支持。
-            </p>
-            {thumbUrl && (
-              <img src={thumbUrl} alt={asset.file_name} className="max-w-md max-h-64 rounded-lg mt-2" />
-            )}
+          <div className="w-[80vw] h-[75vh]" onClick={e => e.stopPropagation()}>
+            <React.Suspense fallback={<div className="w-full h-full flex items-center justify-center"><Loader2 className="animate-spin text-white" size={40} /></div>}>
+              <LazyModelViewer3D filePath={asset.file_path} fileExt={asset.file_ext} fileName={asset.file_name} />
+            </React.Suspense>
           </div>
         ) : (
           <div className="flex flex-col items-center justify-center text-[#666] gap-3 p-12">
@@ -1474,6 +1822,10 @@ export default function AssetManager() {
 
   // ---- Phase 4: FFmpeg State ----
   const [showFfmpegSettings, setShowFfmpegSettings] = useState(false);
+
+  // ---- Compare Panel State ----
+  const [showComparePanel, setShowComparePanel] = useState(false);
+  const [showMultiVideo, setShowMultiVideo] = useState(false);
 
   // ---- Favorites State ----
   const [favoriteIds, setFavoriteIds] = useState<Set<number>>(new Set());
@@ -2354,6 +2706,20 @@ export default function AssetManager() {
             <Bookmark size={12} /> 收藏
           </button>
           <button
+            onClick={() => setShowComparePanel(true)}
+            className="text-xs px-2 py-1 rounded bg-[#8b5cf6]/20 text-[#8b5cf6] hover:bg-[#8b5cf6]/30 flex items-center gap-1"
+            title="多图对比 & 压缩"
+          >
+            <SlidersHorizontal size={12} /> 对比
+          </button>
+          <button
+            onClick={() => setShowMultiVideo(true)}
+            className="text-xs px-2 py-1 rounded bg-[#06b6d4]/20 text-[#06b6d4] hover:bg-[#06b6d4]/30 flex items-center gap-1"
+            title="多视频同时播放"
+          >
+            <Video size={12} /> 同播
+          </button>
+          <button
             onClick={handleBatchExport}
             className="text-xs px-2 py-1 rounded bg-[#22c55e]/20 text-[#22c55e] hover:bg-[#22c55e]/30 flex items-center gap-1"
             title="批量导出"
@@ -2578,6 +2944,20 @@ export default function AssetManager() {
                     });
                     return;
                   }
+                  // Shift-click for range select
+                  if (window.event && (window.event as any).shiftKey && selectedIds.size > 0) {
+                    const lastId = Array.from(selectedIds).pop()!;
+                    const lastIdx = assets.findIndex(a => a.id === lastId);
+                    const curIdx = assets.findIndex(a => a.id === asset.id);
+                    if (lastIdx >= 0 && curIdx >= 0) {
+                      const start = Math.min(lastIdx, curIdx);
+                      const end = Math.max(lastIdx, curIdx);
+                      const newIds = new Set(selectedIds);
+                      for (let i = start; i <= end; i++) newIds.add(assets[i].id);
+                      setSelectedIds(newIds);
+                      return;
+                    }
+                  }
                   setSelectedIds(new Set());
                   setDetailAssetId(asset.id);
                 }}
@@ -2586,6 +2966,17 @@ export default function AssetManager() {
                 }}
                 onContextMenu={handleContextMenu}
                 selectedIds={selectedIds}
+                onBoxSelect={(ids) => {
+                  if (window.event && (window.event as any).ctrlKey) {
+                    setSelectedIds(prev => {
+                      const next = new Set(prev);
+                      ids.forEach(id => next.add(id));
+                      return next;
+                    });
+                  } else {
+                    setSelectedIds(ids);
+                  }
+                }}
                 assetTagsMap={assetTagsMap}
                 assetRatingsMap={assetRatingsMap}
                 lockedPaths={new Set(activeLocks.map(l => l.file_path))}
@@ -2722,6 +3113,22 @@ export default function AssetManager() {
       {/* FFmpeg Settings */}
       {showFfmpegSettings && (
         <FfmpegSettingsPanel onClose={() => setShowFfmpegSettings(false)} />
+      )}
+
+      {/* Compare Panel */}
+      {showComparePanel && selectedIds.size > 0 && (
+        <AssetComparePanel
+          assets={assets.filter(a => selectedIds.has(a.id))}
+          onClose={() => setShowComparePanel(false)}
+        />
+      )}
+
+      {/* Multi-Video Player */}
+      {showMultiVideo && selectedIds.size > 0 && (
+        <MultiVideoPanel
+          assets={assets.filter(a => selectedIds.has(a.id) && VIDEO_EXTS.has(a.file_ext))}
+          onClose={() => setShowMultiVideo(false)}
+        />
       )}
     </div>
   );
