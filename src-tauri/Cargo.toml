@@ -38,6 +38,8 @@ base64 = "0.21"
 reqwest = { version = "0.11", features = ["json", "stream"] }
 rusqlite = { version = "0.31", features = ["bundled"] }
 image = { version = "0.25", default-features = true }
+psd = "0.3"
+whoami = "1"
 walkdir = "2"
 zip = "2"
 futures-util = "0.3"

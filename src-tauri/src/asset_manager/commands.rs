@@ -342,6 +342,145 @@ pub fn asset_delete_smart_folder(
 }
 
 // ============================================================
+// Phase 2 补全: Favorites + Batch Operations
+// ============================================================
+
+/// 切换收藏状态，返回是否已收藏
+#[tauri::command]
+pub fn asset_toggle_favorite(
+    state: tauri::State<'_, AssetManagerState>,
+    asset_id: i64,
+) -> Result<bool, String> {
+    let conn = state.db.lock().map_err(|e| e.to_string())?;
+    db::toggle_favorite(&conn, asset_id, "")
+}
+
+/// 检查是否已收藏
+#[tauri::command]
+pub fn asset_is_favorite(
+    state: tauri::State<'_, AssetManagerState>,
+    asset_id: i64,
+) -> Result<bool, String> {
+    let conn = state.db.lock().map_err(|e| e.to_string())?;
+    Ok(db::is_favorite(&conn, asset_id))
+}
+
+/// 获取所有收藏的资产 ID
+#[tauri::command]
+pub fn asset_get_favorite_ids(
+    state: tauri::State<'_, AssetManagerState>,
+) -> Result<Vec<i64>, String> {
+    let conn = state.db.lock().map_err(|e| e.to_string())?;
+    Ok(db::get_favorite_ids(&conn))
+}
+
+/// 批量设置收藏
+#[tauri::command]
+pub fn asset_batch_favorite(
+    state: tauri::State<'_, AssetManagerState>,
+    asset_ids: Vec<i64>,
+    favorite: bool,
+) -> Result<u32, String> {
+    let conn = state.db.lock().map_err(|e| e.to_string())?;
+    db::batch_toggle_favorite(&conn, &asset_ids, favorite, "")
+}
+
+/// 批量设置评分
+#[tauri::command]
+pub fn asset_batch_set_rating(
+    state: tauri::State<'_, AssetManagerState>,
+    asset_ids: Vec<i64>,
+    rating: i32,
+) -> Result<u32, String> {
+    let conn = state.db.lock().map_err(|e| e.to_string())?;
+    db::batch_set_rating(&conn, &asset_ids, rating, "")
+}
+
+/// 批量删除资产（从数据库中删除记录+清理缩略图）
+#[tauri::command]
+pub fn asset_batch_delete(
+    state: tauri::State<'_, AssetManagerState>,
+    asset_ids: Vec<i64>,
+) -> Result<u32, String> {
+    let conn = state.db.lock().map_err(|e| e.to_string())?;
+
+    // 先获取文件路径用于清理缩略图
+    let mut paths = Vec::new();
+    for aid in &asset_ids {
+        if let Ok(path) = conn.query_row(
+            "SELECT file_path FROM assets WHERE id = ?1",
+            rusqlite::params![aid],
+            |row| row.get::<_, String>(0),
+        ) {
+            paths.push(path);
+        }
+    }
+
+    // 清理缩略图
+    thumbnail::cleanup_thumbnails(&state.thumb_dir, &paths);
+
+    // 删除数据库记录
+    db::batch_delete_assets(&conn, &asset_ids)
+}
+
+/// 批量导出资产（复制文件到目标目录）
+#[tauri::command]
+pub fn asset_batch_export(
+    state: tauri::State<'_, AssetManagerState>,
+    asset_ids: Vec<i64>,
+    target_dir: String,
+) -> Result<u32, String> {
+    let conn = state.db.lock().map_err(|e| e.to_string())?;
+    let target = std::path::Path::new(&target_dir);
+
+    if !target.exists() {
+        std::fs::create_dir_all(target).map_err(|e| format!("创建目标目录失败: {}", e))?;
+    }
+
+    let mut count = 0u32;
+    for aid in &asset_ids {
+        if let Ok((file_path, file_name)) = conn.query_row(
+            "SELECT file_path, file_name FROM assets WHERE id = ?1",
+            rusqlite::params![aid],
+            |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?)),
+        ) {
+            let src = std::path::Path::new(&file_path);
+            let mut dest = target.join(&file_name);
+
+            // 避免文件名冲突
+            if dest.exists() {
+                let stem = std::path::Path::new(&file_name)
+                    .file_stem().unwrap_or_default().to_string_lossy().to_string();
+                let ext = std::path::Path::new(&file_name)
+                    .extension().map(|e| e.to_string_lossy().to_string()).unwrap_or_default();
+                let mut n = 1;
+                loop {
+                    let new_name = if ext.is_empty() {
+                        format!("{}_{}", stem, n)
+                    } else {
+                        format!("{}_{}.{}", stem, n, ext)
+                    };
+                    dest = target.join(&new_name);
+                    if !dest.exists() { break; }
+                    n += 1;
+                }
+            }
+
+            if std::fs::copy(src, &dest).is_ok() {
+                count += 1;
+            }
+        }
+    }
+    Ok(count)
+}
+
+/// 获取当前操作系统用户名
+#[tauri::command]
+pub fn asset_get_os_username() -> String {
+    whoami::username()
+}
+
+// ============================================================
 // Phase 3: Team Collaboration Commands
 // ============================================================
 

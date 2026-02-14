@@ -64,6 +64,9 @@ pub struct AssetQueryParams {
     pub extensions: Option<Vec<String>>,
     pub min_width: Option<u32>,
     pub max_width: Option<u32>,
+    pub tag_ids: Option<Vec<i64>>,
+    pub min_rating: Option<i32>,
+    pub favorite_only: Option<bool>,
     pub sort_by: Option<String>,   // "name", "size", "modified", "width"
     pub sort_order: Option<String>, // "asc", "desc"
     pub page: Option<i64>,
@@ -174,6 +177,14 @@ fn init_tables(conn: &Connection) -> Result<(), String> {
             created_at INTEGER NOT NULL DEFAULT (strftime('%s','now'))
         );
 
+        -- 收藏表
+        CREATE TABLE IF NOT EXISTS asset_favorites (
+            asset_id INTEGER PRIMARY KEY,
+            favorited_by TEXT NOT NULL DEFAULT '',
+            favorited_at INTEGER NOT NULL DEFAULT (strftime('%s','now')),
+            FOREIGN KEY (asset_id) REFERENCES assets(id) ON DELETE CASCADE
+        );
+
         CREATE INDEX IF NOT EXISTS idx_asset_tags_asset ON asset_tags(asset_id);
         CREATE INDEX IF NOT EXISTS idx_asset_tags_tag ON asset_tags(tag_id);"
     ).map_err(|e| format!("创建数据表失败: {}", e))?;
@@ -217,30 +228,35 @@ pub fn remove_folder(conn: &Connection, folder_id: i64) -> Result<(), String> {
 }
 
 pub fn get_folders(conn: &Connection, space_type: Option<&str>) -> Result<Vec<FolderInfo>, String> {
-    let mut sql = String::from(
-        "SELECT f.id, f.path, f.name, f.space_type,
+    let base = "SELECT f.id, f.path, f.name, f.space_type,
                 (SELECT COUNT(*) FROM assets WHERE folder_id = f.id) as cnt
-         FROM folders f"
-    );
+         FROM folders f";
+
     if let Some(st) = space_type {
-        sql.push_str(&format!(" WHERE f.space_type = '{}'", st));
+        let sql = format!("{} WHERE f.space_type = ?1 ORDER BY f.name", base);
+        let mut stmt = conn.prepare(&sql).map_err(|e| format!("准备查询失败: {}", e))?;
+        let folders = stmt.query_map(params![st], |row| {
+            Ok(FolderInfo {
+                id: row.get(0)?, path: row.get(1)?, name: row.get(2)?,
+                space_type: row.get(3)?, asset_count: row.get(4)?,
+            })
+        }).map_err(|e| format!("执行查询失败: {}", e))?
+          .filter_map(|r| r.ok())
+          .collect();
+        Ok(folders)
+    } else {
+        let sql = format!("{} ORDER BY f.name", base);
+        let mut stmt = conn.prepare(&sql).map_err(|e| format!("准备查询失败: {}", e))?;
+        let folders = stmt.query_map([], |row| {
+            Ok(FolderInfo {
+                id: row.get(0)?, path: row.get(1)?, name: row.get(2)?,
+                space_type: row.get(3)?, asset_count: row.get(4)?,
+            })
+        }).map_err(|e| format!("执行查询失败: {}", e))?
+          .filter_map(|r| r.ok())
+          .collect();
+        Ok(folders)
     }
-    sql.push_str(" ORDER BY f.name");
-
-    let mut stmt = conn.prepare(&sql).map_err(|e| format!("准备查询失败: {}", e))?;
-    let folders = stmt.query_map([], |row| {
-        Ok(FolderInfo {
-            id: row.get(0)?,
-            path: row.get(1)?,
-            name: row.get(2)?,
-            space_type: row.get(3)?,
-            asset_count: row.get(4)?,
-        })
-    }).map_err(|e| format!("执行查询失败: {}", e))?
-      .filter_map(|r| r.ok())
-      .collect();
-
-    Ok(folders)
 }
 
 pub fn upsert_asset(
@@ -311,6 +327,43 @@ pub fn query_assets(conn: &Connection, params: &AssetQueryParams) -> Result<Asse
     if let Some(max_w) = params.max_width {
         conditions.push(format!("width <= ?{}", bind_values.len() + 1));
         bind_values.push(Box::new(max_w));
+    }
+
+    // 评分过滤
+    if let Some(min_r) = params.min_rating {
+        if min_r > 0 {
+            conditions.push(format!(
+                "id IN (SELECT asset_id FROM asset_ratings WHERE rating >= ?{})",
+                bind_values.len() + 1
+            ));
+            bind_values.push(Box::new(min_r));
+        }
+    }
+
+    // 收藏过滤
+    if params.favorite_only.unwrap_or(false) {
+        conditions.push("id IN (SELECT asset_id FROM asset_favorites)".to_string());
+    }
+
+    // 标签过滤（必须同时拥有所有指定标签）
+    if let Some(ref tag_ids) = params.tag_ids {
+        if !tag_ids.is_empty() {
+            let unique_tags: Vec<&i64> = {
+                let mut seen = std::collections::HashSet::new();
+                tag_ids.iter().filter(|id| seen.insert(**id)).collect()
+            };
+            let placeholders: Vec<String> = unique_tags.iter().enumerate().map(|(i, _)| {
+                format!("?{}", bind_values.len() + i + 1)
+            }).collect();
+            let tag_count = unique_tags.len();
+            conditions.push(format!(
+                "id IN (SELECT asset_id FROM asset_tags WHERE tag_id IN ({}) GROUP BY asset_id HAVING COUNT(DISTINCT tag_id) = {})",
+                placeholders.join(","), tag_count
+            ));
+            for tid in unique_tags {
+                bind_values.push(Box::new(*tid));
+            }
+        }
     }
 
     let where_clause = if conditions.is_empty() {
@@ -621,21 +674,110 @@ pub fn delete_smart_folder(conn: &Connection, id: i64) -> Result<(), String> {
     Ok(())
 }
 
-pub fn get_smart_folders(conn: &Connection, space_type: Option<&str>) -> Result<Vec<SmartFolder>, String> {
-    let mut sql = String::from("SELECT id, name, icon, conditions, space_type FROM smart_folders");
-    if let Some(st) = space_type {
-        sql.push_str(&format!(" WHERE space_type = '{}'", st));
-    }
-    sql.push_str(" ORDER BY name");
+// ---- Favorites ----
 
-    let mut stmt = conn.prepare(&sql).map_err(|e| e.to_string())?;
-    let folders = stmt.query_map([], |row| {
-        Ok(SmartFolder {
-            id: row.get(0)?, name: row.get(1)?, icon: row.get(2)?,
-            conditions: row.get(3)?, space_type: row.get(4)?,
-        })
-    }).map_err(|e| e.to_string())?
-      .filter_map(|r| r.ok())
-      .collect();
-    Ok(folders)
+pub fn toggle_favorite(conn: &Connection, asset_id: i64, user: &str) -> Result<bool, String> {
+    let exists: bool = conn.query_row(
+        "SELECT COUNT(*) > 0 FROM asset_favorites WHERE asset_id = ?1",
+        params![asset_id],
+        |row| row.get(0),
+    ).unwrap_or(false);
+
+    if exists {
+        conn.execute("DELETE FROM asset_favorites WHERE asset_id = ?1", params![asset_id])
+            .map_err(|e| e.to_string())?;
+        Ok(false) // 取消收藏
+    } else {
+        conn.execute(
+            "INSERT OR IGNORE INTO asset_favorites (asset_id, favorited_by) VALUES (?1, ?2)",
+            params![asset_id, user],
+        ).map_err(|e| e.to_string())?;
+        Ok(true) // 已收藏
+    }
+}
+
+pub fn is_favorite(conn: &Connection, asset_id: i64) -> bool {
+    conn.query_row(
+        "SELECT COUNT(*) > 0 FROM asset_favorites WHERE asset_id = ?1",
+        params![asset_id],
+        |row| row.get(0),
+    ).unwrap_or(false)
+}
+
+pub fn get_favorite_ids(conn: &Connection) -> Vec<i64> {
+    let mut stmt = conn.prepare("SELECT asset_id FROM asset_favorites").unwrap();
+    stmt.query_map([], |row| row.get(0))
+        .unwrap()
+        .filter_map(|r| r.ok())
+        .collect()
+}
+
+pub fn batch_toggle_favorite(conn: &Connection, asset_ids: &[i64], favorite: bool, user: &str) -> Result<u32, String> {
+    let mut count = 0u32;
+    for aid in asset_ids {
+        if favorite {
+            if conn.execute(
+                "INSERT OR IGNORE INTO asset_favorites (asset_id, favorited_by) VALUES (?1, ?2)",
+                params![aid, user],
+            ).is_ok() { count += 1; }
+        } else {
+            if conn.execute("DELETE FROM asset_favorites WHERE asset_id = ?1", params![aid]).is_ok() {
+                count += 1;
+            }
+        }
+    }
+    Ok(count)
+}
+
+// ---- Batch Operations ----
+
+pub fn batch_delete_assets(conn: &Connection, asset_ids: &[i64]) -> Result<u32, String> {
+    let mut count = 0u32;
+    for aid in asset_ids {
+        // 级联删除会自动清理 asset_tags, asset_ratings, asset_notes, asset_favorites
+        if conn.execute("DELETE FROM assets WHERE id = ?1", params![aid]).is_ok() {
+            count += 1;
+        }
+    }
+    Ok(count)
+}
+
+pub fn batch_set_rating(conn: &Connection, asset_ids: &[i64], rating: i32, user: &str) -> Result<u32, String> {
+    let mut count = 0u32;
+    for aid in asset_ids {
+        if set_rating(conn, *aid, rating, user).is_ok() {
+            count += 1;
+        }
+    }
+    Ok(count)
+}
+
+pub fn get_smart_folders(conn: &Connection, space_type: Option<&str>) -> Result<Vec<SmartFolder>, String> {
+    let base = "SELECT id, name, icon, conditions, space_type FROM smart_folders";
+
+    if let Some(st) = space_type {
+        let sql = format!("{} WHERE space_type = ?1 ORDER BY name", base);
+        let mut stmt = conn.prepare(&sql).map_err(|e| e.to_string())?;
+        let folders = stmt.query_map(params![st], |row| {
+            Ok(SmartFolder {
+                id: row.get(0)?, name: row.get(1)?, icon: row.get(2)?,
+                conditions: row.get(3)?, space_type: row.get(4)?,
+            })
+        }).map_err(|e| e.to_string())?
+          .filter_map(|r| r.ok())
+          .collect();
+        Ok(folders)
+    } else {
+        let sql = format!("{} ORDER BY name", base);
+        let mut stmt = conn.prepare(&sql).map_err(|e| e.to_string())?;
+        let folders = stmt.query_map([], |row| {
+            Ok(SmartFolder {
+                id: row.get(0)?, name: row.get(1)?, icon: row.get(2)?,
+                conditions: row.get(3)?, space_type: row.get(4)?,
+            })
+        }).map_err(|e| e.to_string())?
+          .filter_map(|r| r.ok())
+          .collect();
+        Ok(folders)
+    }
 }

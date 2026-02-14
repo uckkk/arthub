@@ -123,6 +123,7 @@ dependencies = [
  "futures-util",
  "image 0.25.9",
  "objc",
+ "psd",
  "reqwest",
  "rusqlite",
  "serde",
@@ -131,6 +132,7 @@ dependencies = [
  "tauri-build",
  "tokio",
  "walkdir",
+ "whoami",
  "winapi",
  "windows-icons",
  "zip",
@@ -2975,6 +2977,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "psd"
+version = "0.3.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9a25f9b8cfffd65d911baf31a033239f7a0facb755faa2481575b70db5dc9195"
+dependencies = [
+ "thiserror 1.0.69",
+]
+
+[[package]]
 name = "pxfm"
 version = "0.1.27"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4708,6 +4719,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "wasite"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b8dad83b4f25e74f184f64c43b150b91efe7647395b42289f38e50566d82855b"
+
+[[package]]
 name = "wasm-bindgen"
 version = "0.2.106"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4877,6 +4894,17 @@ name = "weezl"
 version = "0.1.12"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a28ac98ddc8b9274cb41bb4d9d4d5c425b6020c50c46f25559911905610b4a88"
+
+[[package]]
+name = "whoami"
+version = "1.6.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5d4a4db5077702ca3015d3d02d74974948aba2ad9e12ab7df718ee64ccd7e97d"
+dependencies = [
+ "libredox",
+ "wasite",
+ "web-sys",
+]
 
 [[package]]
 name = "winapi"

@@ -6,7 +6,7 @@ import {
   Star, Tag, MessageSquare, Sparkles, Edit3, Check, Palette, Copy,
   MoreHorizontal, ChevronUp, SlidersHorizontal, Bookmark,
   Lock, Unlock, History, Shield, Users, AlertTriangle, Clock,
-  Settings, Download, Video
+  Settings, Download, Video, Music
 } from 'lucide-react';
 import { invoke } from '@tauri-apps/api/tauri';
 import { convertFileSrc } from '@tauri-apps/api/tauri';
@@ -160,8 +160,10 @@ const TAG_COLORS = [
 // ============================================================
 
 const IMAGE_EXTS = new Set(['png', 'jpg', 'jpeg', 'gif', 'bmp', 'webp', 'tiff', 'tif', 'ico', 'svg', 'psd', 'tga', 'dds', 'hdr', 'exr']);
-const VIDEO_EXTS = new Set(['mp4', 'mov', 'avi', 'mkv', 'webm', 'flv', 'wmv']);
-const MESH_EXTS = new Set(['fbx', 'obj', 'gltf', 'glb']);
+const VIDEO_EXTS = new Set(['mp4', 'mov', 'avi', 'mkv', 'webm', 'flv', 'wmv', 'm4v', 'mpg', 'mpeg']);
+const AUDIO_EXTS = new Set(['mp3', 'wav', 'ogg', 'flac', 'aac', 'wma', 'm4a', 'opus']);
+const MESH_EXTS = new Set(['fbx', 'obj', 'gltf', 'glb', 'blend', '3ds', 'dae', 'stl']);
+const SPINE_EXTS = new Set(['spine', 'skel', 'atlas']);
 
 function formatFileSize(bytes: number): string {
   if (bytes < 1024) return bytes + 'B';
@@ -179,7 +181,9 @@ function formatDate(ts: number): string {
 function getFileIcon(ext: string) {
   if (IMAGE_EXTS.has(ext)) return ImageIcon;
   if (VIDEO_EXTS.has(ext)) return Film;
+  if (AUDIO_EXTS.has(ext)) return Music;
   if (MESH_EXTS.has(ext)) return Box;
+  if (SPINE_EXTS.has(ext)) return Box;
   return FileQuestion;
 }
 
@@ -188,7 +192,10 @@ function getExtColor(ext: string): string {
   const map: Record<string, string> = {
     png: '#4ade80', jpg: '#facc15', jpeg: '#facc15', gif: '#c084fc',
     psd: '#38bdf8', webp: '#f472b6', svg: '#fb923c', tga: '#a78bfa',
-    mp4: '#ef4444', mov: '#ef4444', fbx: '#22d3ee', obj: '#22d3ee',
+    mp4: '#ef4444', mov: '#ef4444', avi: '#ef4444', mkv: '#ef4444', webm: '#ef4444',
+    mp3: '#a855f7', wav: '#a855f7', ogg: '#a855f7', flac: '#a855f7', aac: '#a855f7',
+    fbx: '#22d3ee', obj: '#22d3ee', gltf: '#22d3ee', glb: '#22d3ee', blend: '#22d3ee',
+    spine: '#f97316', skel: '#f97316', atlas: '#f97316',
   };
   return map[ext] || '#6b7280';
 }
@@ -389,6 +396,8 @@ const AssetDetailSidebar: React.FC<{
   onSetNote: (note: string) => void;
   onAddTag: (tagId: number) => void;
   onRemoveTag: (tagId: number) => void;
+  isFavorite?: boolean;
+  onToggleFavorite?: () => void;
   // Team features
   isTeamSpace?: boolean;
   lockStatus?: LockStatusInfo | null;
@@ -398,6 +407,7 @@ const AssetDetailSidebar: React.FC<{
   fileHistory?: FileHistoryInfo | null;
   onRestoreVersion?: (version: number) => void;
 }> = ({ asset, detail, allTags, onClose, onSetRating, onSetNote, onAddTag, onRemoveTag,
+  isFavorite, onToggleFavorite,
   isTeamSpace, lockStatus, currentUser, onLock, onUnlock, fileHistory, onRestoreVersion }) => {
   const [editingNote, setEditingNote] = useState(false);
   const [noteText, setNoteText] = useState('');
@@ -426,7 +436,7 @@ const AssetDetailSidebar: React.FC<{
 
       {/* Preview thumbnail */}
       <div className="p-3">
-        <div className="w-full aspect-square rounded-lg overflow-hidden bg-[#1a1a1a] border border-[#2a2a2a]">
+        <div className="w-full rounded-lg overflow-hidden bg-[#1a1a1a] border border-[#2a2a2a]" style={{ aspectRatio: asset.width && asset.height ? `${asset.width}/${asset.height}` : '1/1', maxHeight: 300 }}>
           {thumbUrl ? (
             <img src={thumbUrl} alt={asset.file_name} className="w-full h-full object-contain" />
           ) : (
@@ -459,7 +469,18 @@ const AssetDetailSidebar: React.FC<{
           <Star size={12} className="text-[#666]" />
           <span className="text-[11px] text-[#888]">评分</span>
         </div>
-        <StarRating rating={detail?.rating || 0} onChange={onSetRating} size={18} />
+        <div className="flex items-center gap-3">
+          <StarRating rating={detail?.rating || 0} onChange={onSetRating} size={18} />
+          <button
+            onClick={onToggleFavorite}
+            className={`ml-auto p-1.5 rounded-lg transition-colors ${
+              isFavorite ? 'bg-[#f59e0b]/20 text-[#f59e0b]' : 'text-[#555] hover:text-[#f59e0b] hover:bg-[#f59e0b]/10'
+            }`}
+            title={isFavorite ? '取消收藏' : '收藏'}
+          >
+            <Bookmark size={16} className={isFavorite ? 'fill-[#f59e0b]' : ''} />
+          </button>
+        </div>
       </div>
 
       <div className="border-t border-[#1a1a1a]" />
@@ -1117,7 +1138,7 @@ const VirtualGrid: React.FC<VirtualGridProps> = ({ assets, containerRef, onClick
               <img
                 src={thumbUrl}
                 alt={asset.file_name}
-                className="w-full h-full object-cover"
+                className="w-full h-full object-contain"
                 loading="lazy"
                 decoding="async"
                 style={{ contentVisibility: 'auto' }}
@@ -1147,6 +1168,12 @@ const VirtualGrid: React.FC<VirtualGridProps> = ({ assets, containerRef, onClick
             {isLocked && (
               <div className="absolute top-1.5 left-1.5 bg-[#ef4444]/80 rounded-full p-0.5" style={{ marginTop: assetRating > 0 ? 16 : 0 }}>
                 <Lock size={10} className="text-white" />
+              </div>
+            )}
+            {/* Favorite indicator */}
+            {favoriteIds.has(asset.id) && (
+              <div className="absolute top-1.5 right-10 text-[#f59e0b] drop-shadow">
+                <Bookmark size={12} className="fill-[#f59e0b]" />
               </div>
             )}
             {/* Dimensions badge */}
@@ -1233,7 +1260,16 @@ const PreviewModal: React.FC<PreviewProps> = ({ asset, assets, currentIndex, onC
   if (!asset) return null;
 
   const imgUrl = convertFileSrc(asset.file_path);
-  const hasThumb = IMAGE_EXTS.has(asset.file_ext) && !['svg', 'psd', 'dds', 'hdr', 'exr'].includes(asset.file_ext);
+  const thumbUrl = asset.thumb_path ? convertFileSrc(asset.thumb_path) : '';
+  const isImage = IMAGE_EXTS.has(asset.file_ext) && !['dds', 'hdr', 'exr'].includes(asset.file_ext);
+  const isPsd = asset.file_ext === 'psd';
+  const isVideo = VIDEO_EXTS.has(asset.file_ext);
+  const isAudio = new Set(['mp3', 'wav', 'ogg', 'flac', 'aac', 'wma', 'm4a', 'opus']).has(asset.file_ext);
+  const is3D = MESH_EXTS.has(asset.file_ext);
+
+  // PSD: 使用缩略图（由后端生成的合成图）或原图
+  const previewSrc = isPsd && thumbUrl ? thumbUrl : imgUrl;
+  const canPreviewImage = isImage || (isPsd && !!thumbUrl);
 
   return (
     <div
@@ -1266,9 +1302,9 @@ const PreviewModal: React.FC<PreviewProps> = ({ asset, assets, currentIndex, onC
         </button>
       )}
 
-      {/* Image */}
+      {/* Content */}
       <div className="max-w-[90vw] max-h-[85vh] flex items-center justify-center" onClick={e => e.stopPropagation()}>
-        {hasThumb ? (
+        {canPreviewImage ? (
           <>
             {!loaded && (
               <div className="flex items-center justify-center w-64 h-64">
@@ -1276,13 +1312,49 @@ const PreviewModal: React.FC<PreviewProps> = ({ asset, assets, currentIndex, onC
               </div>
             )}
             <img
-              src={imgUrl}
+              src={previewSrc}
               alt={asset.file_name}
               className={`max-w-[90vw] max-h-[85vh] object-contain rounded-lg shadow-2xl ${loaded ? '' : 'hidden'}`}
               onLoad={() => setLoaded(true)}
               draggable={false}
             />
           </>
+        ) : isVideo ? (
+          <video
+            key={asset.id}
+            src={imgUrl}
+            controls
+            autoPlay
+            className="max-w-[90vw] max-h-[85vh] rounded-lg shadow-2xl"
+            style={{ outline: 'none' }}
+          />
+        ) : isAudio ? (
+          <div className="flex flex-col items-center justify-center gap-6 p-12 bg-[#111] rounded-2xl">
+            <div className="w-32 h-32 rounded-full bg-gradient-to-br from-[#3b82f6] to-[#8b5cf6] flex items-center justify-center">
+              <Film size={48} className="text-white" />
+            </div>
+            <span className="text-lg text-[#ccc] font-medium">{asset.file_name}</span>
+            <audio
+              key={asset.id}
+              src={imgUrl}
+              controls
+              autoPlay
+              className="w-96"
+              style={{ outline: 'none' }}
+            />
+          </div>
+        ) : is3D ? (
+          <div className="flex flex-col items-center justify-center text-[#888] gap-4 p-12 bg-[#111] rounded-2xl">
+            <Box size={64} className="text-[#22d3ee]" />
+            <span className="text-lg font-medium">{asset.file_name}</span>
+            <span className="text-sm text-[#666]">{asset.file_ext.toUpperCase()} 3D 模型</span>
+            <p className="text-xs text-[#555] max-w-sm text-center">
+              3D 模型预览需要 WebGL 渲染器。当前版本暂支持缩略图预览，完整 3D 查看器将在后续版本中支持。
+            </p>
+            {thumbUrl && (
+              <img src={thumbUrl} alt={asset.file_name} className="max-w-md max-h-64 rounded-lg mt-2" />
+            )}
+          </div>
         ) : (
           <div className="flex flex-col items-center justify-center text-[#666] gap-3 p-12">
             {React.createElement(getFileIcon(asset.file_ext), { size: 64 })}
@@ -1314,9 +1386,11 @@ const FORMAT_GROUPS: { label: string; exts: string[] }[] = [
   { label: '全部', exts: [] },
   { label: '图片', exts: ['png', 'jpg', 'jpeg', 'gif', 'bmp', 'webp', 'tiff', 'tif', 'svg', 'ico'] },
   { label: 'PSD', exts: ['psd'] },
-  { label: '视频', exts: ['mp4', 'mov', 'avi', 'mkv', 'webm'] },
-  { label: '3D', exts: ['fbx', 'obj', 'gltf', 'glb'] },
-  { label: '其他', exts: ['tga', 'dds', 'hdr', 'exr', 'spine', 'skel'] },
+  { label: '视频', exts: ['mp4', 'mov', 'avi', 'mkv', 'webm', 'flv', 'wmv', 'm4v'] },
+  { label: '音频', exts: ['mp3', 'wav', 'ogg', 'flac', 'aac', 'wma', 'm4a', 'opus'] },
+  { label: '3D', exts: ['fbx', 'obj', 'gltf', 'glb', 'blend', '3ds', 'dae', 'stl'] },
+  { label: 'Spine', exts: ['spine', 'skel', 'atlas'] },
+  { label: '其他', exts: ['tga', 'dds', 'hdr', 'exr'] },
 ];
 
 const SORT_OPTIONS = [
@@ -1401,14 +1475,25 @@ export default function AssetManager() {
   // ---- Phase 4: FFmpeg State ----
   const [showFfmpegSettings, setShowFfmpegSettings] = useState(false);
 
-  // Load user info from localStorage
+  // ---- Favorites State ----
+  const [favoriteIds, setFavoriteIds] = useState<Set<number>>(new Set());
+  const [filterFavorites, setFilterFavorites] = useState(false);
+  const [filterMinRating, setFilterMinRating] = useState(0);
+
+  // Load OS username from backend (Phase 3 fix)
   useEffect(() => {
-    try {
-      const user = localStorage.getItem('arthub_username') || '';
-      const machine = localStorage.getItem('arthub_machine') || (typeof window !== 'undefined' ? window.location.hostname : '');
-      setCurrentUser(user);
-      setCurrentMachine(machine);
-    } catch { /* ignore */ }
+    (async () => {
+      try {
+        const user = await invoke<string>('asset_get_os_username');
+        setCurrentUser(user);
+        setCurrentMachine(typeof window !== 'undefined' ? window.location.hostname : '');
+      } catch {
+        const user = localStorage.getItem('arthub_username') || '';
+        const machine = localStorage.getItem('arthub_machine') || '';
+        setCurrentUser(user);
+        setCurrentMachine(machine);
+      }
+    })();
   }, []);
 
   // ---- Load folders ----
@@ -1440,6 +1525,9 @@ export default function AssetManager() {
           extensions: formatFilter.length > 0 ? formatFilter : null,
           min_width: null,
           max_width: null,
+          tag_ids: filterByTag ? [filterByTag] : null,
+          min_rating: filterMinRating > 0 ? filterMinRating : null,
+          favorite_only: filterFavorites || null,
           sort_by: sortBy,
           sort_order: sortDesc ? 'desc' : 'asc',
           page,
@@ -1457,13 +1545,13 @@ export default function AssetManager() {
       console.error('加载资源失败:', e);
     }
     setLoading(false);
-  }, [selectedFolderId, searchText, formatFilter, sortBy, sortDesc, currentPage]);
+  }, [selectedFolderId, searchText, formatFilter, sortBy, sortDesc, currentPage, filterByTag, filterMinRating, filterFavorites]);
 
   // Load when filters change
   useEffect(() => {
     setCurrentPage(1);
     loadAssets(false);
-  }, [selectedFolderId, space, searchText, formatFilter, sortBy, sortDesc]);
+  }, [selectedFolderId, space, searchText, formatFilter, sortBy, sortDesc, filterByTag, filterMinRating, filterFavorites]);
 
   // Load stats
   useEffect(() => {
@@ -1518,6 +1606,16 @@ export default function AssetManager() {
   }, []);
 
   useEffect(() => { loadTags(); }, [loadTags]);
+
+  // ---- Load favorites ----
+  const loadFavorites = useCallback(async () => {
+    try {
+      const ids = await invoke<number[]>('asset_get_favorite_ids');
+      setFavoriteIds(new Set(ids));
+    } catch { /* ignore */ }
+  }, []);
+
+  useEffect(() => { loadFavorites(); }, [loadFavorites]);
 
   // ---- Phase 2: Load smart folders ----
   const loadSmartFolders = useCallback(async () => {
@@ -1664,6 +1762,73 @@ export default function AssetManager() {
       if (detailAssetId === assetId) loadAssetDetail(assetId);
     } catch (e: any) {
       showToast('error', e?.toString() || '设置备注失败');
+    }
+  };
+
+  // ---- Favorite Handler ----
+  const handleToggleFavorite = async (assetId: number) => {
+    try {
+      const isFav = await invoke<boolean>('asset_toggle_favorite', { assetId });
+      setFavoriteIds(prev => {
+        const next = new Set(prev);
+        if (isFav) next.add(assetId); else next.delete(assetId);
+        return next;
+      });
+    } catch (e: any) {
+      showToast('error', e?.toString() || '收藏操作失败');
+    }
+  };
+
+  // ---- Batch Operations ----
+  const handleBatchDelete = async () => {
+    if (selectedIds.size === 0) return;
+    try {
+      const count = await invoke<number>('asset_batch_delete', { assetIds: Array.from(selectedIds) });
+      showToast('success', `已删除 ${count} 个资源`);
+      setSelectedIds(new Set());
+      loadAssets(false);
+      loadFolders();
+    } catch (e: any) {
+      showToast('error', e?.toString() || '批量删除失败');
+    }
+  };
+
+  const handleBatchExport = async () => {
+    if (selectedIds.size === 0) return;
+    try {
+      const dir = await open({ directory: true, title: '选择导出目录' });
+      if (!dir || typeof dir !== 'string') return;
+      const count = await invoke<number>('asset_batch_export', {
+        assetIds: Array.from(selectedIds),
+        targetDir: dir,
+      });
+      showToast('success', `已导出 ${count} 个文件到 ${dir}`);
+    } catch (e: any) {
+      showToast('error', e?.toString() || '批量导出失败');
+    }
+  };
+
+  const handleBatchFavorite = async (favorite: boolean) => {
+    if (selectedIds.size === 0) return;
+    try {
+      await invoke('asset_batch_favorite', { assetIds: Array.from(selectedIds), favorite });
+      await loadFavorites();
+      showToast('success', favorite ? '已批量收藏' : '已批量取消收藏');
+    } catch (e: any) {
+      showToast('error', e?.toString() || '批量收藏操作失败');
+    }
+  };
+
+  const handleBatchSetRating = async (rating: number) => {
+    if (selectedIds.size === 0) return;
+    try {
+      await invoke('asset_batch_set_rating', { assetIds: Array.from(selectedIds), rating });
+      for (const id of selectedIds) {
+        setAssetRatingsMap(prev => new Map(prev).set(id, rating));
+      }
+      showToast('success', `已批量设置 ${rating} 星评分`);
+    } catch (e: any) {
+      showToast('error', e?.toString() || '批量设置评分失败');
     }
   };
 
@@ -1843,9 +2008,9 @@ export default function AssetManager() {
         const searchInput = document.querySelector('[placeholder="搜索文件名..."]') as HTMLInputElement;
         searchInput?.focus();
       }
-      // Delete: remove tag from selected if detail is open
+      // Delete: batch delete selected assets
       if (e.key === 'Delete' && selectedIds.size > 0) {
-        // Could implement batch delete in the future
+        handleBatchDelete();
       }
       // 1-5: quick rating for detail asset
       if (detailAssetId && ['1', '2', '3', '4', '5'].includes(e.key) && !e.ctrlKey && !e.metaKey) {
@@ -1859,10 +2024,38 @@ export default function AssetManager() {
         if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA') return;
         handleSetRating(detailAssetId, 0);
       }
+      // F: toggle favorite for detail asset
+      if (e.key === 'f' && !e.ctrlKey && !e.metaKey && detailAssetId) {
+        const target = e.target as HTMLElement;
+        if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA') return;
+        handleToggleFavorite(detailAssetId);
+      }
+      // Space: toggle preview for detail asset
+      if (e.key === ' ' && detailAssetId && previewIndex < 0) {
+        const target = e.target as HTMLElement;
+        if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA') return;
+        e.preventDefault();
+        const idx = assets.findIndex(a => a.id === detailAssetId);
+        if (idx >= 0) setPreviewIndex(idx);
+      }
+      // I: toggle detail sidebar
+      if (e.key === 'i' && !e.ctrlKey && !e.metaKey && selectedIds.size === 1) {
+        const target = e.target as HTMLElement;
+        if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA') return;
+        const [id] = selectedIds;
+        setDetailAssetId(detailAssetId === id ? null : id);
+      }
+      // Ctrl+E: batch export
+      if (e.key === 'e' && (e.ctrlKey || e.metaKey) && selectedIds.size > 0) {
+        const target = e.target as HTMLElement;
+        if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA') return;
+        e.preventDefault();
+        handleBatchExport();
+      }
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [previewIndex, detailAssetId, selectedIds, contextMenu, assets]);
+  }, [previewIndex, detailAssetId, selectedIds, contextMenu, assets, favoriteIds]);
 
   // ---- Actions ----
   const handleAddFolder = async () => {
@@ -1974,6 +2167,48 @@ export default function AssetManager() {
             );
           })}
         </div>
+
+        {/* Favorite filter */}
+        <button
+          onClick={() => setFilterFavorites(!filterFavorites)}
+          className={`flex items-center gap-1 px-2 py-1 rounded text-[11px] font-medium transition-colors ${
+            filterFavorites ? 'bg-[#f59e0b] text-white' : 'bg-[#1a1a1a] text-[#888] hover:text-[#ccc]'
+          }`}
+          title="只看收藏"
+        >
+          <Bookmark size={12} /> 收藏
+        </button>
+
+        {/* Min rating filter */}
+        <div className="flex items-center gap-0.5">
+          {[1, 2, 3, 4, 5].map(r => (
+            <button
+              key={r}
+              onClick={() => setFilterMinRating(filterMinRating === r ? 0 : r)}
+              className="transition-colors hover:scale-110"
+              title={filterMinRating === r ? '取消评分过滤' : `最少 ${r} 星`}
+            >
+              <Star
+                size={13}
+                className={r <= filterMinRating ? 'text-yellow-400 fill-yellow-400' : 'text-[#333]'}
+              />
+            </button>
+          ))}
+        </div>
+
+        {/* Tag filter */}
+        {allTags.length > 0 && (
+          <select
+            value={filterByTag ?? ''}
+            onChange={e => setFilterByTag(e.target.value ? Number(e.target.value) : null)}
+            className="bg-[#1a1a1a] border border-[#2a2a2a] rounded text-[11px] text-[#aaa] px-2 py-1 outline-none cursor-pointer"
+          >
+            <option value="">全部标签</option>
+            {allTags.map(t => (
+              <option key={t.id} value={t.id}>{t.name} ({t.asset_count})</option>
+            ))}
+          </select>
+        )}
 
         {/* Tag Manager toggle */}
         <button
@@ -2104,18 +2339,34 @@ export default function AssetManager() {
               <button
                 key={r}
                 className="transition-colors hover:scale-110"
-                onClick={async () => {
-                  for (const id of selectedIds) {
-                    await handleSetRating(id, r);
-                  }
-                  showToast('success', `已批量设置 ${r} 星评分`);
-                }}
+                onClick={() => handleBatchSetRating(r)}
                 title={`批量设置 ${r} 星`}
               >
                 <Star size={14} className="text-yellow-400 fill-yellow-400" />
               </button>
             ))}
           </div>
+          <button
+            onClick={() => handleBatchFavorite(true)}
+            className="text-xs px-2 py-1 rounded bg-[#f59e0b]/20 text-[#f59e0b] hover:bg-[#f59e0b]/30 flex items-center gap-1"
+            title="批量收藏"
+          >
+            <Bookmark size={12} /> 收藏
+          </button>
+          <button
+            onClick={handleBatchExport}
+            className="text-xs px-2 py-1 rounded bg-[#22c55e]/20 text-[#22c55e] hover:bg-[#22c55e]/30 flex items-center gap-1"
+            title="批量导出"
+          >
+            <Download size={12} /> 导出
+          </button>
+          <button
+            onClick={handleBatchDelete}
+            className="text-xs px-2 py-1 rounded bg-[#ef4444]/20 text-[#ef4444] hover:bg-[#ef4444]/30 flex items-center gap-1"
+            title="批量删除（从库中移除）"
+          >
+            <Trash2 size={12} /> 删除
+          </button>
           <button
             onClick={() => setSelectedIds(new Set())}
             className="ml-auto text-xs text-[#666] hover:text-[#aaa] flex items-center gap-1"
@@ -2361,6 +2612,11 @@ export default function AssetManager() {
                       <span>Ctrl+F 搜索</span>
                       <span>Ctrl+A 全选</span>
                       <span>1-5 快速评分</span>
+                      <span>F 收藏</span>
+                      <span>I 详情</span>
+                      <span>Space 预览</span>
+                      <span>Del 删除</span>
+                      <span>Ctrl+E 导出</span>
                       <span>右键 更多操作</span>
                     </div>
                   </>
@@ -2368,9 +2624,9 @@ export default function AssetManager() {
                   <>
                     <ImageIcon size={48} className="mb-3 text-[#333]" />
                     <p className="text-sm text-[#666]">没有找到匹配的资源</p>
-                    {(searchText || formatFilter.length > 0) && (
+                    {(searchText || formatFilter.length > 0 || filterByTag || filterMinRating > 0 || filterFavorites) && (
                       <button
-                        onClick={() => { setSearchText(''); setFormatFilter([]); }}
+                        onClick={() => { setSearchText(''); setFormatFilter([]); setFilterByTag(null); setFilterMinRating(0); setFilterFavorites(false); }}
                         className="mt-2 text-xs text-[#3b82f6] hover:text-[#60a5fa]"
                       >
                         清除筛选条件
@@ -2397,6 +2653,8 @@ export default function AssetManager() {
               onSetNote={n => handleSetNote(detailAssetId, n)}
               onAddTag={tagId => handleAddTagToAsset(detailAssetId, tagId)}
               onRemoveTag={tagId => handleRemoveTagFromAsset(detailAssetId, tagId)}
+              isFavorite={favoriteIds.has(detailAssetId)}
+              onToggleFavorite={() => handleToggleFavorite(detailAssetId)}
               isTeamSpace={space === 'team'}
               lockStatus={detailLockStatus}
               currentUser={currentUser}
