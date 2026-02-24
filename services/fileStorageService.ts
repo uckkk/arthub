@@ -115,6 +115,22 @@ async function getDataFilePath(): Promise<string | null> {
   }
 }
 
+// 内部辅助：调用无认证的同步专用 Rust 命令
+async function syncFileExists(filePath: string): Promise<boolean> {
+  const { invoke } = await import('@tauri-apps/api/tauri');
+  return invoke('sync_file_exists', { filePath });
+}
+
+async function syncReadFile(filePath: string): Promise<string> {
+  const { invoke } = await import('@tauri-apps/api/tauri');
+  return invoke('sync_read_file', { filePath });
+}
+
+async function syncWriteFile(filePath: string, content: string): Promise<void> {
+  const { invoke } = await import('@tauri-apps/api/tauri');
+  await invoke('sync_write_file', { filePath, content });
+}
+
 // 自动同步所有数据到文件（静默导出）
 export async function autoSyncToFile(): Promise<boolean> {
   const config = getStorageConfig();
@@ -134,25 +150,21 @@ export async function autoSyncToFile(): Promise<boolean> {
 
     const allData: Record<string, any> = {};
     
-    // 收集所有 arthub_ 开头的 localStorage 数据
     for (let i = 0; i < localStorage.length; i++) {
       const key = localStorage.key(i);
       if (key && key.startsWith('arthub_') && key !== STORAGE_CONFIG_KEY) {
         try {
           const value = localStorage.getItem(key);
           if (value) {
-            // 检查数据大小
             if (value.length > 5 * 1024 * 1024) {
               console.warn(`数据太大，跳过导出 ${key} (${(value.length / 1024 / 1024).toFixed(2)}MB)`);
               continue;
             }
             
-            // 尝试解析 JSON，如果失败则作为字符串存储
             try {
               const parsed = JSON.parse(value);
               allData[key] = parsed;
             } catch {
-              // 不是有效的 JSON，作为字符串存储
               allData[key] = value;
             }
           }
@@ -162,31 +174,25 @@ export async function autoSyncToFile(): Promise<boolean> {
       }
     }
 
-    // 确保目录存在
     const storagePath = await getSavedStoragePath();
-    if (storagePath) {
-      try {
-        // 使用 Rust 命令写入文件，绕过文件系统作用域限制
-        const { invoke } = await import('@tauri-apps/api/tauri');
-        await invoke('write_file_with_path', {
-          filePath: dataFilePath,
-          content: JSON.stringify(allData, null, 2)
-        });
-      } catch (error: any) {
-        // 如果 Rust 命令失败，尝试使用 Tauri FS API（可能受作用域限制）
-        console.warn('使用 Rust 命令写入失败，尝试使用 FS API:', error);
-        try {
-          await writeTextFile(dataFilePath, JSON.stringify(allData, null, 2));
-        } catch (fsError: any) {
-          console.error('FS API 写入也失败:', fsError);
-          throw fsError;
-        }
-      }
-    } else {
+    if (!storagePath) {
       return false;
     }
 
-    // 更新同步时间
+    const jsonContent = JSON.stringify(allData, null, 2);
+
+    try {
+      await syncWriteFile(dataFilePath, jsonContent);
+    } catch (error: any) {
+      console.warn('同步写入命令失败，尝试 FS API:', error);
+      try {
+        await writeTextFile(dataFilePath, jsonContent);
+      } catch (fsError: any) {
+        console.error('FS API 写入也失败:', fsError);
+        throw fsError;
+      }
+    }
+
     saveStorageConfig({ lastSyncTime: Date.now() });
     
     return true;
@@ -208,13 +214,10 @@ export async function importAllDataFromFile(): Promise<void> {
       throw new Error('未选择存储目录');
     }
 
-    // 检查文件是否存在（优先使用 Rust 命令，绕过作用域限制）
     let fileExists = false;
     try {
-      const { invoke } = await import('@tauri-apps/api/tauri');
-      fileExists = await invoke('file_exists_with_path', { filePath: dataFilePath });
+      fileExists = await syncFileExists(dataFilePath);
     } catch (error) {
-      // 如果 Rust 命令失败，尝试使用 Tauri FS API
       try {
         fileExists = await exists(dataFilePath);
       } catch (fsError) {
@@ -227,13 +230,10 @@ export async function importAllDataFromFile(): Promise<void> {
       throw new Error('未找到数据文件，请先导出数据');
     }
 
-    // 读取文件内容（优先使用 Rust 命令）
     let text: string;
     try {
-      const { invoke } = await import('@tauri-apps/api/tauri');
-      text = await invoke('read_file_with_path', { filePath: dataFilePath });
+      text = await syncReadFile(dataFilePath);
     } catch (error) {
-      // 如果 Rust 命令失败，尝试使用 Tauri FS API
       try {
         text = await readTextFile(dataFilePath);
       } catch (fsError) {
@@ -364,22 +364,19 @@ export interface ImportResult {
 
 export async function autoImportFromFile(): Promise<ImportResult> {
   if (!isTauriEnvironment()) {
-    return false;
+    return { success: false, imported: false };
   }
 
   let config = getStorageConfig();
   
   // 如果配置未启用，先检查是否有已保存的路径
   if (!config.enabled && config.directoryPath) {
-    // 检查数据文件是否存在
     try {
       const dataFilePath = await getDataFilePath();
       if (dataFilePath) {
-        // 检查文件是否存在
         let fileExists = false;
         try {
-          const { invoke } = await import('@tauri-apps/api/tauri');
-          fileExists = await invoke('file_exists_with_path', { filePath: dataFilePath });
+          fileExists = await syncFileExists(dataFilePath);
         } catch (error) {
           try {
             fileExists = await exists(dataFilePath);
@@ -388,7 +385,6 @@ export async function autoImportFromFile(): Promise<ImportResult> {
           }
         }
         
-        // 如果文件存在，自动启用配置
         if (fileExists) {
           console.log('检测到本地数据文件，自动启用文件存储');
           saveStorageConfig({ enabled: true });
@@ -402,7 +398,6 @@ export async function autoImportFromFile(): Promise<ImportResult> {
 
   // 如果配置仍未启用，尝试从常见位置查找数据文件
   if (!config.enabled) {
-    // 尝试从应用数据目录查找
     try {
       const { appDataDir } = await import('@tauri-apps/api/path');
       const appDataPath = await appDataDir();
@@ -415,14 +410,12 @@ export async function autoImportFromFile(): Promise<ImportResult> {
         try {
           let fileExists = false;
           try {
-            const { invoke } = await import('@tauri-apps/api/tauri');
-            fileExists = await invoke('file_exists_with_path', { filePath: possiblePath });
+            fileExists = await syncFileExists(possiblePath);
           } catch {
             fileExists = await exists(possiblePath);
           }
           
           if (fileExists) {
-            // 找到数据文件，自动启用配置并设置路径
             const directoryPath = possiblePath.substring(0, possiblePath.lastIndexOf('/') || possiblePath.lastIndexOf('\\'));
             console.log('在应用数据目录找到数据文件，自动启用文件存储:', directoryPath);
             saveStorageConfig({ 

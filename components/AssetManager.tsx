@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import {
-  FolderOpen, Plus, Trash2, RefreshCw, Search, ChevronDown, ChevronRight,
+  FolderOpen, Plus, Trash2, RefreshCw, Search, ChevronDown, ChevronRight, ChevronLeft,
   X, ZoomIn, ArrowLeft, ArrowRight, Grid, LayoutGrid, Loader2,
   Image as ImageIcon, Film, Box, FileQuestion, HardDrive, Globe,
   Star, Tag, MessageSquare, Sparkles, Edit3, Check, Palette, Copy,
@@ -412,30 +412,66 @@ const ImageAnalysisSection: React.FC<{ filePath: string; thumbPath?: string }> =
       const browserRenderable = new Set(['png','jpg','jpeg','gif','webp','bmp','svg','ico','avif']);
       const useOriginal = browserRenderable.has(ext);
 
+      // Load image with crossOrigin to allow canvas pixel access (avoid taint)
       const loadImg = (url: string): Promise<HTMLImageElement> => new Promise((ok, fail) => {
         const i = new Image();
+        i.crossOrigin = 'anonymous';
         i.onload = () => ok(i);
         i.onerror = () => fail(new Error('Image load failed: ' + url.slice(0, 80)));
         i.src = url;
       });
 
-      let img: HTMLImageElement;
-      if (useOriginal) {
-        // Try original first, fallback to thumbnail
+      // Fallback: read file via Tauri FS API and create blob URL (bypasses CORS entirely)
+      const loadImgViaFs = async (path: string): Promise<HTMLImageElement> => {
+        const { readBinaryFile } = await import('@tauri-apps/api/fs');
+        const bytes = await readBinaryFile(path);
+        const mimeMap: Record<string, string> = { png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', gif: 'image/gif', webp: 'image/webp', bmp: 'image/bmp', ico: 'image/x-icon', avif: 'image/avif' };
+        const mime = mimeMap[ext] || 'image/png';
+        const blob = new Blob([bytes], { type: mime });
+        const blobUrl = URL.createObjectURL(blob);
         try {
-          img = await loadImg(convertFileSrc(filePath));
+          const img = await new Promise<HTMLImageElement>((ok, fail) => {
+            const i = new Image();
+            i.onload = () => ok(i);
+            i.onerror = () => fail(new Error('Blob image load failed'));
+            i.src = blobUrl;
+          });
+          // Revoke blob URL after image is loaded (data is already decoded into the Image)
+          URL.revokeObjectURL(blobUrl);
+          return img;
+        } catch (e) {
+          URL.revokeObjectURL(blobUrl);
+          throw e;
+        }
+      };
+
+      let img: HTMLImageElement;
+      const targetPath = useOriginal ? filePath : (thumbPath || '');
+      if (!targetPath) {
+        throw new Error('No thumbnail available for non-browser format: ' + ext);
+      }
+
+      // Try loading with crossOrigin first, then try canvas access, fallback to FS API
+      try {
+        img = await loadImg(convertFileSrc(targetPath));
+        // Test canvas access early to detect taint
+        const testCanvas = document.createElement('canvas');
+        testCanvas.width = 1; testCanvas.height = 1;
+        const testCtx = testCanvas.getContext('2d')!;
+        testCtx.drawImage(img, 0, 0, 1, 1);
+        testCtx.getImageData(0, 0, 1, 1); // throws if tainted
+      } catch {
+        // crossOrigin load or canvas access failed — fallback to Tauri FS API
+        try {
+          img = await loadImgViaFs(targetPath);
         } catch {
-          if (thumbPath) {
-            img = await loadImg(convertFileSrc(thumbPath));
+          // Last resort: try thumbnail via FS
+          if (thumbPath && targetPath !== thumbPath) {
+            img = await loadImgViaFs(thumbPath);
           } else {
-            throw new Error('Cannot load image for analysis: ' + filePath);
+            throw new Error('Image load failed for: ' + targetPath.split(/[\\/]/).pop());
           }
         }
-      } else if (thumbPath) {
-        // Non-browser format (PSD, DDS, etc.) — use thumbnail only
-        img = await loadImg(convertFileSrc(thumbPath));
-      } else {
-        throw new Error('No thumbnail available for non-browser format: ' + ext);
       }
       // Downsample for analysis
       const maxDim = 200;
@@ -519,7 +555,17 @@ const ImageAnalysisSection: React.FC<{ filePath: string; thumbPath?: string }> =
               </div>
             )}
             {analysisError && (
-              <div className="text-[11px] text-[#666] py-2">此格式暂不支持图片分析</div>
+              <div className="text-[11px] text-[#666] py-2 space-y-1">
+                <div>{analysisError.includes('non-browser format') ? '此格式暂不支持图片分析' : '图片分析失败'}</div>
+                {!analysisError.includes('non-browser format') && (
+                  <button
+                    onClick={() => { setAnalysisError(null); setAnalysisData(null); }}
+                    className="text-[10px] text-[#3b82f6] hover:text-[#60a5fa] transition-colors"
+                  >
+                    点击重试
+                  </button>
+                )}
+              </div>
             )}
             {analysisData && (
               <>
@@ -609,6 +655,8 @@ const AssetDetailSidebar: React.FC<{
   const thumbUrl = asset.thumb_path ? convertFileSrc(asset.thumb_path) : '';
   const detailTags = detail?.tags || [];
   const availableTags = allTags.filter(t => !detailTags.some(dt => dt.id === t.id));
+  const isVideoFile = VIDEO_EXTS.has(asset.file_ext);
+  const is3DFile = MESH_EXTS.has(asset.file_ext);
 
   return (
     <div className="flex-none w-72 border-l border-[#222] bg-[#0d0d0d] flex flex-col overflow-y-auto">
@@ -618,24 +666,47 @@ const AssetDetailSidebar: React.FC<{
         <button onClick={onClose} className="text-[#555] hover:text-[#aaa]"><X size={14} /></button>
       </div>
 
-      {/* Preview thumbnail */}
+      {/* Preview - video / 3D / thumbnail */}
       <div className="p-3">
-        <div className="w-full rounded-lg overflow-hidden bg-[#1a1a1a] border border-[#2a2a2a]" style={{ aspectRatio: asset.width && asset.height ? `${asset.width}/${asset.height}` : '1/1', maxHeight: 300 }}>
-          {thumbUrl ? (
-            <SkeletonImage
-              src={thumbUrl}
-              alt={asset.file_name}
-              className="w-full h-full"
-              imgClassName="w-full h-full object-contain"
-              fadeDuration={250}
-              fallback={<div className="text-[#444]">{React.createElement(getFileIcon(asset.file_ext), { size: 48 })}</div>}
+        {isVideoFile ? (
+          /* Inline video player for sidebar */
+          <div className="w-full rounded-lg overflow-hidden bg-[#1a1a1a] border border-[#2a2a2a]">
+            <video
+              key={asset.id}
+              src={convertFileSrc(asset.file_path)}
+              controls
+              muted
+              preload="metadata"
+              className="w-full rounded-lg"
+              style={{ maxHeight: 300 }}
+              poster={thumbUrl || undefined}
             />
-          ) : (
-            <div className="w-full h-full flex items-center justify-center text-[#444]">
-              {React.createElement(getFileIcon(asset.file_ext), { size: 48 })}
-            </div>
-          )}
-        </div>
+          </div>
+        ) : is3DFile ? (
+          /* Inline 3D viewer for sidebar */
+          <div className="w-full rounded-lg overflow-hidden bg-[#1a1a1a] border border-[#2a2a2a]" style={{ height: 220 }}>
+            <React.Suspense fallback={<SkeletonPreview className="w-full h-full" />}>
+              <LazyModelViewer3D filePath={asset.file_path} fileExt={asset.file_ext} fileName={asset.file_name} />
+            </React.Suspense>
+          </div>
+        ) : (
+          <div className="w-full rounded-lg overflow-hidden bg-[#1a1a1a] border border-[#2a2a2a]" style={{ aspectRatio: asset.width && asset.height ? `${asset.width}/${asset.height}` : '1/1', maxHeight: 300 }}>
+            {thumbUrl ? (
+              <SkeletonImage
+                src={thumbUrl}
+                alt={asset.file_name}
+                className="w-full h-full"
+                imgClassName="w-full h-full object-contain"
+                fadeDuration={250}
+                fallback={<div className="text-[#444]">{React.createElement(getFileIcon(asset.file_ext), { size: 48 })}</div>}
+              />
+            ) : (
+              <div className="w-full h-full flex items-center justify-center text-[#444]">
+                {React.createElement(getFileIcon(asset.file_ext), { size: 48 })}
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       {/* File info */}
@@ -1385,6 +1456,21 @@ const VirtualGrid: React.FC<VirtualGridProps> = ({ assets, containerRef, onClick
                 <span className="text-xs mt-1 uppercase">{asset.file_ext}</span>
               </div>
             )}
+            {/* Video play overlay */}
+            {VIDEO_EXTS.has(asset.file_ext) && (
+              <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                <div className="w-10 h-10 rounded-full bg-black/60 flex items-center justify-center backdrop-blur-sm">
+                  <div className="w-0 h-0 border-t-[7px] border-t-transparent border-b-[7px] border-b-transparent border-l-[12px] border-l-white ml-1" />
+                </div>
+              </div>
+            )}
+            {/* 3D model overlay */}
+            {MESH_EXTS.has(asset.file_ext) && !hasThumbnail && (
+              <div className="absolute bottom-1.5 left-1.5 flex items-center gap-1 bg-black/50 rounded px-1.5 py-0.5 backdrop-blur-sm">
+                <Box size={10} className="text-[#a78bfa]" />
+                <span className="text-[9px] text-[#a78bfa] font-medium">3D</span>
+              </div>
+            )}
             {/* Ext badge */}
             <span
               className="absolute top-1.5 right-1.5 text-[10px] px-1.5 py-0.5 rounded font-semibold uppercase"
@@ -1693,7 +1779,7 @@ const PreviewModal: React.FC<PreviewProps> = ({ asset, assets, currentIndex, onC
   const isImage = IMAGE_EXTS.has(asset.file_ext) && !['dds', 'hdr', 'exr'].includes(asset.file_ext);
   const isPsd = asset.file_ext === 'psd';
   const isVideo = VIDEO_EXTS.has(asset.file_ext);
-  const isAudio = new Set(['mp3', 'wav', 'ogg', 'flac', 'aac', 'wma', 'm4a', 'opus']).has(asset.file_ext);
+  const isAudio = AUDIO_EXTS.has(asset.file_ext);
   const is3D = MESH_EXTS.has(asset.file_ext);
 
   // PSD: 使用缩略图（由后端生成的合成图）或原图
@@ -1884,7 +1970,7 @@ export default function AssetManager() {
   const [activeLocks, setActiveLocks] = useState<FileLockInfo[]>([]);
   const [detailLockStatus, setDetailLockStatus] = useState<LockStatusInfo | null>(null);
   const [detailHistory, setDetailHistory] = useState<FileHistoryInfo | null>(null);
-  const [heartbeatTimers, setHeartbeatTimers] = useState<Map<string, NodeJS.Timeout>>(new Map());
+  const heartbeatTimersRef = useRef<Map<string, NodeJS.Timeout>>(new Map());
 
   // ---- Phase 4: FFmpeg State ----
   const [showFfmpegSettings, setShowFfmpegSettings] = useState(false);
@@ -1928,12 +2014,15 @@ export default function AssetManager() {
     loadFolders();
   }, [loadFolders]);
 
-  // Track current page for pagination
+  // Track current page for pagination (use ref to avoid stale closure in infinite scroll)
   const [currentPage, setCurrentPage] = useState(1);
+  const currentPageRef = useRef(1);
 
   // ---- Load assets ----
   // Use a ref to track the latest request and avoid stale results
   const loadRequestRef = useRef(0);
+  // Keep a ref to the latest loadAssets so event listeners always call the current version
+  const loadAssetsRef = useRef<(append?: boolean) => Promise<void>>(async () => {});
 
   const loadAssets = useCallback(async (append = false) => {
     const requestId = ++loadRequestRef.current;
@@ -1947,7 +2036,7 @@ export default function AssetManager() {
       setLoading(true);
     }
     try {
-      const page = append ? currentPage + 1 : 1;
+      const page = append ? currentPageRef.current + 1 : 1;
       const result = await invoke<QueryResult>('asset_query', {
         params: {
           folder_id: selectedFolderId,
@@ -1973,6 +2062,7 @@ export default function AssetManager() {
       }
       setTotalAssets(result.total);
       setCurrentPage(page);
+      currentPageRef.current = page;
     } catch (e) {
       if (requestId !== loadRequestRef.current) return;
       console.error('加载资源失败:', e);
@@ -1980,12 +2070,18 @@ export default function AssetManager() {
     if (requestId === loadRequestRef.current) {
       setLoading(false);
     }
-  }, [selectedFolderId, searchText, formatFilter, sortBy, sortDesc, currentPage, filterByTag, filterMinRating, filterFavorites]);
+  }, [selectedFolderId, searchText, formatFilter, sortBy, sortDesc, filterByTag, filterMinRating, filterFavorites]);
+
+  // Always keep loadAssetsRef pointing to the latest loadAssets
+  useEffect(() => {
+    loadAssetsRef.current = loadAssets;
+  }, [loadAssets]);
 
   // Load when filters change — use a dedicated effect that directly queries
   useEffect(() => {
     const requestId = ++loadRequestRef.current;
     setCurrentPage(1);
+    currentPageRef.current = 1;
     setAssets([]);
     setLoading(true);
     // Reset scroll position
@@ -2058,7 +2154,8 @@ export default function AssetManager() {
           setScanning(false);
           setScanProgress(null);
           loadFolders();
-          loadAssets(false);
+          // Use ref to always call the latest loadAssets (avoids stale closure)
+          loadAssetsRef.current(false);
         }
       });
     })();
@@ -2404,7 +2501,7 @@ export default function AssetManager() {
             sharedRoot: teamSharedRoot, filePath, username: currentUser,
           }).catch(() => {});
         }, 60000);
-        setHeartbeatTimers(prev => new Map(prev).set(filePath, timer));
+        heartbeatTimersRef.current.set(filePath, timer);
         // Refresh lock status
         const status = await invoke<LockStatusInfo>('team_check_lock', {
           sharedRoot: teamSharedRoot, filePath,
@@ -2425,8 +2522,8 @@ export default function AssetManager() {
         sharedRoot: teamSharedRoot, filePath, username: currentUser,
       });
       // Stop heartbeat
-      const timer = heartbeatTimers.get(filePath);
-      if (timer) { clearInterval(timer); setHeartbeatTimers(prev => { const m = new Map(prev); m.delete(filePath); return m; }); }
+      const timer = heartbeatTimersRef.current.get(filePath);
+      if (timer) { clearInterval(timer); heartbeatTimersRef.current.delete(filePath); }
       showToast('success', '已释放锁定');
       setDetailLockStatus({ is_locked: false, locked_by: null, machine: null, locked_at: null, is_stale: false });
     } catch (e: any) {
@@ -2449,7 +2546,8 @@ export default function AssetManager() {
   // Cleanup heartbeat timers on unmount
   useEffect(() => {
     return () => {
-      heartbeatTimers.forEach(timer => clearInterval(timer));
+      heartbeatTimersRef.current.forEach(timer => clearInterval(timer));
+      heartbeatTimersRef.current.clear();
     };
   }, []);
 
@@ -2532,9 +2630,13 @@ export default function AssetManager() {
     try {
       const selected = await open({ directory: true, multiple: false, title: '选择资源文件夹' });
       if (!selected || typeof selected !== 'string') return;
-      await invoke('asset_add_folder', { path: selected, spaceType: space });
+      const folder = await invoke<AssetFolder>('asset_add_folder', { path: selected, spaceType: space });
       await loadFolders();
-      showToast('success', '文件夹已添加');
+      showToast('success', '文件夹已添加，正在扫描...');
+      // 自动选中新添加的文件夹
+      setSelectedFolderId(folder.id);
+      // 自动扫描新添加的文件夹
+      handleScanFolder(folder.id);
     } catch (e: any) {
       showToast('error', e?.toString() || '添加失败');
     }
@@ -2572,6 +2674,7 @@ export default function AssetManager() {
 
   // ---- Derived ----
   const spaceFolders = useMemo(() => folders.filter(f => f.space_type === space), [folders, space]);
+  const lockedPathsSet = useMemo(() => new Set(activeLocks.map(l => l.file_path)), [activeLocks]);
 
   // ---- Render ----
   return (
@@ -3097,7 +3200,7 @@ export default function AssetManager() {
                 }}
                 assetTagsMap={assetTagsMap}
                 assetRatingsMap={assetRatingsMap}
-                lockedPaths={new Set(activeLocks.map(l => l.file_path))}
+                lockedPaths={lockedPathsSet}
                 thumbSize={thumbSize}
               />
             ) : loading ? (

@@ -1636,6 +1636,40 @@ fn file_exists_with_path(app: tauri::AppHandle, file_path: String) -> Result<boo
     Ok(Path::new(&file_path).exists())
 }
 
+// 数据同步专用命令（不需要认证，仅允许操作 arthub_data.json 文件）
+fn validate_sync_path(file_path: &str) -> Result<(), String> {
+    let path = std::path::Path::new(file_path);
+    match path.file_name().and_then(|n| n.to_str()) {
+        Some("arthub_data.json") => Ok(()),
+        _ => Err("仅允许操作 arthub_data.json 文件".to_string()),
+    }
+}
+
+#[tauri::command]
+fn sync_file_exists(file_path: String) -> Result<bool, String> {
+    validate_sync_path(&file_path)?;
+    Ok(std::path::Path::new(&file_path).exists())
+}
+
+#[tauri::command]
+fn sync_read_file(file_path: String) -> Result<String, String> {
+    validate_sync_path(&file_path)?;
+    std::fs::read_to_string(&file_path)
+        .map_err(|e| format!("读取同步文件失败: {}", e))
+}
+
+#[tauri::command]
+fn sync_write_file(file_path: String, content: String) -> Result<(), String> {
+    validate_sync_path(&file_path)?;
+    let path = std::path::Path::new(&file_path);
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent)
+            .map_err(|e| format!("创建目录失败: {}", e))?;
+    }
+    std::fs::write(path, content)
+        .map_err(|e| format!("写入同步文件失败: {}", e))
+}
+
 // Tauri 命令：创建目录（绕过文件系统作用域限制）
 #[tauri::command]
 fn create_dir_with_path(app: tauri::AppHandle, dir_path: String, recursive: bool) -> Result<(), String> {
@@ -2368,7 +2402,10 @@ fn main() {
             asset_manager::asset_get_os_username,
             asset_manager::ffmpeg_check,
             asset_manager::ffmpeg_download,
-            asset_manager::ffmpeg_extract_thumbnail
+            asset_manager::ffmpeg_extract_thumbnail,
+            sync_file_exists,
+            sync_read_file,
+            sync_write_file
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
