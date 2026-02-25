@@ -272,11 +272,14 @@ function sampleModeColor(
   x: number, y: number, w: number, h: number,
 ): RGB | null {
   try {
-    const data = ctx.getImageData(
-      Math.max(0, x), Math.max(0, y),
-      Math.min(w, ctx.canvas.width - x),
-      Math.min(h, ctx.canvas.height - y),
-    ).data;
+    const canvasW = ctx.canvas.width, canvasH = ctx.canvas.height;
+    const x0 = Math.max(0, Math.floor(x));
+    const y0 = Math.max(0, Math.floor(y));
+    const x1 = Math.min(canvasW, Math.floor(x + w));
+    const y1 = Math.min(canvasH, Math.floor(y + h));
+    const w2 = x1 - x0, h2 = y1 - y0;
+    if (w2 <= 0 || h2 <= 0) return null;
+    const data = ctx.getImageData(x0, y0, w2, h2).data;
     if (data.length < 4) return null;
 
     const colorMap = new Map<number, { r: number; g: number; b: number; count: number }>();
