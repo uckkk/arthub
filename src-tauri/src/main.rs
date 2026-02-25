@@ -12,7 +12,10 @@ use winapi::um::winuser::{
     MonitorFromPoint, GetMonitorInfoW, MONITOR_DEFAULTTONEAREST,
     EnumWindows, GetWindowTextW, SetForegroundWindow, ShowWindow, 
     SW_RESTORE, SW_MINIMIZE, IsWindowVisible, IsIconic, GetClassNameW,
-    GetCursorPos
+    GetCursorPos, GetAsyncKeyState, VK_LBUTTON,
+    CreatePopupMenu, AppendMenuW, TrackPopupMenu, DestroyMenu,
+    PostMessageW, GetDesktopWindow,
+    MF_STRING, MF_SEPARATOR, TPM_RETURNCMD, TPM_NONOTIFY
 };
 #[cfg(target_os = "windows")]
 use winapi::shared::windef::{POINT, HWND};
@@ -446,90 +449,70 @@ fn load_icon_position(app: &tauri::AppHandle) -> IconPosition {
     IconPosition { x: 0, y: 0 }
 }
 
-// Tauri 命令：图标鼠标按下
+// Tauri 命令：开始拖拽图标（后台线程轮询鼠标，不依赖 JS mousemove / -webkit-app-region: drag）
 #[tauri::command]
-fn icon_mouse_down(app: tauri::AppHandle, x: f64, y: f64) {
+fn icon_drag_begin(app: tauri::AppHandle) {
     let state = app.state::<AppState>();
-    let mut is_dragging = state.is_dragging.lock().unwrap();
-    *is_dragging = true;
-    
-    // 保存鼠标初始位置和鼠标相对于窗口的偏移
-    if let Some(icon_window) = app.get_window("icon") {
-        if let Ok(current_pos) = icon_window.outer_position() {
-            // 确保使用物理坐标
-            let window_x = current_pos.x;
-            let window_y = current_pos.y;
-            
-            // 计算鼠标相对于窗口左上角的偏移（在窗口内的位置）
-            // 这个偏移在整个拖拽过程中保持不变
-            let mut window_offset = state.drag_start_window.lock().unwrap();
-            window_offset.x = x as i32 - window_x;
-            window_offset.y = y as i32 - window_y;
-            
-            // 保存鼠标初始屏幕位置（用于验证）
-            let mut mouse_start = state.drag_start_mouse.lock().unwrap();
-            mouse_start.x = x as i32;
-            mouse_start.y = y as i32;
-        }
-    }
-}
 
-// Tauri 命令：图标鼠标移动
-#[tauri::command]
-fn icon_mouse_move(app: tauri::AppHandle, x: f64, y: f64) {
-    let state = app.state::<AppState>();
-    let is_dragging = state.is_dragging.lock().unwrap();
-    
-    if *is_dragging {
-        if let Some(icon_window) = app.get_window("icon") {
-            // 获取鼠标相对于窗口的偏移（在 mouse_down 时保存，保持不变）
-            let window_offset = state.drag_start_window.lock().unwrap();
-            
-            // 计算窗口新位置：鼠标屏幕位置 - 鼠标在窗口内的偏移 = 窗口左上角位置
-            // 这样窗口会跟随鼠标移动，保持鼠标在窗口内的相对位置不变
-            let new_x = x as i32 - window_offset.x;
-            let new_y = y as i32 - window_offset.y;
-            
-            // 使用物理坐标设置窗口位置（避免 DPI 缩放问题）
-            // 直接设置，不进行任何额外的计算或验证
-            let _ = icon_window.set_position(PhysicalPosition::new(new_x, new_y));
-        }
+    // 防止重复启动拖拽
+    {
+        let mut is_dragging = state.is_dragging.lock().unwrap();
+        if *is_dragging { return; }
+        *is_dragging = true;
     }
-}
 
-// Tauri 命令：图标鼠标释放
-#[tauri::command]
-fn icon_mouse_up(app: tauri::AppHandle, x: f64, y: f64) {
-    println!("icon_mouse_up called: x={}, y={}", x, y);
-    let state = app.state::<AppState>();
-    let mut is_dragging = state.is_dragging.lock().unwrap();
-    *is_dragging = false;
-    println!("is_dragging set to false");
-    
-    if let Some(icon_window) = app.get_window("icon") {
-        if let Ok(current_pos) = icon_window.outer_position() {
-            println!("Current window position before snap: ({}, {})", current_pos.x, current_pos.y);
-            
-            // 边缘吸附（使用当前窗口位置）
-            let snapped = snap_to_edge(current_pos.x, current_pos.y, ICON_SIZE);
-            println!("After snap: ({}, {})", snapped.0, snapped.1);
-            
-            // 确保在可见区域内
-            let constrained = constrain_to_visible_area(snapped.0, snapped.1, ICON_SIZE);
-            println!("After constrain: ({}, {})", constrained.0, constrained.1);
-            
-            if let Err(e) = icon_window.set_position(PhysicalPosition::new(constrained.0, constrained.1)) {
-                eprintln!("Failed to set icon position: {:?}", e);
-            } else {
-                println!("Icon position set to: x={}, y={}", constrained.0, constrained.1);
-                save_icon_position(&app, constrained.0, constrained.1);
+    // 获取光标物理位置和窗口当前物理位置，计算偏移
+    let (offset_x, offset_y) = {
+        #[cfg(target_os = "windows")]
+        {
+            let mut pt = POINT { x: 0, y: 0 };
+            unsafe { GetCursorPos(&mut pt); }
+            if let Some(icon_window) = app.get_window("icon") {
+                if let Ok(pos) = icon_window.outer_position() {
+                    (pt.x - pos.x, pt.y - pos.y)
+                } else { (0, 0) }
+            } else { return; }
+        }
+        #[cfg(not(target_os = "windows"))]
+        { (0i32, 0i32) }
+    };
+
+    let app_clone = app.clone();
+    std::thread::spawn(move || {
+        loop {
+            #[cfg(target_os = "windows")]
+            {
+                // 检测左键是否仍然按下
+                let key_state = unsafe { GetAsyncKeyState(VK_LBUTTON as i32) };
+                if key_state >= 0 { break; }
+
+                // 获取当前光标位置并移动窗口
+                let mut pt = POINT { x: 0, y: 0 };
+                unsafe { GetCursorPos(&mut pt); }
+                if let Some(icon_window) = app_clone.get_window("icon") {
+                    let new_x = pt.x - offset_x;
+                    let new_y = pt.y - offset_y;
+                    let _ = icon_window.set_position(PhysicalPosition::new(new_x, new_y));
+                }
             }
-        } else {
-            println!("Failed to get current window position in icon_mouse_up");
+            std::thread::sleep(std::time::Duration::from_millis(8));
         }
-    } else {
-        println!("Icon window not found in icon_mouse_up");
-    }
+
+        // 拖拽结束：边缘吸附 + 保存位置
+        {
+            let state2 = app_clone.state::<AppState>();
+            let mut is_dragging = state2.is_dragging.lock().unwrap();
+            *is_dragging = false;
+        }
+        if let Some(icon_window) = app_clone.get_window("icon") {
+            if let Ok(pos) = icon_window.outer_position() {
+                let snapped = snap_to_edge(pos.x, pos.y, ICON_SIZE);
+                let constrained = constrain_to_visible_area(snapped.0, snapped.1, ICON_SIZE);
+                let _ = icon_window.set_position(PhysicalPosition::new(constrained.0, constrained.1));
+                save_icon_position(&app_clone, constrained.0, constrained.1);
+            }
+        }
+    });
 }
 
 // Windows: 查找主窗口的数据结构
@@ -758,6 +741,78 @@ fn animate_window_close(_app: &tauri::AppHandle, main_window: tauri::Window) {
 fn app_exit(app: tauri::AppHandle) {
     println!("App exit requested");
     app.exit(0);
+}
+
+// Tauri 命令：悬浮图标右键菜单（使用 Windows 原生 TrackPopupMenu，不创建额外窗口）
+#[tauri::command]
+fn show_icon_context_menu(app: tauri::AppHandle) {
+    #[cfg(target_os = "windows")]
+    {
+        // 在命令线程中获取光标位置（此时光标还在图标上）
+        let mut pt = POINT { x: 0, y: 0 };
+        unsafe { GetCursorPos(&mut pt); }
+        let cx = pt.x;
+        let cy = pt.y;
+
+        let app_clone = app.clone();
+        // TrackPopupMenu 必须在拥有消息循环的主线程上调用
+        let _ = app.run_on_main_thread(move || {
+            unsafe {
+                let hmenu = CreatePopupMenu();
+                if hmenu.is_null() { return; }
+
+                let s1: Vec<u16> = "显示 / 隐藏主窗口\0".encode_utf16().collect();
+                let s2: Vec<u16> = "退出应用\0".encode_utf16().collect();
+                AppendMenuW(hmenu, MF_STRING, 1, s1.as_ptr());
+                AppendMenuW(hmenu, MF_SEPARATOR, 0, std::ptr::null());
+                AppendMenuW(hmenu, MF_STRING, 2, s2.as_ptr());
+
+                // 获取有效 HWND（TrackPopupMenu 需要前台窗口才能正确关闭菜单）
+                let hwnd = find_main_window_hwnd().unwrap_or_else(|| GetDesktopWindow());
+                SetForegroundWindow(hwnd);
+
+                // 阻塞式显示菜单，TPM_RETURNCMD 返回用户选择的菜单项 ID
+                let cmd = TrackPopupMenu(
+                    hmenu,
+                    TPM_RETURNCMD | TPM_NONOTIFY,
+                    cx, cy, 0, hwnd, std::ptr::null(),
+                );
+
+                // 修复 TrackPopupMenu 在某些情况下不消失的 Windows 已知 bug
+                PostMessageW(hwnd, 0, 0, 0); // WM_NULL = 0
+
+                match cmd as u32 {
+                    1 => {
+                        // 显示/隐藏主窗口
+                        if let Some(mw) = app_clone.get_window("main") {
+                            let state = app_clone.state::<AppState>();
+                            let visible = mw.is_visible().unwrap_or(false);
+                            let mut wv = state.main_window_visible.lock().unwrap();
+                            if visible {
+                                let _ = mw.hide();
+                                *wv = false;
+                            } else {
+                                if let Some(h) = find_main_window_hwnd() {
+                                    if IsIconic(h) != 0 {
+                                        ShowWindow(h, SW_RESTORE);
+                                    }
+                                }
+                                let _ = mw.show();
+                                let _ = mw.set_focus();
+                                *wv = true;
+                            }
+                        }
+                    }
+                    2 => {
+                        app_clone.exit(0);
+                    }
+                    _ => {}
+                }
+
+                DestroyMenu(hmenu);
+            }
+        });
+    }
 }
 
 // Tauri 命令：打开控制台窗口
@@ -1640,9 +1695,21 @@ fn file_exists_with_path(app: tauri::AppHandle, file_path: String) -> Result<boo
 fn validate_sync_path(file_path: &str) -> Result<(), String> {
     let path = std::path::Path::new(file_path);
     match path.file_name().and_then(|n| n.to_str()) {
-        Some("arthub_data.json") => Ok(()),
-        _ => Err("仅允许操作 arthub_data.json 文件".to_string()),
+        Some("arthub_data.json") | Some("arthub_sync_config.json") => Ok(()),
+        _ => Err("仅允许操作 arthub 同步文件".to_string()),
     }
+}
+
+#[tauri::command]
+fn sync_get_config_path(app: tauri::AppHandle) -> Result<String, String> {
+    let app_data = app.path_resolver().app_data_dir()
+        .ok_or_else(|| "无法获取应用数据目录".to_string())?;
+    std::fs::create_dir_all(&app_data)
+        .map_err(|e| format!("创建目录失败: {}", e))?;
+    let config_path = app_data.join("arthub_sync_config.json");
+    config_path.to_str()
+        .map(|s| s.to_string())
+        .ok_or_else(|| "路径转换失败".to_string())
 }
 
 #[tauri::command]
@@ -2252,7 +2319,10 @@ fn main() {
                 let am_state = asset_manager::AssetManagerState::new(db_path, thumb_dir)
                     .expect("Failed to init asset manager database");
                 app.manage(am_state);
-                println!("Asset manager initialized");
+
+                let ai_state = asset_manager::ai::AiState::new(&am_dir);
+                app.manage(ai_state);
+                println!("Asset manager initialized (with AI support)");
             }
 
             // 检查主窗口
@@ -2330,9 +2400,7 @@ fn main() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
-            icon_mouse_down,
-            icon_mouse_move,
-            icon_mouse_up,
+            icon_drag_begin,
             icon_click,
             app_exit,
             launch_app,
@@ -2399,13 +2467,30 @@ fn main() {
             asset_manager::asset_batch_set_rating,
             asset_manager::asset_batch_delete,
             asset_manager::asset_batch_export,
+            asset_manager::asset_batch_rename,
+            asset_manager::asset_index_colors,
+            asset_manager::asset_search_by_color,
+            asset_manager::asset_index_hashes,
+            asset_manager::asset_find_duplicates,
+            asset_manager::asset_save_annotation,
+            asset_manager::asset_get_annotation,
+            asset_manager::ai_check_model,
+            asset_manager::ai_get_models_dir,
+            asset_manager::ai_set_models_dir,
+            asset_manager::ai_download_model,
+            asset_manager::ai_load_model,
+            asset_manager::ai_index_embeddings,
+            asset_manager::ai_semantic_search,
+            asset_manager::ai_embedding_stats,
             asset_manager::asset_get_os_username,
             asset_manager::ffmpeg_check,
             asset_manager::ffmpeg_download,
             asset_manager::ffmpeg_extract_thumbnail,
             sync_file_exists,
             sync_read_file,
-            sync_write_file
+            sync_write_file,
+            sync_get_config_path,
+            show_icon_context_menu
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

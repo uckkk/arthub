@@ -190,10 +190,50 @@ export default function ImageCompressor() {
 
   // ---- Drop handler ----
   const [isDragOver, setIsDragOver] = useState(false);
+  const compressorRef = useRef<HTMLDivElement>(null);
   const handleDrop = useCallback((e: React.DragEvent) => {
     e.preventDefault();
     setIsDragOver(false);
     if (e.dataTransfer.files.length > 0) handleFiles(e.dataTransfer.files);
+  }, [handleFiles]);
+
+  // Tauri 原生文件拖拽：支持从系统资源管理器直接拖入图片
+  useEffect(() => {
+    if (typeof window === 'undefined' || !(window as any).__TAURI__) return;
+    let cleanups: (() => void)[] = [];
+    const IMAGE_EXTS = ['.png', '.jpg', '.jpeg', '.webp', '.bmp', '.gif', '.tiff', '.tif'];
+    const MIME_MAP: Record<string, string> = { png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', webp: 'image/webp', bmp: 'image/bmp', gif: 'image/gif', tiff: 'image/tiff', tif: 'image/tiff' };
+    const setup = async () => {
+      const { listen } = await import('@tauri-apps/api/event');
+      const { invoke } = await import('@tauri-apps/api/tauri');
+      const isVisible = () => compressorRef.current ? compressorRef.current.offsetWidth > 0 : false;
+
+      const unDrop = await listen<string[]>('tauri://file-drop', async (event) => {
+        setIsDragOver(false);
+        if (!isVisible()) return;
+        let paths = (Array.isArray(event.payload) ? event.payload : []).filter(
+          p => IMAGE_EXTS.some(ext => p.toLowerCase().endsWith(ext))
+        );
+        if (paths.length === 0) return;
+        const files: File[] = [];
+        for (const p of paths) {
+          try {
+            const data: number[] = await invoke('read_binary_file_with_path', { filePath: p });
+            const ext = p.split('.').pop()?.toLowerCase() || 'png';
+            const name = p.split(/[\\/]/).pop() || 'image.png';
+            files.push(new File([new Uint8Array(data)], name, { type: MIME_MAP[ext] || 'image/png' }));
+          } catch (err) {
+            console.error('[ImageCompressor] Failed to read file:', p, err);
+          }
+        }
+        if (files.length > 0) handleFiles(files);
+      });
+      const unHover = await listen('tauri://file-drop-hover', () => { if (isVisible()) setIsDragOver(true); });
+      const unCancel = await listen('tauri://file-drop-cancelled', () => { setIsDragOver(false); });
+      cleanups = [unDrop, unHover, unCancel];
+    };
+    setup();
+    return () => cleanups.forEach(fn => fn());
   }, [handleFiles]);
 
   // ---- Compression runners ----
@@ -416,7 +456,7 @@ export default function ImageCompressor() {
 
   // ==== RENDER ====
   return (
-    <div className="h-full flex flex-col bg-[#0e0e0e] text-white overflow-hidden">
+    <div ref={compressorRef} className="h-full flex flex-col bg-[#0e0e0e] text-white overflow-hidden">
       {/* ---- Upload Zone ---- */}
       {images.length === 0 ? (
         <div

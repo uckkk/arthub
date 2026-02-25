@@ -18,8 +18,8 @@
       padding: 0 !important;
       overflow: hidden !important;
       background: transparent !important;
-      /* macOS 需要明确设置背景为透明 */
-      -webkit-app-region: drag !important;
+      /* 不使用 -webkit-app-region: drag，防止 Windows Aero Shake 触发最小化所有窗口 */
+      /* 拖拽由 JS/Rust 自行处理 */
     }
 
     body {
@@ -138,130 +138,40 @@
       }, 100);
     }
     
-    let isDragging = false;
-    let startMousePos = { x: 0, y: 0 };
     let lastClickTime = 0;
-    let clickTimeout = null;
-    const DOUBLE_CLICK_DELAY = 300; // 双击间隔时间（毫秒）
-    const DRAG_THRESHOLD = 5; // 拖拽阈值（像素）
-    
-    document.addEventListener('contextmenu', e => e.preventDefault());
-    
+    const DOUBLE_CLICK_DELAY = 300;
+
+    // ---- 右键菜单 ----
+    document.addEventListener('contextmenu', async (e) => {
+      e.preventDefault();
+      if (!invoke) invoke = getInvoke();
+      if (invoke) {
+        try { await invoke('show_icon_context_menu'); } catch (err) { console.error('Context menu error:', err); }
+      }
+    });
+
+    // ---- 左键按下：通知 Rust 启动后台拖拽线程（轮询鼠标位置，不依赖 JS mousemove） ----
     document.addEventListener('mousedown', async (e) => {
       if (e.button === 0) {
-        isDragging = true;
-        startMousePos = { x: e.screenX, y: e.screenY };
-        
         if (!invoke) invoke = getInvoke();
         if (invoke) {
-          try {
-            await invoke('icon_mouse_down', { x: e.screenX, y: e.screenY });
-          } catch (err) {
-            console.error('Mouse down error:', err);
-          }
-        }
-        
-        e.preventDefault();
-      }
-    });
-    
-    document.addEventListener('mousemove', async (e) => {
-      if (isDragging) {
-        if (!invoke) invoke = getInvoke();
-        if (invoke) {
-          try {
-            await invoke('icon_mouse_move', { x: e.screenX, y: e.screenY });
-          } catch (err) {
-            console.error('Move error:', err);
-          }
+          try { await invoke('icon_drag_begin'); } catch (err) { console.error('Drag begin error:', err); }
         }
         e.preventDefault();
       }
     });
-    
-    // 处理双击（全局唯一：双击呼出/隐藏主界面）
-    // 完全禁用单击，只响应双击
-    document.addEventListener('mouseup', async (e) => {
-      if (e.button === 0 && isDragging) {
-        const moved = Math.abs(e.screenX - startMousePos.x) > DRAG_THRESHOLD || 
-                      Math.abs(e.screenY - startMousePos.y) > DRAG_THRESHOLD;
-        isDragging = false;
-        
-        if (!invoke) invoke = getInvoke();
-        if (invoke) {
-          try {
-            await invoke('icon_mouse_up', { x: e.screenX, y: e.screenY });
-            
-            // 只有在没有拖拽的情况下才处理双击检测
-            if (!moved) {
-              const currentTime = Date.now();
-              const timeSinceLastClick = currentTime - lastClickTime;
-              
-              // 清除之前的单击超时（完全禁用单击）
-              if (clickTimeout) {
-                clearTimeout(clickTimeout);
-                clickTimeout = null;
-              }
-              
-              // 检查是否是双击（两次点击间隔小于 DOUBLE_CLICK_DELAY）
-              if (timeSinceLastClick < DOUBLE_CLICK_DELAY && timeSinceLastClick > 0) {
-                // 双击：立即触发呼出/隐藏主界面
-                lastClickTime = 0; // 重置，避免触发第三次点击
-                if (!invoke) invoke = getInvoke();
-                if (invoke) {
-                  try {
-                    await invoke('icon_click');
-                  } catch (err) {
-                    console.error('Double click error:', err);
-                  }
-                }
-              } else {
-                // 第一次点击，记录时间，等待可能的第二次点击
-                // 不设置任何超时，完全禁用单击
-                lastClickTime = currentTime;
-              }
-            }
-          } catch (err) {
-            console.error('Mouse up error:', err);
-          }
-        }
-        
-        e.preventDefault();
-      }
-    });
-    
-    // 使用原生 dblclick 事件作为主要触发方式（更可靠）
+
+    // ---- 双击切换主窗口 ----
     document.addEventListener('dblclick', async (e) => {
       e.preventDefault();
       e.stopPropagation();
-      
-      // 清除单击超时和状态
-      if (clickTimeout) {
-        clearTimeout(clickTimeout);
-        clickTimeout = null;
-      }
-      lastClickTime = 0;
-      
-      // 确保没有在拖拽
-      if (!isDragging) {
-        if (!invoke) invoke = getInvoke();
-        if (invoke) {
-          try {
-            await invoke('icon_click');
-          } catch (err) {
-            console.error('Double click error:', err);
-          }
-        }
+      if (!invoke) invoke = getInvoke();
+      if (invoke) {
+        try { await invoke('icon_click'); } catch (err) { console.error('Double click error:', err); }
       }
     });
-    
+
     document.addEventListener('selectstart', e => e.preventDefault());
-    window.addEventListener('mouseup', () => { 
-      isDragging = false; 
-    });
-    document.addEventListener('mouseleave', () => { 
-      isDragging = false; 
-    });
   </script>
 </body>
 </html>

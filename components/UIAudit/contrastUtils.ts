@@ -182,3 +182,200 @@ export function hexToRgb(hex: string): [number, number, number] {
   if (!m) return [0, 0, 0];
   return [parseInt(m[0], 16), parseInt(m[1], 16), parseInt(m[2], 16)];
 }
+
+// ---- 渐变感知 WCAG 审计 ----
+
+type RGB = [number, number, number];
+
+/**
+ * 沿元素边界外扩 offset 像素，等距采样 numPoints 个背景色
+ * 同时取元素内部 20%-80% 区域的众数作为前景色
+ */
+export function sampleGradientAware(
+  ctx: CanvasRenderingContext2D,
+  x: number, y: number, w: number, h: number,
+  offset: number = 4,
+  numPoints: number = 16,
+): { fgColor: RGB; bgSamples: RGB[]; bgWorst: RGB; minContrast: number; avgContrast: number } | null {
+  if (w < 4 || h < 4) return null;
+  const cW = ctx.canvas.width, cH = ctx.canvas.height;
+
+  // --- 前景色：内部 20%-80% 区域众数 ---
+  const inX = Math.round(x + w * 0.2), inY = Math.round(y + h * 0.2);
+  const inW = Math.max(2, Math.round(w * 0.6)), inH = Math.max(2, Math.round(h * 0.6));
+  const fgColor = sampleModeColor(ctx, inX, inY, inW, inH);
+  if (!fgColor) return null;
+
+  // --- 背景色：外扩环形等距采样 ---
+  const bgSamples: RGB[] = [];
+  const perimeter = 2 * (w + h + offset * 4);
+  const step = perimeter / numPoints;
+
+  for (let i = 0; i < numPoints; i++) {
+    let dist = i * step;
+    let sx: number, sy: number;
+
+    const topLen = w + offset * 2;
+    const rightLen = h + offset * 2;
+    const bottomLen = topLen;
+
+    if (dist < topLen) {
+      sx = x - offset + dist;
+      sy = y - offset;
+    } else if (dist < topLen + rightLen) {
+      const d = dist - topLen;
+      sx = x + w + offset;
+      sy = y - offset + d;
+    } else if (dist < topLen + rightLen + bottomLen) {
+      const d = dist - topLen - rightLen;
+      sx = x + w + offset - d;
+      sy = y + h + offset;
+    } else {
+      const d = dist - topLen - rightLen - bottomLen;
+      sx = x - offset;
+      sy = y + h + offset - d;
+    }
+
+    sx = Math.max(0, Math.min(cW - 1, Math.round(sx)));
+    sy = Math.max(0, Math.min(cH - 1, Math.round(sy)));
+    bgSamples.push(pickAreaColor(ctx, sx, sy, 1));
+  }
+
+  // --- 计算所有采样点的对比度 ---
+  let minContrast = Infinity;
+  let worstIdx = 0;
+  let totalContrast = 0;
+
+  for (let i = 0; i < bgSamples.length; i++) {
+    const cr = contrastRatio(fgColor, bgSamples[i]);
+    totalContrast += cr;
+    if (cr < minContrast) {
+      minContrast = cr;
+      worstIdx = i;
+    }
+  }
+
+  return {
+    fgColor,
+    bgSamples,
+    bgWorst: bgSamples[worstIdx],
+    minContrast,
+    avgContrast: totalContrast / bgSamples.length,
+  };
+}
+
+/**
+ * 取区域内的众数颜色（量化到 6-bit 后取频率最高的）
+ */
+function sampleModeColor(
+  ctx: CanvasRenderingContext2D,
+  x: number, y: number, w: number, h: number,
+): RGB | null {
+  try {
+    const data = ctx.getImageData(
+      Math.max(0, x), Math.max(0, y),
+      Math.min(w, ctx.canvas.width - x),
+      Math.min(h, ctx.canvas.height - y),
+    ).data;
+    if (data.length < 4) return null;
+
+    const colorMap = new Map<number, { r: number; g: number; b: number; count: number }>();
+    for (let i = 0; i < data.length; i += 4) {
+      if (data[i + 3] < 128) continue;
+      const qr = data[i] >> 2, qg = data[i + 1] >> 2, qb = data[i + 2] >> 2;
+      const key = (qr << 12) | (qg << 6) | qb;
+      const entry = colorMap.get(key);
+      if (entry) {
+        entry.r += data[i]; entry.g += data[i + 1]; entry.b += data[i + 2];
+        entry.count++;
+      } else {
+        colorMap.set(key, { r: data[i], g: data[i + 1], b: data[i + 2], count: 1 });
+      }
+    }
+
+    let best: { r: number; g: number; b: number; count: number } | null = null;
+    for (const entry of colorMap.values()) {
+      if (!best || entry.count > best.count) best = entry;
+    }
+    if (!best) return null;
+    return [Math.round(best.r / best.count), Math.round(best.g / best.count), Math.round(best.b / best.count)];
+  } catch { return null; }
+}
+
+// ---- 批量 WCAG 审计 ----
+
+export interface WCAGAuditItem {
+  elementId: string;
+  label: string;
+  x: number; y: number; w: number; h: number;
+  fgColor: RGB;
+  bgWorstColor: RGB;
+  minContrast: number;
+  avgContrast: number;
+  wcagLevel: WCAGLevel;
+  wcagLevelLarge: WCAGLevel;
+  pass: boolean;
+  passLarge: boolean;
+  bgSamples: RGB[];
+  touchTargetPass: boolean;
+  touchTargetWarning?: string;
+}
+
+export interface WCAGAuditReport {
+  items: WCAGAuditItem[];
+  passCount: number;
+  failCount: number;
+  passRate: number;
+  overallLevel: WCAGLevel;
+  timestamp: number;
+}
+
+/**
+ * 对所有检测到的元素执行完整 WCAG 审计
+ */
+export function batchWCAGAudit(
+  ctx: CanvasRenderingContext2D,
+  elements: Array<{ id: string; label: string; x: number; y: number; w: number; h: number }>,
+  minTouchPx: number = 44,
+): WCAGAuditReport {
+  const items: WCAGAuditItem[] = [];
+
+  for (const el of elements) {
+    const result = sampleGradientAware(ctx, el.x, el.y, el.w, el.h);
+    if (!result) continue;
+
+    const level = getWCAGLevel(result.minContrast, false);
+    const levelLarge = getWCAGLevel(result.minContrast, true);
+    const touch = checkTouchTarget(el.w, el.h, minTouchPx);
+
+    items.push({
+      elementId: el.id,
+      label: el.label,
+      x: el.x, y: el.y, w: el.w, h: el.h,
+      fgColor: result.fgColor,
+      bgWorstColor: result.bgWorst,
+      minContrast: result.minContrast,
+      avgContrast: result.avgContrast,
+      wcagLevel: level,
+      wcagLevelLarge: levelLarge,
+      pass: level !== 'Fail',
+      passLarge: levelLarge !== 'Fail',
+      bgSamples: result.bgSamples,
+      touchTargetPass: touch.pass,
+      touchTargetWarning: touch.warning,
+    });
+  }
+
+  const passCount = items.filter(i => i.pass).length;
+  const failCount = items.length - passCount;
+  const passRate = items.length > 0 ? passCount / items.length : 1;
+
+  let worstLevel: WCAGLevel = 'AAA';
+  for (const item of items) {
+    if (item.wcagLevel === 'Fail') { worstLevel = 'Fail'; break; }
+    if (item.wcagLevel === 'AA-Large' && worstLevel !== 'Fail') worstLevel = 'AA-Large';
+    if (item.wcagLevel === 'AA' && (worstLevel === 'AAA')) worstLevel = 'AA';
+  }
+
+  return { items, passCount, failCount, passRate, overallLevel: worstLevel, timestamp: Date.now() };
+}

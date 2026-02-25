@@ -17,6 +17,8 @@
  *   合并: NMS (IoU 0.30) + 包含关系去重 + 置信度排序
  */
 
+import { sampleGradientAware } from './contrastUtils';
+
 /* ================================================================
    公共类型
    ================================================================ */
@@ -707,28 +709,34 @@ function classifyElement(w: number, h: number, screenW: number, screenH: number)
    导出工具函数
    ================================================================ */
 
+/**
+ * 渐变感知取色：内部众数作为前景色，外扩环形 16 点采样取最差背景色
+ * 兼容旧接口 { fg, bg }，同时返回增强字段
+ */
 export function sampleBoxColors(
   ctx: CanvasRenderingContext2D,
   canvasX: number, canvasY: number, w: number, h: number,
-): { fg: [number, number, number]; bg: [number, number, number] } | null {
+): {
+  fg: [number, number, number];
+  bg: [number, number, number];
+  minContrast?: number;
+  avgContrast?: number;
+  bgSamples?: [number, number, number][];
+} | null {
   if (w < 6 || h < 6) return null;
   try {
-    const cw = Math.max(4, Math.round(w * 0.4)), ch = Math.max(4, Math.round(h * 0.4));
-    const cx = Math.round(canvasX + (w - cw) / 2), cy = Math.round(canvasY + (h - ch) / 2);
-    const cd = ctx.getImageData(cx, cy, cw, ch).data;
-    let fR = 0, fG = 0, fB = 0, fN = 0;
-    for (let i = 0; i < cd.length; i += 4) { fR += cd[i]; fG += cd[i + 1]; fB += cd[i + 2]; fN++; }
-    let bR = 0, bG = 0, bB = 0, bN = 0;
-    const td = ctx.getImageData(Math.round(canvasX), Math.round(canvasY), Math.round(w), 2).data;
-    for (let i = 0; i < td.length; i += 4) { bR += td[i]; bG += td[i + 1]; bB += td[i + 2]; bN++; }
-    const bd = ctx.getImageData(Math.round(canvasX), Math.round(canvasY + h - 2), Math.round(w), 2).data;
-    for (let i = 0; i < bd.length; i += 4) { bR += bd[i]; bG += bd[i + 1]; bB += bd[i + 2]; bN++; }
-    if (fN === 0 || bN === 0) return null;
+    const result = sampleGradientAware(ctx, canvasX, canvasY, w, h, 4, 16);
+    if (!result) return null;
     return {
-      fg: [Math.round(fR / fN), Math.round(fG / fN), Math.round(fB / fN)],
-      bg: [Math.round(bR / bN), Math.round(bG / bN), Math.round(bB / bN)],
+      fg: result.fgColor,
+      bg: result.bgWorst,
+      minContrast: result.minContrast,
+      avgContrast: result.avgContrast,
+      bgSamples: result.bgSamples,
     };
-  } catch { return null; }
+  } catch {
+    return null;
+  }
 }
 
 export function computeThumbAnchors(

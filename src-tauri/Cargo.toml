@@ -40,9 +40,13 @@ rusqlite = { version = "0.31", features = ["bundled"] }
 image = { version = "0.25", default-features = true }
 psd = "0.3"
 whoami = "1"
+md5 = "0.7"
 walkdir = "2"
 zip = "2"
 futures-util = "0.3"
+ort = { version = "2.0.0-rc.9", features = ["download-binaries", "ndarray"] }
+ndarray = "0.17"
+tokenizers = { version = "0.20", default-features = false, features = ["onig"] }
 
 [target.'cfg(windows)'.dependencies]
 winapi = { version = "0.3", features = ["winuser", "windef", "synchapi", "handleapi", "errhandlingapi", "winnt", "winreg"] }

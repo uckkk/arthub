@@ -186,7 +186,47 @@ fn init_tables(conn: &Connection) -> Result<(), String> {
         );
 
         CREATE INDEX IF NOT EXISTS idx_asset_tags_asset ON asset_tags(asset_id);
-        CREATE INDEX IF NOT EXISTS idx_asset_tags_tag ON asset_tags(tag_id);"
+        CREATE INDEX IF NOT EXISTS idx_asset_tags_tag ON asset_tags(tag_id);
+
+        -- 资产主色调表 (颜色搜索用)
+        CREATE TABLE IF NOT EXISTS asset_colors (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            asset_id INTEGER NOT NULL,
+            hex TEXT NOT NULL,
+            ratio REAL NOT NULL DEFAULT 0,
+            r INTEGER NOT NULL DEFAULT 0,
+            g INTEGER NOT NULL DEFAULT 0,
+            b INTEGER NOT NULL DEFAULT 0,
+            h REAL NOT NULL DEFAULT 0,
+            s REAL NOT NULL DEFAULT 0,
+            l REAL NOT NULL DEFAULT 0,
+            FOREIGN KEY (asset_id) REFERENCES assets(id) ON DELETE CASCADE
+        );
+        CREATE INDEX IF NOT EXISTS idx_asset_colors_asset ON asset_colors(asset_id);
+        CREATE INDEX IF NOT EXISTS idx_asset_colors_h ON asset_colors(h);
+
+        -- 资产哈希表 (重复检测用)
+        CREATE TABLE IF NOT EXISTS asset_hashes (
+            asset_id INTEGER PRIMARY KEY,
+            md5 TEXT NOT NULL DEFAULT '',
+            phash TEXT NOT NULL DEFAULT '',
+            FOREIGN KEY (asset_id) REFERENCES assets(id) ON DELETE CASCADE
+        );
+        CREATE INDEX IF NOT EXISTS idx_asset_hashes_md5 ON asset_hashes(md5);
+
+        CREATE TABLE IF NOT EXISTS asset_annotations (
+            asset_id INTEGER PRIMARY KEY,
+            data TEXT NOT NULL DEFAULT '[]',
+            updated_at TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+            FOREIGN KEY (asset_id) REFERENCES assets(id) ON DELETE CASCADE
+        );
+
+        CREATE TABLE IF NOT EXISTS asset_embeddings (
+            asset_id INTEGER PRIMARY KEY,
+            embedding BLOB NOT NULL,
+            model_version TEXT NOT NULL DEFAULT 'clip-vit-base-patch32',
+            FOREIGN KEY (asset_id) REFERENCES assets(id) ON DELETE CASCADE
+        );"
     ).map_err(|e| format!("创建数据表失败: {}", e))?;
 
     Ok(())
@@ -303,8 +343,34 @@ pub fn query_assets(conn: &Connection, params: &AssetQueryParams) -> Result<Asse
 
     if let Some(ref search) = params.search {
         if !search.is_empty() {
-            conditions.push(format!("file_name LIKE ?{}", bind_values.len() + 1));
-            bind_values.push(Box::new(format!("%{}%", search)));
+            // Advanced search: support multiple terms (AND), exclusion (-term), OR (|)
+            let raw = search.trim();
+            if raw.contains('|') {
+                // OR mode: any of the terms
+                let terms: Vec<&str> = raw.split('|').map(|s| s.trim()).filter(|s| !s.is_empty()).collect();
+                let mut or_parts = Vec::new();
+                for t in &terms {
+                    or_parts.push(format!("file_name LIKE ?{}", bind_values.len() + 1));
+                    bind_values.push(Box::new(format!("%{}%", t)));
+                }
+                if !or_parts.is_empty() {
+                    conditions.push(format!("({})", or_parts.join(" OR ")));
+                }
+            } else {
+                // AND mode with exclusion support: "hero -draft" → must match hero, must NOT match draft
+                let tokens: Vec<&str> = raw.split_whitespace().collect();
+                for tok in &tokens {
+                    if let Some(neg) = tok.strip_prefix('-') {
+                        if !neg.is_empty() {
+                            conditions.push(format!("file_name NOT LIKE ?{}", bind_values.len() + 1));
+                            bind_values.push(Box::new(format!("%{}%", neg)));
+                        }
+                    } else {
+                        conditions.push(format!("file_name LIKE ?{}", bind_values.len() + 1));
+                        bind_values.push(Box::new(format!("%{}%", tok)));
+                    }
+                }
+            }
         }
     }
 
@@ -780,4 +846,178 @@ pub fn get_smart_folders(conn: &Connection, space_type: Option<&str>) -> Result<
           .collect();
         Ok(folders)
     }
+}
+
+// ---- Color Index Operations ----
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct AssetColor {
+    pub asset_id: i64,
+    pub hex: String,
+    pub ratio: f64,
+    pub r: i32,
+    pub g: i32,
+    pub b: i32,
+    pub h: f64,
+    pub s: f64,
+    pub l: f64,
+}
+
+pub fn upsert_asset_colors(conn: &Connection, asset_id: i64, colors: &[AssetColor]) -> Result<(), String> {
+    conn.execute("DELETE FROM asset_colors WHERE asset_id = ?1", params![asset_id])
+        .map_err(|e| e.to_string())?;
+    let mut stmt = conn.prepare(
+        "INSERT INTO asset_colors (asset_id, hex, ratio, r, g, b, h, s, l) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9)"
+    ).map_err(|e| e.to_string())?;
+    for c in colors {
+        let _ = stmt.execute(params![asset_id, c.hex, c.ratio, c.r, c.g, c.b, c.h, c.s, c.l]);
+    }
+    Ok(())
+}
+
+pub fn get_asset_ids_without_colors(conn: &Connection) -> Result<Vec<(i64, String)>, String> {
+    let mut stmt = conn.prepare(
+        "SELECT a.id, a.thumb_path FROM assets a LEFT JOIN asset_colors ac ON a.id = ac.asset_id WHERE ac.id IS NULL AND a.thumb_path != '' LIMIT 500"
+    ).map_err(|e| e.to_string())?;
+    let rows = stmt.query_map([], |row| {
+        Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?))
+    }).map_err(|e| e.to_string())?
+      .filter_map(|r| r.ok())
+      .collect();
+    Ok(rows)
+}
+
+pub fn query_assets_by_color(conn: &Connection, h_min: f64, h_max: f64, s_min: f64, l_min: f64, l_max: f64) -> Result<Vec<i64>, String> {
+    let sql = if h_min <= h_max {
+        "SELECT DISTINCT asset_id FROM asset_colors WHERE h >= ?1 AND h <= ?2 AND s >= ?3 AND l >= ?4 AND l <= ?5 AND ratio >= 0.05 ORDER BY ratio DESC"
+    } else {
+        "SELECT DISTINCT asset_id FROM asset_colors WHERE (h >= ?1 OR h <= ?2) AND s >= ?3 AND l >= ?4 AND l <= ?5 AND ratio >= 0.05 ORDER BY ratio DESC"
+    };
+    let mut stmt = conn.prepare(sql).map_err(|e| e.to_string())?;
+    let ids = stmt.query_map(params![h_min, h_max, s_min, l_min, l_max], |row| row.get::<_, i64>(0))
+        .map_err(|e| e.to_string())?
+        .filter_map(|r| r.ok())
+        .collect();
+    Ok(ids)
+}
+
+// ---- Hash Operations (duplicate detection) ----
+
+pub fn upsert_asset_hash(conn: &Connection, asset_id: i64, md5: &str, phash: &str) -> Result<(), String> {
+    conn.execute(
+        "INSERT OR REPLACE INTO asset_hashes (asset_id, md5, phash) VALUES (?1, ?2, ?3)",
+        params![asset_id, md5, phash],
+    ).map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+pub fn find_duplicate_md5(conn: &Connection) -> Result<Vec<(String, Vec<i64>)>, String> {
+    let mut stmt = conn.prepare(
+        "SELECT md5, GROUP_CONCAT(asset_id) FROM asset_hashes WHERE md5 != '' GROUP BY md5 HAVING COUNT(*) > 1"
+    ).map_err(|e| e.to_string())?;
+    let results = stmt.query_map([], |row| {
+        let md5: String = row.get(0)?;
+        let ids_str: String = row.get(1)?;
+        Ok((md5, ids_str))
+    }).map_err(|e| e.to_string())?
+      .filter_map(|r| r.ok())
+      .map(|(md5, ids_str)| {
+          let ids: Vec<i64> = ids_str.split(',').filter_map(|s| s.parse().ok()).collect();
+          (md5, ids)
+      })
+      .collect();
+    Ok(results)
+}
+
+pub fn get_asset_ids_without_hash(conn: &Connection) -> Result<Vec<(i64, String)>, String> {
+    let mut stmt = conn.prepare(
+        "SELECT a.id, a.file_path FROM assets a LEFT JOIN asset_hashes ah ON a.id = ah.asset_id WHERE ah.asset_id IS NULL LIMIT 500"
+    ).map_err(|e| e.to_string())?;
+    let rows = stmt.query_map([], |row| {
+        Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?))
+    }).map_err(|e| e.to_string())?
+      .filter_map(|r| r.ok())
+      .collect();
+    Ok(rows)
+}
+
+// ---- Annotation Operations ----
+
+pub fn save_annotation(conn: &Connection, asset_id: i64, data: &str) -> Result<(), String> {
+    conn.execute(
+        "INSERT OR REPLACE INTO asset_annotations (asset_id, data, updated_at)
+         VALUES (?1, ?2, datetime('now','localtime'))",
+        params![asset_id, data],
+    ).map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+pub fn get_annotation(conn: &Connection, asset_id: i64) -> Result<String, String> {
+    let result = conn.query_row(
+        "SELECT data FROM asset_annotations WHERE asset_id = ?1",
+        params![asset_id],
+        |row| row.get::<_, String>(0),
+    );
+    match result {
+        Ok(data) => Ok(data),
+        Err(rusqlite::Error::QueryReturnedNoRows) => Ok("[]".to_string()),
+        Err(e) => Err(e.to_string()),
+    }
+}
+
+// ---- AI Embedding Operations ----
+
+pub fn upsert_embedding(conn: &Connection, asset_id: i64, embedding: &[u8], model_version: &str) -> Result<(), String> {
+    conn.execute(
+        "INSERT OR REPLACE INTO asset_embeddings (asset_id, embedding, model_version) VALUES (?1, ?2, ?3)",
+        params![asset_id, embedding, model_version],
+    ).map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+pub fn mark_embedding_failed(conn: &Connection, asset_id: i64) -> Result<(), String> {
+    conn.execute(
+        "INSERT OR REPLACE INTO asset_embeddings (asset_id, embedding, model_version) VALUES (?1, X'', 'failed')",
+        params![asset_id],
+    ).map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+pub fn get_asset_ids_without_embedding(conn: &Connection, limit: u32) -> Result<Vec<(i64, String)>, String> {
+    let mut stmt = conn.prepare(
+        "SELECT a.id, a.file_path FROM assets a
+         LEFT JOIN asset_embeddings ae ON a.id = ae.asset_id
+         WHERE ae.asset_id IS NULL
+         AND a.file_ext IN ('png','jpg','jpeg','gif','bmp','webp','tiff','tif','svg','ico','psd','tga')
+         LIMIT ?1"
+    ).map_err(|e| e.to_string())?;
+    let rows = stmt.query_map(params![limit], |row| {
+        Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?))
+    }).map_err(|e| e.to_string())?
+      .filter_map(|r| r.ok())
+      .collect();
+    Ok(rows)
+}
+
+pub fn get_all_embeddings(conn: &Connection) -> Result<Vec<(i64, Vec<u8>)>, String> {
+    let mut stmt = conn.prepare(
+        "SELECT asset_id, embedding FROM asset_embeddings WHERE model_version != 'failed'"
+    ).map_err(|e| e.to_string())?;
+    let rows = stmt.query_map([], |row| {
+        Ok((row.get::<_, i64>(0)?, row.get::<_, Vec<u8>>(1)?))
+    }).map_err(|e| e.to_string())?
+      .filter_map(|r| r.ok())
+      .collect();
+    Ok(rows)
+}
+
+pub fn count_embeddings(conn: &Connection) -> Result<(i64, i64), String> {
+    let total: i64 = conn.query_row(
+        "SELECT COUNT(*) FROM assets WHERE file_ext IN ('png','jpg','jpeg','gif','bmp','webp','tiff','tif','svg','ico','psd','tga')",
+        [], |row| row.get(0),
+    ).map_err(|e| e.to_string())?;
+    let indexed: i64 = conn.query_row(
+        "SELECT COUNT(*) FROM asset_embeddings WHERE model_version != 'failed'", [], |row| row.get(0),
+    ).map_err(|e| e.to_string())?;
+    Ok((indexed, total))
 }

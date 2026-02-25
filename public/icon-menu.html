@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    html, body {
+      background: #1e1e1e;
+      overflow: hidden;
+      font-family: -apple-system, 'Segoe UI', sans-serif;
+      user-select: none;
+      width: 100%;
+      height: 100%;
+    }
+    .menu {
+      background: #1e1e1e;
+      border: 1px solid #3a3a3a;
+      border-radius: 6px;
+      padding: 4px 0;
+      width: 100%;
+      height: 100%;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+    }
+    .item {
+      padding: 7px 18px;
+      color: #d4d4d4;
+      font-size: 12px;
+      cursor: pointer;
+      white-space: nowrap;
+      transition: background 0.1s;
+    }
+    .item:hover { background: #2a5dff; color: #fff; }
+    .sep { height: 1px; background: #333; margin: 4px 8px; }
+  </style>
+</head>
+<body>
+  <div class="menu" id="menu">
+    <div class="item" id="toggle-main">显示 / 隐藏主窗口</div>
+    <div class="sep"></div>
+    <div class="item" id="exit-app" style="color:#ff6b6b;">退出应用</div>
+  </div>
+  <script>
+    let invoke;
+    function getInvoke() {
+      if (window.__TAURI_INTERNALS__?.invoke) return window.__TAURI_INTERNALS__.invoke.bind(window.__TAURI_INTERNALS__);
+      if (window.__TAURI__?.invoke) return window.__TAURI__.invoke.bind(window.__TAURI__);
+      return null;
+    }
+    invoke = getInvoke();
+    if (!invoke) {
+      let r = 0;
+      const iv = setInterval(() => { invoke = getInvoke(); if (invoke || ++r >= 20) clearInterval(iv); }, 50);
+    }
+
+    async function run(cmd) {
+      if (!invoke) invoke = getInvoke();
+      if (invoke) { try { await invoke(cmd); } catch(e) { console.error(e); } }
+    }
+
+    document.getElementById('toggle-main').addEventListener('click', async () => {
+      await run('icon_click');
+      await run('close_icon_menu');
+    });
+    document.getElementById('exit-app').addEventListener('click', async () => {
+      await run('app_exit');
+    });
+
+    // 延迟注册 blur 事件，防止窗口刚创建时焦点切换导致菜单立刻关闭
+    setTimeout(() => {
+      window.addEventListener('blur', () => { run('close_icon_menu'); });
+    }, 300);
+  </script>
+</body>
+</html>

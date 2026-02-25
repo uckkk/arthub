@@ -12,6 +12,40 @@ export interface FileStorageConfig {
 
 const STORAGE_CONFIG_KEY = 'arthub_file_storage_config';
 let cachedStoragePath: string | null = null;
+const DEFAULT_CONFIG: FileStorageConfig = { enabled: false, directoryPath: null, lastSyncTime: null };
+
+// 获取 appDataDir 下的持久化配置文件路径（跨 WebView 存储重置仍可用）
+async function getPersistentConfigPath(): Promise<string> {
+  const { invoke } = await import('@tauri-apps/api/tauri');
+  return invoke('sync_get_config_path');
+}
+
+// 将配置持久化到 appDataDir 文件（异步，不阻塞主流程）
+async function persistConfigToFile(config: FileStorageConfig): Promise<void> {
+  try {
+    const configPath = await getPersistentConfigPath();
+    await syncWriteFile(configPath, JSON.stringify(config));
+  } catch (e) {
+    console.warn('持久化同步配置失败:', e);
+  }
+}
+
+// 从 appDataDir 文件恢复配置（localStorage 为空时的兜底）
+async function loadConfigFromFile(): Promise<FileStorageConfig | null> {
+  try {
+    const configPath = await getPersistentConfigPath();
+    const fileExists = await syncFileExists(configPath);
+    if (!fileExists) return null;
+    const text = await syncReadFile(configPath);
+    const parsed = JSON.parse(text);
+    if (parsed && typeof parsed.directoryPath === 'string') {
+      return parsed as FileStorageConfig;
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
 
 // 获取存储配置
 export function getStorageConfig(): FileStorageConfig {
@@ -20,13 +54,13 @@ export function getStorageConfig(): FileStorageConfig {
     try {
       return JSON.parse(saved);
     } catch {
-      return { enabled: false, directoryPath: null, lastSyncTime: null };
+      return DEFAULT_CONFIG;
     }
   }
-  return { enabled: false, directoryPath: null, lastSyncTime: null };
+  return DEFAULT_CONFIG;
 }
 
-// 保存存储配置
+// 保存存储配置（同时持久化到文件）
 export function saveStorageConfig(config: Partial<FileStorageConfig>): void {
   const current = getStorageConfig();
   const newConfig: FileStorageConfig = {
@@ -35,6 +69,9 @@ export function saveStorageConfig(config: Partial<FileStorageConfig>): void {
     lastSyncTime: config.lastSyncTime !== undefined ? config.lastSyncTime : current.lastSyncTime
   };
   localStorage.setItem(STORAGE_CONFIG_KEY, JSON.stringify(newConfig));
+  if (newConfig.directoryPath) {
+    persistConfigToFile(newConfig);
+  }
 }
 
 // 检查是否在 Tauri 环境中
@@ -152,7 +189,8 @@ export async function autoSyncToFile(): Promise<boolean> {
     
     for (let i = 0; i < localStorage.length; i++) {
       const key = localStorage.key(i);
-      if (key && key.startsWith('arthub_') && key !== STORAGE_CONFIG_KEY) {
+      // 包含所有 arthub_ 开头的数据（含存储配置本身，用于跨版本恢复）
+      if (key && key.startsWith('arthub_')) {
         try {
           const value = localStorage.getItem(key);
           if (value) {
@@ -174,6 +212,13 @@ export async function autoSyncToFile(): Promise<boolean> {
       }
     }
 
+    // 如果 localStorage 中有效数据为空（仅有配置），跳过写入以避免覆盖
+    const dataKeysCount = Object.keys(allData).filter(k => k !== STORAGE_CONFIG_KEY).length;
+    if (dataKeysCount === 0) {
+      console.warn('localStorage 无有效数据，跳过同步以避免覆盖现有文件');
+      return false;
+    }
+
     const storagePath = await getSavedStoragePath();
     if (!storagePath) {
       return false;
@@ -191,6 +236,16 @@ export async function autoSyncToFile(): Promise<boolean> {
         console.error('FS API 写入也失败:', fsError);
         throw fsError;
       }
+    }
+
+    // 同时写备份到 appDataDir（确保跨版本可恢复）
+    try {
+      const configPath = await getPersistentConfigPath();
+      const backupDir = configPath.substring(0, configPath.lastIndexOf('\\') || configPath.lastIndexOf('/'));
+      const backupPath = backupDir + (backupDir.includes('\\') ? '\\' : '/') + 'arthub_data.json';
+      await syncWriteFile(backupPath, jsonContent);
+    } catch (e) {
+      console.warn('写入 appDataDir 备份失败:', e);
     }
 
     saveStorageConfig({ lastSyncTime: Date.now() });
@@ -369,7 +424,26 @@ export async function autoImportFromFile(): Promise<ImportResult> {
 
   let config = getStorageConfig();
   
-  // 如果配置未启用，先检查是否有已保存的路径
+  // localStorage 为空时，从 appDataDir 持久化文件恢复配置
+  if (!config.directoryPath) {
+    try {
+      const fileConfig = await loadConfigFromFile();
+      if (fileConfig && fileConfig.directoryPath) {
+        console.log('从持久化配置文件恢复同步目录:', fileConfig.directoryPath);
+        saveStorageConfig({
+          enabled: fileConfig.enabled,
+          directoryPath: fileConfig.directoryPath,
+          lastSyncTime: fileConfig.lastSyncTime
+        });
+        cachedStoragePath = fileConfig.directoryPath;
+        config = getStorageConfig();
+      }
+    } catch (error) {
+      console.warn('从配置文件恢复失败:', error);
+    }
+  }
+
+  // 如果有路径但未启用，检查数据文件是否存在
   if (!config.enabled && config.directoryPath) {
     try {
       const dataFilePath = await getDataFilePath();

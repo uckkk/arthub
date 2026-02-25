@@ -6,12 +6,13 @@ import {
   Star, Tag, MessageSquare, Sparkles, Edit3, Check, Palette, Copy,
   MoreHorizontal, ChevronUp, SlidersHorizontal, Bookmark,
   Lock, Unlock, History, Shield, Users, AlertTriangle, Clock,
-  Settings, Download, Video, Music
+  Settings, Download, Video, Music, List, Shuffle, Type, Columns, RotateCcw
 } from 'lucide-react';
 import { invoke } from '@tauri-apps/api/tauri';
 import { convertFileSrc } from '@tauri-apps/api/tauri';
 import { listen } from '@tauri-apps/api/event';
 import { open } from '@tauri-apps/api/dialog';
+import { getSavedStoragePath } from '../services/fileStorageService';
 import { useToast } from './Toast';
 import AssetComparePanel from './AssetComparePanel';
 import { SkeletonImage, Skeleton, SkeletonMasonryGrid, SkeletonDetailPanel, SkeletonPreview, SkeletonText, SkeletonList } from './ui/Skeleton';
@@ -168,6 +169,7 @@ const VIDEO_EXTS = new Set(['mp4', 'mov', 'avi', 'mkv', 'webm', 'flv', 'wmv', 'm
 const AUDIO_EXTS = new Set(['mp3', 'wav', 'ogg', 'flac', 'aac', 'wma', 'm4a', 'opus']);
 const MESH_EXTS = new Set(['fbx', 'obj', 'gltf', 'glb', 'blend', '3ds', 'dae', 'stl']);
 const SPINE_EXTS = new Set(['spine', 'skel', 'atlas']);
+const FONT_EXTS = new Set(['ttf', 'otf', 'woff', 'woff2']);
 
 function formatFileSize(bytes: number): string {
   if (bytes < 1024) return bytes + 'B';
@@ -188,6 +190,7 @@ function getFileIcon(ext: string) {
   if (AUDIO_EXTS.has(ext)) return Music;
   if (MESH_EXTS.has(ext)) return Box;
   if (SPINE_EXTS.has(ext)) return Box;
+  if (FONT_EXTS.has(ext)) return Type;
   return FileQuestion;
 }
 
@@ -200,6 +203,7 @@ function getExtColor(ext: string): string {
     mp3: '#a855f7', wav: '#a855f7', ogg: '#a855f7', flac: '#a855f7', aac: '#a855f7',
     fbx: '#22d3ee', obj: '#22d3ee', gltf: '#22d3ee', glb: '#22d3ee', blend: '#22d3ee',
     spine: '#f97316', skel: '#f97316', atlas: '#f97316',
+    ttf: '#14b8a6', otf: '#14b8a6', woff: '#14b8a6', woff2: '#14b8a6',
   };
   return map[ext] || '#6b7280';
 }
@@ -1102,7 +1106,8 @@ const ContextMenu: React.FC<{
   onSetRating: (rating: number) => void;
   onCopyPath: () => void;
   onShowDetail: () => void;
-}> = ({ menu, allTags, assetTags, assetRating, onClose, onAddTag, onRemoveTag, onSetRating, onCopyPath, onShowDetail }) => {
+  onOpenInNewWindow?: () => void;
+}> = ({ menu, allTags, assetTags, assetRating, onClose, onAddTag, onRemoveTag, onSetRating, onCopyPath, onShowDetail, onOpenInNewWindow }) => {
   const [showTagSub, setShowTagSub] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
 
@@ -1132,6 +1137,14 @@ const ContextMenu: React.FC<{
       >
         <Copy size={12} /> 复制路径
       </button>
+      {onOpenInNewWindow && (
+        <button
+          className="w-full text-left px-3 py-1.5 text-xs text-[#ccc] hover:bg-[#2a2a2a] flex items-center gap-2"
+          onClick={() => { onOpenInNewWindow(); onClose(); }}
+        >
+          <Columns size={12} /> 新窗口打开
+        </button>
+      )}
 
       <div className="border-t border-[#222] my-1" />
 
@@ -1180,7 +1193,7 @@ const ContextMenu: React.FC<{
 };
 
 // ============================================================
-// FFmpeg Settings Panel
+// Settings Panel (AI Models + FFmpeg)
 // ============================================================
 
 const FfmpegSettingsPanel: React.FC<{
@@ -1189,6 +1202,10 @@ const FfmpegSettingsPanel: React.FC<{
   const [status, setStatus] = useState<FfmpegStatusInfo | null>(null);
   const [downloading, setDownloading] = useState(false);
   const [progress, setProgress] = useState<FfmpegDownloadProgress | null>(null);
+  const [aiModelsDir, setAiModelsDir] = useState('');
+  const [aiDefaultDir, setAiDefaultDir] = useState('');
+  const [aiIsCustom, setAiIsCustom] = useState(false);
+  const [aiFilesReady, setAiFilesReady] = useState(false);
   const { showToast } = useToast();
 
   useEffect(() => {
@@ -1196,6 +1213,14 @@ const FfmpegSettingsPanel: React.FC<{
       try {
         const s = await invoke<FfmpegStatusInfo>('ffmpeg_check');
         setStatus(s);
+      } catch { /* ignore */ }
+      try {
+        const info = await invoke<{ models_dir: string; default_dir: string; is_custom: boolean }>('ai_get_models_dir');
+        setAiModelsDir(info.models_dir);
+        setAiDefaultDir(info.default_dir);
+        setAiIsCustom(info.is_custom);
+        const check = await invoke<{ all_ready: boolean }>('ai_check_model');
+        setAiFilesReady(check.all_ready);
       } catch { /* ignore */ }
     })();
   }, []);
@@ -1207,7 +1232,6 @@ const FfmpegSettingsPanel: React.FC<{
         setProgress(event.payload);
         if (event.payload.phase === 'complete') {
           setDownloading(false);
-          // Refresh status
           invoke<FfmpegStatusInfo>('ffmpeg_check').then(setStatus).catch(() => {});
         }
       });
@@ -1227,70 +1251,140 @@ const FfmpegSettingsPanel: React.FC<{
     }
   };
 
+  const handleSelectAiDir = async () => {
+    try {
+      const selected = await open({ directory: true, multiple: false, title: '选择 AI 模型存储目录' });
+      if (!selected || typeof selected !== 'string') return;
+      await invoke('ai_set_models_dir', { path: selected });
+      setAiModelsDir(selected);
+      setAiIsCustom(true);
+      const check = await invoke<{ all_ready: boolean }>('ai_check_model');
+      setAiFilesReady(check.all_ready);
+      showToast('success', '模型目录已更新');
+    } catch (e: any) {
+      showToast('error', e?.toString() || '设置失败');
+    }
+  };
+
+  const handleResetAiDir = async () => {
+    try {
+      await invoke('ai_set_models_dir', { path: aiDefaultDir });
+      setAiModelsDir(aiDefaultDir);
+      setAiIsCustom(false);
+      const check = await invoke<{ all_ready: boolean }>('ai_check_model');
+      setAiFilesReady(check.all_ready);
+      showToast('success', '已恢复默认目录');
+    } catch (e: any) {
+      showToast('error', e?.toString() || '重置失败');
+    }
+  };
+
   return (
     <div className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center" onClick={onClose}>
-      <div className="bg-[#1a1a1a] border border-[#333] rounded-xl shadow-2xl w-[420px] p-5" onClick={e => e.stopPropagation()}>
-        <div className="flex items-center justify-between mb-4">
+      <div className="bg-[#1a1a1a] border border-[#333] rounded-xl shadow-2xl w-[480px] max-h-[80vh] overflow-y-auto p-5" onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between mb-5">
           <h3 className="text-sm font-medium text-white flex items-center gap-2">
-            <Video size={16} className="text-[#3b82f6]" />
-            FFmpeg 视频处理
+            <Settings size={16} className="text-[#3b82f6]" />
+            资源管理设置
           </h3>
           <button onClick={onClose} className="text-[#555] hover:text-[#aaa]"><X size={16} /></button>
         </div>
 
-        {/* Status */}
-        <div className={`flex items-center gap-3 p-3 rounded-lg mb-4 ${
-          status?.installed ? 'bg-[#22c55e]/10' : 'bg-[#f59e0b]/10'
-        }`}>
-          <div className={`w-8 h-8 rounded-full flex items-center justify-center ${
-            status?.installed ? 'bg-[#22c55e]/20 text-[#22c55e]' : 'bg-[#f59e0b]/20 text-[#f59e0b]'
-          }`}>
-            {status?.installed ? <Check size={16} /> : <AlertTriangle size={16} />}
-          </div>
-          <div className="flex-1">
-            <div className="text-xs font-medium text-[#ccc]">
-              {status?.installed ? '已安装' : '未安装'}
+        {/* AI Model Path Section */}
+        <div className="mb-5">
+          <h4 className="text-xs font-medium text-[#ccc] mb-3 flex items-center gap-2">
+            <Sparkles size={13} className="text-purple-400" />
+            AI 语义搜索模型
+          </h4>
+
+          <div className="bg-[#111] rounded-lg p-3 mb-3">
+            <div className="flex items-center gap-2 mb-2">
+              <div className={`w-2 h-2 rounded-full flex-none ${aiFilesReady ? 'bg-[#22c55e]' : 'bg-[#666]'}`} />
+              <span className="text-[11px] text-[#aaa]">
+                {aiFilesReady ? '模型已就绪' : '模型未下载'}
+              </span>
             </div>
-            {status?.version && (
-              <div className="text-[10px] text-[#666] truncate">{status.version}</div>
-            )}
-            {status?.path && (
-              <div className="text-[10px] text-[#555] truncate">{status.path}</div>
-            )}
+            <div className="text-[10px] text-[#666] break-all font-mono leading-relaxed mb-2">
+              {aiModelsDir || '加载中…'}
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={handleSelectAiDir}
+                className="flex items-center gap-1 px-2.5 py-1.5 bg-[#1a1a1a] hover:bg-[#2a2a2a] text-[#aaa] rounded text-[11px] border border-[#333] transition-colors"
+              >
+                <FolderOpen size={11} />
+                选择目录
+              </button>
+              {aiIsCustom && (
+                <button
+                  onClick={handleResetAiDir}
+                  className="flex items-center gap-1 px-2.5 py-1.5 text-[#888] hover:text-[#ccc] rounded text-[11px] transition-colors"
+                >
+                  <RotateCcw size={11} />
+                  恢复默认
+                </button>
+              )}
+            </div>
           </div>
+
+          <p className="text-[10px] text-[#555] leading-relaxed">
+            CLIP 视觉语义模型 (~600MB)。如本地已有模型文件，可直接指向对应目录（需包含 clip-vision.onnx、clip-text.onnx、tokenizer.json）。
+            模型下载后可完全离线使用。
+          </p>
         </div>
 
-        <p className="text-[11px] text-[#777] mb-4">
-          FFmpeg 用于生成视频文件的缩略图预览。安装后将自动支持 MP4、MOV、AVI、MKV 等视频格式的缩略图。
-          安装过程在后台进行，不影响其他操作。
-        </p>
+        <div className="h-px bg-[#222] mb-5" />
 
-        {/* Download progress */}
-        {downloading && progress && (
-          <div className="mb-4">
-            <div className="flex items-center gap-2 mb-1">
-              <Loader2 size={12} className="animate-spin text-[#3b82f6]" />
-              <span className="text-[11px] text-[#aaa]">{progress.message}</span>
+        {/* FFmpeg Section */}
+        <div>
+          <h4 className="text-xs font-medium text-[#ccc] mb-3 flex items-center gap-2">
+            <Video size={13} className="text-[#3b82f6]" />
+            FFmpeg 视频处理
+          </h4>
+
+          <div className={`flex items-center gap-3 p-3 rounded-lg mb-3 ${
+            status?.installed ? 'bg-[#22c55e]/10' : 'bg-[#f59e0b]/10'
+          }`}>
+            <div className={`w-7 h-7 rounded-full flex items-center justify-center flex-none ${
+              status?.installed ? 'bg-[#22c55e]/20 text-[#22c55e]' : 'bg-[#f59e0b]/20 text-[#f59e0b]'
+            }`}>
+              {status?.installed ? <Check size={14} /> : <AlertTriangle size={14} />}
             </div>
-            <div className="h-2 bg-[#111] rounded-full overflow-hidden">
-              <div
-                className="h-full bg-[#3b82f6] rounded-full transition-all"
-                style={{ width: `${progress.progress * 100}%` }}
-              />
+            <div className="flex-1 min-w-0">
+              <div className="text-xs font-medium text-[#ccc]">
+                {status?.installed ? '已安装' : '未安装'}
+              </div>
+              {status?.version && <div className="text-[10px] text-[#666] truncate">{status.version}</div>}
+              {status?.path && <div className="text-[10px] text-[#555] truncate">{status.path}</div>}
             </div>
           </div>
-        )}
 
-        {/* Actions */}
-        {!status?.installed && !downloading && (
-          <button
-            onClick={handleInstall}
-            className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-[#2563eb] text-white text-xs rounded-lg hover:bg-[#1d4ed8] transition-colors"
-          >
-            <Download size={14} />
-            自动下载安装 FFmpeg
-          </button>
-        )}
+          <p className="text-[10px] text-[#555] leading-relaxed mb-3">
+            用于生成视频缩略图。安装后自动支持 MP4、MOV、AVI、MKV 等格式。
+          </p>
+
+          {downloading && progress && (
+            <div className="mb-3">
+              <div className="flex items-center gap-2 mb-1">
+                <Loader2 size={12} className="animate-spin text-[#3b82f6]" />
+                <span className="text-[11px] text-[#aaa]">{progress.message}</span>
+              </div>
+              <div className="h-1.5 bg-[#222] rounded-full overflow-hidden">
+                <div className="h-full bg-[#3b82f6] rounded-full transition-all" style={{ width: `${progress.progress * 100}%` }} />
+              </div>
+            </div>
+          )}
+
+          {!status?.installed && !downloading && (
+            <button
+              onClick={handleInstall}
+              className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-[#2563eb] text-white text-xs rounded-lg hover:bg-[#1d4ed8] transition-colors"
+            >
+              <Download size={14} />
+              自动下载安装 FFmpeg
+            </button>
+          )}
+        </div>
       </div>
     </div>
   );
@@ -1317,13 +1411,23 @@ interface VirtualGridProps {
   assetTagsMap: Map<number, TagInfo[]>;
   assetRatingsMap: Map<number, number>;
   lockedPaths: Set<string>;
-  thumbSize: 'small' | 'large';
+  colMinWidth: number;
 }
 
-const VirtualGrid: React.FC<VirtualGridProps> = ({ assets, containerRef, onClickAsset, onDoubleClickAsset, onContextMenu, selectedIds, onBoxSelect, assetTagsMap, assetRatingsMap, lockedPaths, thumbSize }) => {
+const VirtualGrid: React.FC<VirtualGridProps> = ({ assets, containerRef, onClickAsset, onDoubleClickAsset, onContextMenu, selectedIds, onBoxSelect, assetTagsMap, assetRatingsMap, lockedPaths, colMinWidth }) => {
   const [scrollTop, setScrollTop] = useState(0);
   const [containerWidth, setContainerWidth] = useState(800);
   const [containerHeight, setContainerHeight] = useState(600);
+
+  // Hover preview state
+  const [hoverAsset, setHoverAsset] = useState<AssetEntry | null>(null);
+  const [hoverRect, setHoverRect] = useState<{ x: number; y: number; w: number; h: number } | null>(null);
+  const hoverTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const clearHover = useCallback(() => {
+    if (hoverTimerRef.current) { clearTimeout(hoverTimerRef.current); hoverTimerRef.current = null; }
+    setHoverAsset(null);
+    setHoverRect(null);
+  }, []);
 
   // Reset scroll state when assets change (e.g. folder switch)
   const prevAssetsRef = useRef(assets);
@@ -1331,15 +1435,16 @@ const VirtualGrid: React.FC<VirtualGridProps> = ({ assets, containerRef, onClick
     if (prevAssetsRef.current !== assets) {
       prevAssetsRef.current = assets;
       setScrollTop(0);
+      clearHover();
     }
-  }, [assets]);
+  }, [assets, clearHover]);
 
   // Box select state
   const [boxStart, setBoxStart] = useState<{ x: number; y: number } | null>(null);
   const [boxEnd, setBoxEnd] = useState<{ x: number; y: number } | null>(null);
   const boxSelectRef = useRef(false);
 
-  const colMinW = thumbSize === 'large' ? 240 : MASONRY_MIN_COL_W;
+  const colMinW = colMinWidth;
   const gap = MASONRY_GAP;
   const labelH = MASONRY_LABEL_H;
 
@@ -1434,6 +1539,17 @@ const VirtualGrid: React.FC<VirtualGridProps> = ({ assets, containerRef, onClick
           onClick={() => onClickAsset(asset, li.idx)}
           onDoubleClick={() => onDoubleClickAsset(asset, li.idx)}
           onContextMenu={e => onContextMenu(asset, li.idx, e)}
+          onMouseEnter={(e) => {
+            if (hoverTimerRef.current) clearTimeout(hoverTimerRef.current);
+            hoverTimerRef.current = setTimeout(() => {
+              const el = e.currentTarget as HTMLElement;
+              if (!el) return;
+              const rect = el.getBoundingClientRect();
+              setHoverAsset(asset);
+              setHoverRect({ x: rect.right, y: rect.top, w: rect.width, h: rect.height });
+            }, 350);
+          }}
+          onMouseLeave={() => clearHover()}
         >
           {/* Thumbnail - variable height */}
           <div
@@ -1589,6 +1705,65 @@ const VirtualGrid: React.FC<VirtualGridProps> = ({ assets, containerRef, onClick
     height: Math.abs(boxEnd.y - boxStart.y),
   } : null;
 
+  // Hover preview content
+  const hoverPreviewEl = useMemo(() => {
+    if (!hoverAsset || !hoverRect) return null;
+    const ext = hoverAsset.file_ext;
+    const isImage = IMAGE_EXTS.has(ext);
+    const isGif = ext === 'gif';
+    const isVideo = VIDEO_EXTS.has(ext);
+    const previewW = 320;
+    const previewH = hoverAsset.height > 0 && hoverAsset.width > 0
+      ? Math.min(400, Math.round(previewW * hoverAsset.height / hoverAsset.width))
+      : 240;
+    const winW = typeof window !== 'undefined' ? window.innerWidth : 1920;
+    const winH = typeof window !== 'undefined' ? window.innerHeight : 1080;
+    let left = hoverRect.x + 8;
+    let top = hoverRect.y;
+    if (left + previewW > winW - 20) left = hoverRect.x - hoverRect.w - previewW - 8;
+    if (top + previewH > winH - 20) top = winH - previewH - 20;
+    if (top < 10) top = 10;
+
+    const fileSrc = convertFileSrc(hoverAsset.file_path);
+    const thumbSrc = hoverAsset.thumb_path ? convertFileSrc(hoverAsset.thumb_path) : '';
+    const displaySrc = (isGif || isImage) ? fileSrc : thumbSrc;
+
+    return (
+      <div
+        className="fixed z-[70] pointer-events-none rounded-xl overflow-hidden shadow-2xl border border-[#333] bg-[#111]"
+        style={{ left, top, width: previewW }}
+      >
+        {isVideo ? (
+          <video
+            src={fileSrc}
+            autoPlay
+            muted
+            loop
+            playsInline
+            className="w-full rounded-t-xl bg-black"
+            style={{ maxHeight: 400 }}
+          />
+        ) : displaySrc ? (
+          <img
+            src={displaySrc}
+            alt=""
+            className="w-full object-contain bg-[#0a0a0a]"
+            style={{ maxHeight: 400 }}
+            draggable={false}
+          />
+        ) : null}
+        <div className="px-3 py-2 bg-[#111]">
+          <div className="text-[11px] text-[#ccc] truncate">{hoverAsset.file_name}</div>
+          <div className="text-[10px] text-[#666] flex gap-2">
+            {hoverAsset.width > 0 && <span>{hoverAsset.width}×{hoverAsset.height}</span>}
+            <span>{formatFileSize(hoverAsset.file_size)}</span>
+            <span className="uppercase" style={{ color: getExtColor(ext) }}>{ext}</span>
+          </div>
+        </div>
+      </div>
+    );
+  }, [hoverAsset, hoverRect]);
+
   return (
     <div
       className="relative"
@@ -1596,7 +1771,7 @@ const VirtualGrid: React.FC<VirtualGridProps> = ({ assets, containerRef, onClick
       onMouseDown={handleMouseDown}
       onMouseMove={handleMouseMove}
       onMouseUp={handleMouseUp}
-      onMouseLeave={handleMouseUp}
+      onMouseLeave={(e) => { handleMouseUp(); clearHover(); }}
     >
       {visibleItems}
       {boxRect && boxRect.width > 5 && boxRect.height > 5 && (
@@ -1605,6 +1780,130 @@ const VirtualGrid: React.FC<VirtualGridProps> = ({ assets, containerRef, onClick
           style={boxRect}
         />
       )}
+      {hoverPreviewEl}
+    </div>
+  );
+};
+
+// ============================================================
+// List View (Eagle-style table)
+// ============================================================
+
+const LIST_ROW_HEIGHT = 36;
+const LIST_THUMB_SIZE = 28;
+const LIST_BUFFER = 400;
+
+interface ListViewProps {
+  assets: AssetEntry[];
+  containerRef: React.RefObject<HTMLDivElement>;
+  onClickAsset: (asset: AssetEntry, index: number) => void;
+  onDoubleClickAsset: (asset: AssetEntry, index: number) => void;
+  onContextMenu: (asset: AssetEntry, index: number, e: React.MouseEvent) => void;
+  selectedIds: Set<number>;
+  assetTagsMap: Map<number, TagInfo[]>;
+  assetRatingsMap: Map<number, number>;
+}
+
+const ListView: React.FC<ListViewProps> = ({
+  assets, containerRef, onClickAsset, onDoubleClickAsset, onContextMenu, selectedIds, assetTagsMap, assetRatingsMap,
+}) => {
+  const [scrollTop, setScrollTop] = useState(0);
+  const [containerHeight, setContainerHeight] = useState(600);
+
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver(entries => {
+      for (const entry of entries) setContainerHeight(entry.contentRect.height);
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [containerRef]);
+
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    const onScroll = () => setScrollTop(el.scrollTop);
+    el.addEventListener('scroll', onScroll, { passive: true });
+    return () => el.removeEventListener('scroll', onScroll);
+  }, [containerRef]);
+
+  const totalHeight = assets.length * LIST_ROW_HEIGHT;
+  const viewTop = scrollTop - LIST_BUFFER;
+  const viewBottom = scrollTop + containerHeight + LIST_BUFFER;
+  const startIdx = Math.max(0, Math.floor(viewTop / LIST_ROW_HEIGHT));
+  const endIdx = Math.min(assets.length - 1, Math.ceil(viewBottom / LIST_ROW_HEIGHT));
+
+  const rows: React.ReactNode[] = [];
+  for (let i = startIdx; i <= endIdx; i++) {
+    const a = assets[i];
+    const isSelected = selectedIds.has(a.id);
+    const thumbUrl = a.thumb_path ? convertFileSrc(a.thumb_path) : '';
+    const Icon = getFileIcon(a.file_ext);
+    const tags = assetTagsMap.get(a.id) || [];
+    const rating = assetRatingsMap.get(a.id) || 0;
+
+    rows.push(
+      <div
+        key={a.id}
+        className={`absolute left-0 right-0 flex items-center gap-3 px-3 text-xs border-b border-[#1a1a1a] cursor-pointer transition-colors ${
+          isSelected ? 'bg-[#1a2332] text-white' : 'text-[#ccc] hover:bg-[#111]'
+        }`}
+        style={{ top: i * LIST_ROW_HEIGHT, height: LIST_ROW_HEIGHT }}
+        onClick={() => onClickAsset(a, i)}
+        onDoubleClick={() => onDoubleClickAsset(a, i)}
+        onContextMenu={e => onContextMenu(a, i, e)}
+      >
+        {/* Thumbnail */}
+        <div className="flex-none w-7 h-7 rounded overflow-hidden bg-[#1a1a1a]">
+          {thumbUrl ? (
+            <img src={thumbUrl} alt="" className="w-full h-full object-cover" loading="lazy" />
+          ) : (
+            <div className="w-full h-full flex items-center justify-center text-[#555]"><Icon size={14} /></div>
+          )}
+        </div>
+        {/* Name */}
+        <span className="flex-1 min-w-0 truncate">{a.file_name}</span>
+        {/* Tags */}
+        <div className="flex-none flex gap-0.5 max-w-[120px] overflow-hidden">
+          {tags.slice(0, 2).map(t => (
+            <span key={t.id} className="text-[9px] px-1 py-0.5 rounded-full" style={{ background: t.color + '22', color: t.color }}>{t.name}</span>
+          ))}
+        </div>
+        {/* Rating */}
+        <div className="flex-none w-16 flex">
+          {rating > 0 && Array.from({ length: rating }, (_, j) => (
+            <Star key={j} size={9} className="text-yellow-400 fill-yellow-400" />
+          ))}
+        </div>
+        {/* Ext */}
+        <span className="flex-none w-10 text-[10px] uppercase text-center" style={{ color: getExtColor(a.file_ext) }}>{a.file_ext}</span>
+        {/* Size */}
+        <span className="flex-none w-16 text-right text-[10px] text-[#666]">{formatFileSize(a.file_size)}</span>
+        {/* Dimensions */}
+        <span className="flex-none w-20 text-right text-[10px] text-[#555]">
+          {a.width > 0 ? `${a.width}×${a.height}` : ''}
+        </span>
+        {/* Date */}
+        <span className="flex-none w-20 text-right text-[10px] text-[#555]">{formatDate(a.modified_at)}</span>
+      </div>
+    );
+  }
+
+  return (
+    <div className="relative" style={{ height: totalHeight, minHeight: '100%' }}>
+      {/* Header */}
+      <div className="sticky top-0 z-10 flex items-center gap-3 px-3 h-8 bg-[#0d0d0d] border-b border-[#222] text-[10px] text-[#666] uppercase tracking-wider font-medium">
+        <span className="flex-none w-7" />
+        <span className="flex-1">名称</span>
+        <span className="flex-none w-[120px]">标签</span>
+        <span className="flex-none w-16">评分</span>
+        <span className="flex-none w-10 text-center">格式</span>
+        <span className="flex-none w-16 text-right">大小</span>
+        <span className="flex-none w-20 text-right">尺寸</span>
+        <span className="flex-none w-20 text-right">日期</span>
+      </div>
+      {rows}
     </div>
   );
 };
@@ -1744,6 +2043,319 @@ const VideoPlayer: React.FC<{ src: string }> = ({ src }) => {
 };
 
 // ============================================================
+// Batch Rename Modal
+// ============================================================
+
+interface BatchRenameProps {
+  assets: AssetEntry[];
+  onRename: (renames: [number, string][]) => void;
+  onClose: () => void;
+}
+
+const BatchRenameModal: React.FC<BatchRenameProps> = ({ assets, onRename, onClose }) => {
+  const [mode, setMode] = useState<'pattern' | 'replace'>('pattern');
+  const [prefix, setPrefix] = useState('');
+  const [suffix, setSuffix] = useState('');
+  const [startNum, setStartNum] = useState(1);
+  const [digits, setDigits] = useState(3);
+  const [baseName, setBaseName] = useState('');
+  const [findStr, setFindStr] = useState('');
+  const [replaceStr, setReplaceStr] = useState('');
+
+  const preview = useMemo(() => {
+    return assets.map((a, i) => {
+      const ext = a.file_ext ? `.${a.file_ext}` : '';
+      const stem = a.file_name.replace(/\.[^.]+$/, '');
+      let newName: string;
+      if (mode === 'pattern') {
+        const num = String(startNum + i).padStart(digits, '0');
+        const base = baseName || stem;
+        newName = `${prefix}${base}${suffix}_${num}${ext}`;
+      } else {
+        if (!findStr) {
+          newName = a.file_name;
+        } else {
+          const newStem = stem.split(findStr).join(replaceStr);
+          newName = `${newStem}${ext}`;
+        }
+      }
+      return { id: a.id, oldName: a.file_name, newName };
+    });
+  }, [assets, mode, prefix, suffix, startNum, digits, baseName, findStr, replaceStr]);
+
+  const hasChanges = preview.some(p => p.oldName !== p.newName);
+
+  return (
+    <div className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center" onClick={onClose}>
+      <div className="bg-[#1a1a1a] border border-[#333] rounded-xl shadow-2xl w-[560px] max-h-[80vh] flex flex-col" onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between px-5 py-4 border-b border-[#222]">
+          <h3 className="text-sm font-medium text-white flex items-center gap-2">
+            <Edit3 size={16} className="text-[#3b82f6]" />
+            批量重命名 ({assets.length} 个文件)
+          </h3>
+          <button onClick={onClose} className="text-[#555] hover:text-[#aaa]"><X size={16} /></button>
+        </div>
+
+        <div className="px-5 py-4 space-y-4 overflow-y-auto flex-1">
+          <div className="flex gap-2">
+            <button
+              onClick={() => setMode('pattern')}
+              className={`px-3 py-1.5 text-xs rounded-lg transition-colors ${mode === 'pattern' ? 'bg-[#2563eb] text-white' : 'bg-[#222] text-[#888] hover:text-[#ccc]'}`}
+            >
+              模式命名
+            </button>
+            <button
+              onClick={() => setMode('replace')}
+              className={`px-3 py-1.5 text-xs rounded-lg transition-colors ${mode === 'replace' ? 'bg-[#2563eb] text-white' : 'bg-[#222] text-[#888] hover:text-[#ccc]'}`}
+            >
+              查找替换
+            </button>
+          </div>
+
+          {mode === 'pattern' ? (
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-[10px] text-[#888] mb-1">前缀</label>
+                <input value={prefix} onChange={e => setPrefix(e.target.value)} placeholder="例如: hero_"
+                  className="w-full bg-[#111] border border-[#2a2a2a] rounded-lg px-3 py-1.5 text-xs text-[#ccc] placeholder-[#555] outline-none focus:border-[#3b82f6]" />
+              </div>
+              <div>
+                <label className="block text-[10px] text-[#888] mb-1">后缀</label>
+                <input value={suffix} onChange={e => setSuffix(e.target.value)} placeholder="例如: _final"
+                  className="w-full bg-[#111] border border-[#2a2a2a] rounded-lg px-3 py-1.5 text-xs text-[#ccc] placeholder-[#555] outline-none focus:border-[#3b82f6]" />
+              </div>
+              <div>
+                <label className="block text-[10px] text-[#888] mb-1">基础名称 (留空保持原名)</label>
+                <input value={baseName} onChange={e => setBaseName(e.target.value)} placeholder="留空保持原名"
+                  className="w-full bg-[#111] border border-[#2a2a2a] rounded-lg px-3 py-1.5 text-xs text-[#ccc] placeholder-[#555] outline-none focus:border-[#3b82f6]" />
+              </div>
+              <div className="flex gap-2">
+                <div className="flex-1">
+                  <label className="block text-[10px] text-[#888] mb-1">起始序号</label>
+                  <input type="number" value={startNum} onChange={e => setStartNum(+e.target.value)} min={0}
+                    className="w-full bg-[#111] border border-[#2a2a2a] rounded-lg px-3 py-1.5 text-xs text-[#ccc] outline-none focus:border-[#3b82f6]" />
+                </div>
+                <div className="flex-1">
+                  <label className="block text-[10px] text-[#888] mb-1">位数</label>
+                  <input type="number" value={digits} onChange={e => setDigits(+e.target.value)} min={1} max={6}
+                    className="w-full bg-[#111] border border-[#2a2a2a] rounded-lg px-3 py-1.5 text-xs text-[#ccc] outline-none focus:border-[#3b82f6]" />
+                </div>
+              </div>
+            </div>
+          ) : (
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-[10px] text-[#888] mb-1">查找</label>
+                <input value={findStr} onChange={e => setFindStr(e.target.value)} placeholder="要替换的文本"
+                  className="w-full bg-[#111] border border-[#2a2a2a] rounded-lg px-3 py-1.5 text-xs text-[#ccc] placeholder-[#555] outline-none focus:border-[#3b82f6]" />
+              </div>
+              <div>
+                <label className="block text-[10px] text-[#888] mb-1">替换为</label>
+                <input value={replaceStr} onChange={e => setReplaceStr(e.target.value)} placeholder="新文本"
+                  className="w-full bg-[#111] border border-[#2a2a2a] rounded-lg px-3 py-1.5 text-xs text-[#ccc] placeholder-[#555] outline-none focus:border-[#3b82f6]" />
+              </div>
+            </div>
+          )}
+
+          <div>
+            <div className="text-[10px] text-[#888] mb-2 uppercase tracking-wider">预览 (前10个)</div>
+            <div className="space-y-1 max-h-48 overflow-y-auto">
+              {preview.slice(0, 10).map(p => (
+                <div key={p.id} className="flex items-center gap-2 text-[11px] px-2 py-1 rounded bg-[#111]">
+                  <span className="text-[#666] truncate flex-1">{p.oldName}</span>
+                  <ArrowRight size={10} className="text-[#555] flex-none" />
+                  <span className={`truncate flex-1 ${p.oldName !== p.newName ? 'text-[#22c55e]' : 'text-[#555]'}`}>{p.newName}</span>
+                </div>
+              ))}
+              {preview.length > 10 && <div className="text-[10px] text-[#555] text-center py-1">...还有 {preview.length - 10} 个</div>}
+            </div>
+          </div>
+        </div>
+
+        <div className="flex justify-end gap-2 px-5 py-3 border-t border-[#222]">
+          <button onClick={onClose} className="px-3 py-1.5 text-xs text-[#888] hover:text-[#ccc] rounded-lg">取消</button>
+          <button
+            onClick={() => onRename(preview.filter(p => p.oldName !== p.newName).map(p => [p.id, p.newName]))}
+            disabled={!hasChanges}
+            className="px-4 py-1.5 text-xs bg-[#2563eb] text-white rounded-lg hover:bg-[#1d4ed8] disabled:opacity-40 transition-colors"
+          >
+            执行重命名
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// ============================================================
+// Spotlight Quick Search
+// ============================================================
+
+const SpotlightSearch: React.FC<{
+  onSelect: (asset: AssetEntry) => void;
+  onClose: () => void;
+}> = ({ onSelect, onClose }) => {
+  const [query, setQuery] = useState('');
+  const [results, setResults] = useState<AssetEntry[]>([]);
+  const [selectedIdx, setSelectedIdx] = useState(0);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => { inputRef.current?.focus(); }, []);
+
+  useEffect(() => {
+    if (!query.trim()) { setResults([]); return; }
+    const timer = setTimeout(async () => {
+      try {
+        const r = await invoke<QueryResult>('asset_query', {
+          params: {
+            folder_id: null, search: query.trim(), extensions: null,
+            min_width: null, max_width: null, tag_ids: null, min_rating: null,
+            favorite_only: null, sort_by: 'modified', sort_order: 'desc',
+            page: 1, page_size: 20,
+          },
+        });
+        setResults(r.assets);
+        setSelectedIdx(0);
+      } catch { setResults([]); }
+    }, 200);
+    return () => clearTimeout(timer);
+  }, [query]);
+
+  const handleKey = (e: React.KeyboardEvent) => {
+    if (e.key === 'Escape') onClose();
+    if (e.key === 'ArrowDown') { e.preventDefault(); setSelectedIdx(i => Math.min(i + 1, results.length - 1)); }
+    if (e.key === 'ArrowUp') { e.preventDefault(); setSelectedIdx(i => Math.max(i - 1, 0)); }
+    if (e.key === 'Enter' && results[selectedIdx]) onSelect(results[selectedIdx]);
+  };
+
+  return (
+    <div className="fixed inset-0 z-[80] bg-black/50 flex items-start justify-center pt-[15vh]" onClick={onClose}>
+      <div className="w-[520px] bg-[#1a1a1a] border border-[#333] rounded-2xl shadow-2xl overflow-hidden" onClick={e => e.stopPropagation()}>
+        <div className="flex items-center gap-3 px-4 py-3 border-b border-[#222]">
+          <Search size={18} className="text-[#555] flex-none" />
+          <input
+            ref={inputRef}
+            value={query}
+            onChange={e => setQuery(e.target.value)}
+            onKeyDown={handleKey}
+            placeholder="快速搜索资源..."
+            className="flex-1 bg-transparent text-sm text-[#eee] placeholder-[#555] outline-none"
+          />
+          <kbd className="text-[10px] text-[#555] bg-[#222] rounded px-1.5 py-0.5">ESC</kbd>
+        </div>
+        {results.length > 0 && (
+          <div className="max-h-80 overflow-y-auto py-1">
+            {results.map((a, i) => {
+              const thumbUrl = a.thumb_path ? convertFileSrc(a.thumb_path) : '';
+              const Icon = getFileIcon(a.file_ext);
+              return (
+                <div
+                  key={a.id}
+                  className={`flex items-center gap-3 px-4 py-2 cursor-pointer transition-colors ${i === selectedIdx ? 'bg-[#2563eb]/20' : 'hover:bg-[#222]'}`}
+                  onClick={() => onSelect(a)}
+                  onMouseEnter={() => setSelectedIdx(i)}
+                >
+                  <div className="w-8 h-8 rounded overflow-hidden bg-[#111] flex-none">
+                    {thumbUrl ? <img src={thumbUrl} alt="" className="w-full h-full object-cover" /> : <div className="w-full h-full flex items-center justify-center text-[#555]"><Icon size={16} /></div>}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="text-xs text-[#ccc] truncate">{a.file_name}</div>
+                    <div className="text-[10px] text-[#555]">{formatFileSize(a.file_size)} · <span className="uppercase" style={{ color: getExtColor(a.file_ext) }}>{a.file_ext}</span></div>
+                  </div>
+                  {a.width > 0 && <span className="text-[10px] text-[#555] flex-none">{a.width}×{a.height}</span>}
+                </div>
+              );
+            })}
+          </div>
+        )}
+        {query && results.length === 0 && (
+          <div className="px-4 py-6 text-center text-xs text-[#555]">未找到匹配的资源</div>
+        )}
+      </div>
+    </div>
+  );
+};
+
+// ============================================================
+// Duplicate Finder Modal
+// ============================================================
+
+const DuplicateFinderModal: React.FC<{
+  onClose: () => void;
+  onSelectAsset: (id: number) => void;
+}> = ({ onClose, onSelectAsset }) => {
+  const [groups, setGroups] = useState<{ md5: string; ids: number[]; assets: AssetEntry[] }[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        await invoke('asset_index_hashes');
+        const dupes = await invoke<[string, number[]][]>('asset_find_duplicates');
+        const allGroups: { md5: string; ids: number[]; assets: AssetEntry[] }[] = [];
+        for (const [md5, ids] of dupes) {
+          const r = await invoke<QueryResult>('asset_query', {
+            params: { folder_id: null, search: null, extensions: null, min_width: null, max_width: null,
+              tag_ids: null, min_rating: null, favorite_only: null, sort_by: 'name', sort_order: 'asc',
+              page: 1, page_size: 500 },
+          });
+          const matched = r.assets.filter(a => ids.includes(a.id));
+          if (matched.length > 1) allGroups.push({ md5, ids, assets: matched });
+        }
+        setGroups(allGroups);
+      } catch { /* ignore */ }
+      setLoading(false);
+    })();
+  }, []);
+
+  return (
+    <div className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center" onClick={onClose}>
+      <div className="bg-[#1a1a1a] border border-[#333] rounded-xl shadow-2xl w-[600px] max-h-[80vh] flex flex-col" onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between px-5 py-4 border-b border-[#222]">
+          <h3 className="text-sm font-medium text-white flex items-center gap-2">
+            <Copy size={16} className="text-[#f97316]" />
+            重复文件检测
+          </h3>
+          <button onClick={onClose} className="text-[#555] hover:text-[#aaa]"><X size={16} /></button>
+        </div>
+        <div className="flex-1 overflow-y-auto p-4">
+          {loading ? (
+            <div className="flex items-center justify-center py-8 gap-2 text-xs text-[#888]">
+              <Loader2 size={16} className="animate-spin" /> 正在计算文件哈希...
+            </div>
+          ) : groups.length === 0 ? (
+            <div className="text-center py-8 text-xs text-[#666]">没有检测到重复文件</div>
+          ) : (
+            <div className="space-y-4">
+              {groups.map((g, i) => (
+                <div key={g.md5} className="bg-[#111] rounded-lg p-3">
+                  <div className="text-[10px] text-[#555] mb-2">重复组 {i + 1} · MD5: {g.md5.slice(0, 12)}... · {g.assets.length} 个文件</div>
+                  <div className="space-y-1">
+                    {g.assets.map(a => (
+                      <div
+                        key={a.id}
+                        className="flex items-center gap-2 px-2 py-1.5 rounded hover:bg-[#1a1a1a] cursor-pointer text-xs"
+                        onClick={() => onSelectAsset(a.id)}
+                      >
+                        <div className="w-6 h-6 rounded overflow-hidden bg-[#1a1a1a] flex-none">
+                          {a.thumb_path ? <img src={convertFileSrc(a.thumb_path)} alt="" className="w-full h-full object-cover" /> : null}
+                        </div>
+                        <span className="flex-1 text-[#ccc] truncate">{a.file_name}</span>
+                        <span className="text-[10px] text-[#555]">{formatFileSize(a.file_size)}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// ============================================================
 // Image Preview Modal
 // ============================================================
 
@@ -1755,11 +2367,330 @@ interface PreviewProps {
   onNavigate: (index: number) => void;
 }
 
+// ============================================================
+// Annotation Canvas Component
+// ============================================================
+
+type AnnotationTool = 'arrow' | 'rect' | 'ellipse' | 'freehand' | 'text';
+interface AnnotationItem {
+  type: AnnotationTool;
+  color: string;
+  lineWidth: number;
+  points?: { x: number; y: number }[];
+  x?: number; y?: number; w?: number; h?: number;
+  x2?: number; y2?: number;
+  text?: string;
+  fontSize?: number;
+}
+
+const ANNOTATION_COLORS = ['#ef4444', '#f59e0b', '#22c55e', '#3b82f6', '#a855f7', '#ffffff', '#000000'];
+
+const AnnotationCanvas: React.FC<{
+  assetId: number;
+  imageSrc: string;
+  imageWidth: number;
+  imageHeight: number;
+  onClose: () => void;
+}> = ({ assetId, imageSrc, imageWidth, imageHeight, onClose }) => {
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const [tool, setTool] = useState<AnnotationTool>('arrow');
+  const [color, setColor] = useState('#ef4444');
+  const [lineWidth, setLineWidth] = useState(3);
+  const [items, setItems] = useState<AnnotationItem[]>([]);
+  const [drawing, setDrawing] = useState(false);
+  const [current, setCurrent] = useState<AnnotationItem | null>(null);
+  const [textInput, setTextInput] = useState<{ x: number; y: number } | null>(null);
+  const [textValue, setTextValue] = useState('');
+  const imgRef = useRef<HTMLImageElement | null>(null);
+  const [imgLoaded, setImgLoaded] = useState(false);
+  const [saving, setSaving] = useState(false);
+
+  const maxW = Math.min(imageWidth, window.innerWidth * 0.85);
+  const scale = maxW / imageWidth;
+  const dispW = Math.round(imageWidth * scale);
+  const dispH = Math.round(imageHeight * scale);
+
+  useEffect(() => {
+    const img = new Image();
+    img.src = imageSrc;
+    img.onload = () => { imgRef.current = img; setImgLoaded(true); };
+  }, [imageSrc]);
+
+  useEffect(() => {
+    invoke<string>('asset_get_annotation', { assetId })
+      .then(data => {
+        try { const parsed = JSON.parse(data); if (Array.isArray(parsed)) setItems(parsed); } catch {}
+      })
+      .catch(() => {});
+  }, [assetId]);
+
+  const redraw = useCallback(() => {
+    const canvas = canvasRef.current;
+    const ctx = canvas?.getContext('2d');
+    const img = imgRef.current;
+    if (!canvas || !ctx || !img) return;
+    ctx.clearRect(0, 0, dispW, dispH);
+    ctx.drawImage(img, 0, 0, dispW, dispH);
+    const allItems = current ? [...items, current] : items;
+    for (const item of allItems) {
+      ctx.strokeStyle = item.color;
+      ctx.fillStyle = item.color;
+      ctx.lineWidth = item.lineWidth;
+      ctx.lineCap = 'round';
+      ctx.lineJoin = 'round';
+      if (item.type === 'arrow' && item.x != null && item.y != null && item.x2 != null && item.y2 != null) {
+        const dx = item.x2 - item.x, dy = item.y2 - item.y;
+        const angle = Math.atan2(dy, dx);
+        const headLen = 16;
+        ctx.beginPath();
+        ctx.moveTo(item.x, item.y);
+        ctx.lineTo(item.x2, item.y2);
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.moveTo(item.x2, item.y2);
+        ctx.lineTo(item.x2 - headLen * Math.cos(angle - Math.PI / 6), item.y2 - headLen * Math.sin(angle - Math.PI / 6));
+        ctx.lineTo(item.x2 - headLen * Math.cos(angle + Math.PI / 6), item.y2 - headLen * Math.sin(angle + Math.PI / 6));
+        ctx.closePath();
+        ctx.fill();
+      } else if (item.type === 'rect' && item.x != null && item.y != null && item.w != null && item.h != null) {
+        ctx.strokeRect(item.x, item.y, item.w, item.h);
+      } else if (item.type === 'ellipse' && item.x != null && item.y != null && item.w != null && item.h != null) {
+        ctx.beginPath();
+        ctx.ellipse(item.x + item.w / 2, item.y + item.h / 2, Math.abs(item.w / 2), Math.abs(item.h / 2), 0, 0, Math.PI * 2);
+        ctx.stroke();
+      } else if (item.type === 'freehand' && item.points && item.points.length > 1) {
+        ctx.beginPath();
+        ctx.moveTo(item.points[0].x, item.points[0].y);
+        for (let i = 1; i < item.points.length; i++) ctx.lineTo(item.points[i].x, item.points[i].y);
+        ctx.stroke();
+      } else if (item.type === 'text' && item.x != null && item.y != null && item.text) {
+        ctx.font = `${item.fontSize || 20}px sans-serif`;
+        ctx.fillText(item.text, item.x, item.y);
+      }
+    }
+  }, [items, current, dispW, dispH]);
+
+  useEffect(() => { if (imgLoaded) redraw(); }, [imgLoaded, redraw]);
+
+  const getPos = (e: React.MouseEvent) => {
+    const rect = canvasRef.current!.getBoundingClientRect();
+    return { x: e.clientX - rect.left, y: e.clientY - rect.top };
+  };
+
+  const onMouseDown = (e: React.MouseEvent) => {
+    if (tool === 'text') {
+      setTextInput(getPos(e));
+      setTextValue('');
+      return;
+    }
+    setDrawing(true);
+    const pos = getPos(e);
+    if (tool === 'freehand') {
+      setCurrent({ type: 'freehand', color, lineWidth, points: [pos] });
+    } else if (tool === 'arrow') {
+      setCurrent({ type: 'arrow', color, lineWidth, x: pos.x, y: pos.y, x2: pos.x, y2: pos.y });
+    } else {
+      setCurrent({ type: tool, color, lineWidth, x: pos.x, y: pos.y, w: 0, h: 0 });
+    }
+  };
+
+  const onMouseMove = (e: React.MouseEvent) => {
+    if (!drawing || !current) return;
+    const pos = getPos(e);
+    if (current.type === 'freehand') {
+      setCurrent({ ...current, points: [...(current.points || []), pos] });
+    } else if (current.type === 'arrow') {
+      setCurrent({ ...current, x2: pos.x, y2: pos.y });
+    } else {
+      setCurrent({ ...current, w: pos.x - (current.x || 0), h: pos.y - (current.y || 0) });
+    }
+  };
+
+  const onMouseUp = () => {
+    if (!drawing || !current) return;
+    setDrawing(false);
+    setItems(prev => [...prev, current]);
+    setCurrent(null);
+  };
+
+  const commitText = () => {
+    if (textInput && textValue.trim()) {
+      setItems(prev => [...prev, { type: 'text', color, lineWidth, x: textInput.x, y: textInput.y, text: textValue.trim(), fontSize: 20 }]);
+    }
+    setTextInput(null);
+    setTextValue('');
+  };
+
+  const handleSave = async () => {
+    setSaving(true);
+    try {
+      await invoke('asset_save_annotation', { assetId, data: JSON.stringify(items) });
+    } catch (e) { console.error('Save annotation failed', e); }
+    setSaving(false);
+  };
+
+  const handleUndo = () => setItems(prev => prev.slice(0, -1));
+  const handleClear = () => setItems([]);
+
+  const tools: { id: AnnotationTool; label: string; icon: string }[] = [
+    { id: 'arrow', label: '箭头', icon: '↗' },
+    { id: 'rect', label: '矩形', icon: '□' },
+    { id: 'ellipse', label: '椭圆', icon: '○' },
+    { id: 'freehand', label: '画笔', icon: '✎' },
+    { id: 'text', label: '文字', icon: 'A' },
+  ];
+
+  return (
+    <div className="fixed inset-0 z-[60] bg-black/95 flex flex-col items-center justify-center" onClick={e => e.stopPropagation()}>
+      {/* Toolbar */}
+      <div className="flex items-center gap-3 mb-3 bg-[#1e1e1e] rounded-xl px-4 py-2 shadow-lg">
+        {tools.map(t => (
+          <button
+            key={t.id}
+            onClick={() => setTool(t.id)}
+            className={`w-9 h-9 rounded-lg flex items-center justify-center text-lg transition-colors ${tool === t.id ? 'bg-blue-500 text-white' : 'bg-[#333] text-[#aaa] hover:bg-[#444]'}`}
+            title={t.label}
+          >{t.icon}</button>
+        ))}
+        <div className="w-px h-6 bg-[#444] mx-1" />
+        {ANNOTATION_COLORS.map(c => (
+          <button
+            key={c}
+            onClick={() => setColor(c)}
+            className={`w-6 h-6 rounded-full border-2 transition-transform ${color === c ? 'border-white scale-125' : 'border-transparent'}`}
+            style={{ background: c }}
+          />
+        ))}
+        <div className="w-px h-6 bg-[#444] mx-1" />
+        <input type="range" min={1} max={10} value={lineWidth} onChange={e => setLineWidth(+e.target.value)} className="w-20 accent-blue-500" title={`线宽: ${lineWidth}px`} />
+        <div className="w-px h-6 bg-[#444] mx-1" />
+        <button onClick={handleUndo} disabled={items.length === 0} className="px-3 py-1 rounded text-xs bg-[#333] text-[#aaa] hover:bg-[#444] disabled:opacity-30">撤销</button>
+        <button onClick={handleClear} disabled={items.length === 0} className="px-3 py-1 rounded text-xs bg-[#333] text-[#aaa] hover:bg-[#444] disabled:opacity-30">清空</button>
+        <button onClick={handleSave} disabled={saving} className="px-3 py-1 rounded text-xs bg-blue-500 text-white hover:bg-blue-600 disabled:opacity-50">
+          {saving ? '保存中…' : '保存'}
+        </button>
+        <button onClick={onClose} className="px-3 py-1 rounded text-xs bg-[#333] text-[#aaa] hover:bg-[#444]">关闭</button>
+      </div>
+
+      {/* Canvas */}
+      <div className="relative" style={{ width: dispW, height: dispH }}>
+        <canvas
+          ref={canvasRef}
+          width={dispW}
+          height={dispH}
+          className="rounded-lg cursor-crosshair"
+          onMouseDown={onMouseDown}
+          onMouseMove={onMouseMove}
+          onMouseUp={onMouseUp}
+          onMouseLeave={onMouseUp}
+        />
+        {textInput && (
+          <input
+            type="text"
+            autoFocus
+            value={textValue}
+            onChange={e => setTextValue(e.target.value)}
+            onKeyDown={e => { if (e.key === 'Enter') commitText(); if (e.key === 'Escape') setTextInput(null); }}
+            onBlur={commitText}
+            className="absolute bg-transparent border border-blue-400 text-white px-1 outline-none"
+            style={{ left: textInput.x, top: textInput.y - 24, fontSize: 20, fontFamily: 'sans-serif', color }}
+          />
+        )}
+      </div>
+    </div>
+  );
+};
+
+const FONT_SAMPLE_SIZES = [72, 48, 36, 24, 18, 14, 12];
+const FONT_SAMPLE_TEXT_EN = 'The quick brown fox jumps over the lazy dog';
+const FONT_SAMPLE_TEXT_CN = '天地玄黄宇宙洪荒 ABCDEFGHIJKLMNOPQRSTUVWXYZ abcdefghijklmnopqrstuvwxyz 0123456789 !@#$%^&*()';
+
+const FontPreview: React.FC<{ fontPath: string; fontName: string }> = ({ fontPath, fontName }) => {
+  const [fontLoaded, setFontLoaded] = useState(false);
+  const [customText, setCustomText] = useState('');
+  const fontFamily = useRef(`preview-font-${Date.now()}`);
+
+  useEffect(() => {
+    const src = convertFileSrc(fontPath);
+    const face = new FontFace(fontFamily.current, `url("${src}")`);
+    face.load().then(loaded => {
+      document.fonts.add(loaded);
+      setFontLoaded(true);
+    }).catch(() => setFontLoaded(false));
+    return () => { document.fonts.delete(face); };
+  }, [fontPath]);
+
+  if (!fontLoaded) {
+    return (
+      <div className="flex flex-col items-center justify-center text-[#666] gap-3 p-12">
+        <Loader2 size={48} className="animate-spin text-blue-400" />
+        <span>加载字体中…</span>
+      </div>
+    );
+  }
+
+  return (
+    <div
+      className="bg-[#1a1a1a] rounded-xl p-8 max-w-[85vw] max-h-[80vh] overflow-y-auto w-[800px]"
+      onClick={e => e.stopPropagation()}
+    >
+      <div className="flex items-center gap-3 mb-6 border-b border-[#333] pb-4">
+        <Type size={28} className="text-blue-400" />
+        <span className="text-white text-xl font-semibold">{fontName}</span>
+      </div>
+
+      <div className="mb-6">
+        <input
+          type="text"
+          value={customText}
+          onChange={e => setCustomText(e.target.value)}
+          placeholder="输入自定义预览文本…"
+          className="w-full bg-[#252525] border border-[#444] rounded-lg px-4 py-2 text-white placeholder:text-[#666] focus:outline-none focus:border-blue-500"
+        />
+      </div>
+
+      <div className="space-y-6">
+        {FONT_SAMPLE_SIZES.map(size => (
+          <div key={size} className="border-b border-[#282828] pb-4 last:border-0">
+            <div className="text-[#666] text-xs mb-2">{size}px</div>
+            <div
+              style={{ fontFamily: fontFamily.current, fontSize: `${size}px`, lineHeight: 1.4 }}
+              className="text-white break-words"
+            >
+              {customText || FONT_SAMPLE_TEXT_EN}
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {!customText && (
+        <div className="mt-8 pt-6 border-t border-[#333]">
+          <div className="text-[#888] text-sm mb-3">字符集预览</div>
+          <div
+            style={{ fontFamily: fontFamily.current, fontSize: '20px', lineHeight: 1.8 }}
+            className="text-[#ccc] break-words"
+          >
+            {FONT_SAMPLE_TEXT_CN}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
 const PreviewModal: React.FC<PreviewProps> = ({ asset, assets, currentIndex, onClose, onNavigate }) => {
   const [loaded, setLoaded] = useState(false);
+  const [zoom, setZoom] = useState(1);
+  const [pan, setPan] = useState({ x: 0, y: 0 });
+  const [isPanning, setIsPanning] = useState(false);
+  const panStart = useRef({ x: 0, y: 0 });
+  const [annotating, setAnnotating] = useState(false);
 
   useEffect(() => {
     setLoaded(false);
+    setZoom(1);
+    setPan({ x: 0, y: 0 });
+    setAnnotating(false);
   }, [asset?.id]);
 
   useEffect(() => {
@@ -1781,6 +2712,7 @@ const PreviewModal: React.FC<PreviewProps> = ({ asset, assets, currentIndex, onC
   const isVideo = VIDEO_EXTS.has(asset.file_ext);
   const isAudio = AUDIO_EXTS.has(asset.file_ext);
   const is3D = MESH_EXTS.has(asset.file_ext);
+  const isFont = FONT_EXTS.has(asset.file_ext);
 
   // PSD: 使用缩略图（由后端生成的合成图）或原图
   const previewSrc = isPsd && thumbUrl ? thumbUrl : imgUrl;
@@ -1818,8 +2750,40 @@ const PreviewModal: React.FC<PreviewProps> = ({ asset, assets, currentIndex, onC
       )}
 
       {/* Content */}
-      <div className="max-w-[90vw] max-h-[85vh] flex items-center justify-center" onClick={e => e.stopPropagation()}>
+      <div
+        className="max-w-[90vw] max-h-[85vh] flex items-center justify-center overflow-hidden"
+        onClick={e => e.stopPropagation()}
+        onWheel={e => {
+          if (canPreviewImage) {
+            e.stopPropagation();
+            const delta = e.deltaY > 0 ? 0.9 : 1.1;
+            setZoom(z => Math.max(0.1, Math.min(10, z * delta)));
+          }
+        }}
+        onMouseDown={e => {
+          if (canPreviewImage && zoom > 1 && e.button === 0) {
+            setIsPanning(true);
+            panStart.current = { x: e.clientX - pan.x, y: e.clientY - pan.y };
+          }
+        }}
+        onMouseMove={e => {
+          if (isPanning) {
+            setPan({ x: e.clientX - panStart.current.x, y: e.clientY - panStart.current.y });
+          }
+        }}
+        onMouseUp={() => setIsPanning(false)}
+        onMouseLeave={() => setIsPanning(false)}
+        onDoubleClick={e => {
+          if (canPreviewImage) {
+            e.stopPropagation();
+            if (zoom > 1) { setZoom(1); setPan({ x: 0, y: 0 }); }
+            else setZoom(3);
+          }
+        }}
+        style={{ cursor: canPreviewImage ? (zoom > 1 ? (isPanning ? 'grabbing' : 'grab') : 'zoom-in') : 'default' }}
+      >
         {canPreviewImage ? (
+          <div style={{ transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`, transition: isPanning ? 'none' : 'transform 0.15s ease', transformOrigin: 'center' }}>
           <SkeletonImage
             src={previewSrc}
             alt={asset.file_name}
@@ -1832,6 +2796,7 @@ const PreviewModal: React.FC<PreviewProps> = ({ asset, assets, currentIndex, onC
             onLoad={() => setLoaded(true)}
             fallback={<div className="flex flex-col items-center justify-center text-[#666] gap-3 p-12">{React.createElement(getFileIcon(asset.file_ext), { size: 64 })}<span className="text-lg">图片加载失败</span></div>}
           />
+          </div>
         ) : isVideo ? (
           <VideoPlayer key={asset.id} src={imgUrl} />
         ) : isAudio ? (
@@ -1855,6 +2820,8 @@ const PreviewModal: React.FC<PreviewProps> = ({ asset, assets, currentIndex, onC
               <LazyModelViewer3D filePath={asset.file_path} fileExt={asset.file_ext} fileName={asset.file_name} />
             </React.Suspense>
           </div>
+        ) : isFont ? (
+          <FontPreview fontPath={asset.file_path} fontName={asset.file_name} />
         ) : (
           <div className="flex flex-col items-center justify-center text-[#666] gap-3 p-12">
             {React.createElement(getFileIcon(asset.file_ext), { size: 64 })}
@@ -1869,8 +2836,31 @@ const PreviewModal: React.FC<PreviewProps> = ({ asset, assets, currentIndex, onC
         {asset.width > 0 && <span>{asset.width} × {asset.height}</span>}
         <span>{formatFileSize(asset.file_size)}</span>
         <span>{formatDate(asset.modified_at)}</span>
+        {zoom !== 1 && (
+          <button onClick={() => { setZoom(1); setPan({ x: 0, y: 0 }); }} className="text-[#3b82f6] hover:text-[#60a5fa] text-xs">
+            {Math.round(zoom * 100)}% · 重置
+          </button>
+        )}
+        {canPreviewImage && (
+          <button
+            onClick={() => setAnnotating(!annotating)}
+            className={`px-3 py-1 rounded text-xs font-medium transition-colors ${annotating ? 'bg-blue-500 text-white' : 'bg-[#333] text-[#aaa] hover:bg-[#444] hover:text-white'}`}
+          >
+            <Edit3 size={14} className="inline mr-1" />标注
+          </button>
+        )}
         <span className="ml-auto text-[#666]">{currentIndex + 1} / {assets.length}</span>
       </div>
+
+      {annotating && canPreviewImage && asset && (
+        <AnnotationCanvas
+          assetId={asset.id}
+          imageSrc={previewSrc}
+          imageWidth={asset.width || 800}
+          imageHeight={asset.height || 600}
+          onClose={() => setAnnotating(false)}
+        />
+      )}
     </div>
   );
 };
@@ -1898,6 +2888,7 @@ const SORT_OPTIONS = [
   { value: 'name', label: '文件名' },
   { value: 'size', label: '文件大小' },
   { value: 'ext', label: '格式' },
+  { value: 'random', label: '随机打乱' },
 ];
 
 export default function AssetManager() {
@@ -1926,8 +2917,19 @@ export default function AssetManager() {
   const [previewIndex, setPreviewIndex] = useState(-1);
   const previewAsset = previewIndex >= 0 ? assets[previewIndex] : null;
 
-  // Grid size
-  const [thumbSize, setThumbSize] = useState<'small' | 'large'>('small');
+  // Grid size — continuous zoom (min col width in px, 100–400)
+  const [thumbScale, setThumbScale] = useState<number>(() => {
+    const saved = localStorage.getItem('arthub_asset_thumb_scale');
+    return saved ? Math.max(100, Math.min(400, parseInt(saved, 10))) : 180;
+  });
+  useEffect(() => { localStorage.setItem('arthub_asset_thumb_scale', String(thumbScale)); }, [thumbScale]);
+
+  // View mode: masonry (waterfall) | list
+  type ViewMode = 'masonry' | 'list';
+  const [viewMode, setViewMode] = useState<ViewMode>(() => {
+    return (localStorage.getItem('arthub_asset_view_mode') as ViewMode) || 'masonry';
+  });
+  useEffect(() => { localStorage.setItem('arthub_asset_view_mode', viewMode); }, [viewMode]);
 
   // Stats
   const [stats, setStats] = useState<FolderStats | null>(null);
@@ -1978,11 +2980,28 @@ export default function AssetManager() {
   // ---- Compare Panel State ----
   const [showComparePanel, setShowComparePanel] = useState(false);
   const [showMultiVideo, setShowMultiVideo] = useState(false);
+  const [showBatchRename, setShowBatchRename] = useState(false);
+  const [showSpotlight, setShowSpotlight] = useState(false);
+  const [showDuplicates, setShowDuplicates] = useState(false);
 
   // ---- Favorites State ----
   const [favoriteIds, setFavoriteIds] = useState<Set<number>>(new Set());
   const [filterFavorites, setFilterFavorites] = useState(false);
   const [filterMinRating, setFilterMinRating] = useState(0);
+
+  // ---- Color Search State ----
+  const [colorFilter, setColorFilter] = useState<string | null>(null);
+  const [colorFilterIds, setColorFilterIds] = useState<Set<number> | null>(null);
+
+  // ---- AI Semantic Search State ----
+  const [aiMode, setAiMode] = useState(false);
+  const [aiReady, setAiReady] = useState(false);
+  const [aiLoading, setAiLoading] = useState(false);
+  const [aiDownloading, setAiDownloading] = useState(false);
+  const [aiDownloadProgress, setAiDownloadProgress] = useState('');
+  const [aiIndexing, setAiIndexing] = useState(false);
+  const [aiStats, setAiStats] = useState<{ indexed: number; total: number; progress: number } | null>(null);
+  const [aiResults, setAiResults] = useState<Map<number, number> | null>(null); // asset_id → score
 
   // Load OS username from backend (Phase 3 fix)
   useEffect(() => {
@@ -1999,6 +3018,107 @@ export default function AssetManager() {
       }
     })();
   }, []);
+
+  // AI model check on mount
+  useEffect(() => {
+    (async () => {
+      try {
+        const status = await invoke<{ all_ready: boolean; loaded: boolean }>('ai_check_model');
+        setAiReady(status.all_ready);
+        if (status.all_ready) {
+          const stats = await invoke<{ indexed: number; total: number; progress: number }>('ai_embedding_stats');
+          setAiStats(stats);
+        }
+      } catch {}
+    })();
+  }, []);
+
+  const handleAiSetup = useCallback(async () => {
+    try {
+      const status = await invoke<{ all_ready: boolean; loaded: boolean }>('ai_check_model');
+      if (!status.all_ready) {
+        // If user has set a local storage directory, auto-set AI models dir there
+        try {
+          const dirInfo = await invoke<{ is_custom: boolean }>('ai_get_models_dir');
+          if (!dirInfo.is_custom) {
+            const storagePath = await getSavedStoragePath();
+            if (storagePath) {
+              const aiDir = storagePath.replace(/[\\/]$/, '') + (storagePath.includes('\\') ? '\\ai_models' : '/ai_models');
+              await invoke('ai_set_models_dir', { path: aiDir });
+            }
+          }
+        } catch { /* ignore - use current dir */ }
+
+        setAiDownloading(true);
+        setAiDownloadProgress('准备下载…');
+        const unlisten = await listen<{ file: string; downloaded: number; total: number }>('ai-download-progress', (event) => {
+          const { file, downloaded, total } = event.payload;
+          if (total > 0) {
+            const pct = Math.round((downloaded / total) * 100);
+            const dlMB = (downloaded / 1048576).toFixed(1);
+            const totalMB = (total / 1048576).toFixed(1);
+            setAiDownloadProgress(`${file} ${dlMB}/${totalMB} MB (${pct}%)`);
+          }
+        });
+        try {
+          await invoke('ai_download_model');
+        } finally {
+          unlisten();
+        }
+        setAiDownloading(false);
+        setAiDownloadProgress('');
+      }
+      setAiLoading(true);
+      await invoke('ai_load_model');
+      setAiReady(true);
+      setAiLoading(false);
+      setAiMode(true);
+      handleAiIndex();
+    } catch (e) {
+      console.error('AI setup failed', e);
+      setAiDownloading(false);
+      setAiLoading(false);
+    }
+  }, []);
+
+  const aiIndexingRef = useRef(false);
+  const handleAiIndex = useCallback(async () => {
+    if (aiIndexingRef.current) return;
+    aiIndexingRef.current = true;
+    setAiIndexing(true);
+    try {
+      let hasMore = true;
+      while (hasMore) {
+        const result = await invoke<{ batch_indexed: number; batch_failed: number; total_indexed: number; total_images: number }>('ai_index_embeddings');
+        setAiStats({ indexed: result.total_indexed, total: result.total_images, progress: result.total_images > 0 ? result.total_indexed / result.total_images : 0 });
+        const batchProcessed = result.batch_indexed + result.batch_failed;
+        hasMore = batchProcessed > 0 && result.total_indexed < result.total_images;
+      }
+    } catch (e) { console.error('AI indexing failed', e); }
+    aiIndexingRef.current = false;
+    setAiIndexing(false);
+  }, []);
+
+  const handleAiSearch = useCallback(async (query: string) => {
+    if (!query.trim()) { setAiResults(null); return; }
+    try {
+      const results = await invoke<[number, number][]>('ai_semantic_search', { query, topK: 200 });
+      const map = new Map<number, number>();
+      results.forEach(([id, score]) => map.set(id, score));
+      setAiResults(map);
+    } catch (e) {
+      console.error('AI search failed', e);
+      setAiResults(null);
+    }
+  }, []);
+
+  // Debounced AI search when aiMode + searchText changes
+  useEffect(() => {
+    if (!aiMode) { setAiResults(null); return; }
+    if (!searchText.trim()) { setAiResults(null); return; }
+    const timer = setTimeout(() => handleAiSearch(searchText), 400);
+    return () => clearTimeout(timer);
+  }, [aiMode, searchText, handleAiSearch]);
 
   // ---- Load folders ----
   const loadFolders = useCallback(async () => {
@@ -2037,28 +3157,35 @@ export default function AssetManager() {
     }
     try {
       const page = append ? currentPageRef.current + 1 : 1;
+      const effectiveSortBy = sortBy === 'random' ? 'modified' : sortBy;
       const result = await invoke<QueryResult>('asset_query', {
         params: {
           folder_id: selectedFolderId,
-          search: searchText || null,
+          search: (aiMode ? null : searchText) || null,
           extensions: formatFilter.length > 0 ? formatFilter : null,
           min_width: null,
           max_width: null,
           tag_ids: filterByTag ? [filterByTag] : null,
           min_rating: filterMinRating > 0 ? filterMinRating : null,
           favorite_only: filterFavorites || null,
-          sort_by: sortBy,
+          sort_by: effectiveSortBy,
           sort_order: sortDesc ? 'desc' : 'asc',
           page,
           page_size: PAGE_SIZE,
         },
       });
-      // Only apply result if this is still the latest request (avoids stale data from race conditions)
       if (requestId !== loadRequestRef.current) return;
+      let resultAssets = result.assets;
+      if (sortBy === 'random' && !append) {
+        for (let i = resultAssets.length - 1; i > 0; i--) {
+          const j = Math.floor(Math.random() * (i + 1));
+          [resultAssets[i], resultAssets[j]] = [resultAssets[j], resultAssets[i]];
+        }
+      }
       if (append) {
-        setAssets(prev => [...prev, ...result.assets]);
+        setAssets(prev => [...prev, ...resultAssets]);
       } else {
-        setAssets(result.assets);
+        setAssets(resultAssets);
       }
       setTotalAssets(result.total);
       setCurrentPage(page);
@@ -2070,7 +3197,7 @@ export default function AssetManager() {
     if (requestId === loadRequestRef.current) {
       setLoading(false);
     }
-  }, [selectedFolderId, searchText, formatFilter, sortBy, sortDesc, filterByTag, filterMinRating, filterFavorites]);
+  }, [selectedFolderId, searchText, formatFilter, sortBy, sortDesc, filterByTag, filterMinRating, filterFavorites, aiMode]);
 
   // Always keep loadAssetsRef pointing to the latest loadAssets
   useEffect(() => {
@@ -2089,24 +3216,32 @@ export default function AssetManager() {
 
     (async () => {
       try {
+        const effectiveSortBy2 = sortBy === 'random' ? 'modified' : sortBy;
         const result = await invoke<QueryResult>('asset_query', {
           params: {
             folder_id: selectedFolderId,
-            search: searchText || null,
-            extensions: formatFilter.length > 0 ? formatFilter : null,
-            min_width: null,
-            max_width: null,
-            tag_ids: filterByTag ? [filterByTag] : null,
-            min_rating: filterMinRating > 0 ? filterMinRating : null,
+          search: (aiMode ? null : searchText) || null,
+          extensions: formatFilter.length > 0 ? formatFilter : null,
+          min_width: null,
+          max_width: null,
+          tag_ids: filterByTag ? [filterByTag] : null,
+          min_rating: filterMinRating > 0 ? filterMinRating : null,
             favorite_only: filterFavorites || null,
-            sort_by: sortBy,
+            sort_by: effectiveSortBy2,
             sort_order: sortDesc ? 'desc' : 'asc',
             page: 1,
             page_size: PAGE_SIZE,
           },
         });
         if (requestId !== loadRequestRef.current) return;
-        setAssets(result.assets);
+        let resultAssets2 = result.assets;
+        if (sortBy === 'random') {
+          for (let i = resultAssets2.length - 1; i > 0; i--) {
+            const j = Math.floor(Math.random() * (i + 1));
+            [resultAssets2[i], resultAssets2[j]] = [resultAssets2[j], resultAssets2[i]];
+          }
+        }
+        setAssets(resultAssets2);
         setTotalAssets(result.total);
         setCurrentPage(1);
       } catch (e) {
@@ -2154,8 +3289,10 @@ export default function AssetManager() {
           setScanning(false);
           setScanProgress(null);
           loadFolders();
-          // Use ref to always call the latest loadAssets (avoids stale closure)
           loadAssetsRef.current(false);
+          // Background indexing: colors + hashes (silent, non-blocking)
+          invoke('asset_index_colors').catch(() => {});
+          invoke('asset_index_hashes').catch(() => {});
         }
       });
     })();
@@ -2183,6 +3320,49 @@ export default function AssetManager() {
   }, []);
 
   useEffect(() => { loadFavorites(); }, [loadFavorites]);
+
+  // Background color/hash index on startup (silent)
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      invoke('asset_index_colors').catch(() => {});
+      invoke('asset_index_hashes').catch(() => {});
+    }, 3000);
+    return () => clearTimeout(timer);
+  }, []);
+
+  // Color search effect
+  useEffect(() => {
+    if (!colorFilter) {
+      setColorFilterIds(null);
+      return;
+    }
+    const hex = colorFilter;
+    const r = parseInt(hex.slice(1, 3), 16);
+    const g = parseInt(hex.slice(3, 5), 16);
+    const b = parseInt(hex.slice(5, 7), 16);
+    const rf = r / 255, gf = g / 255, bf = b / 255;
+    const max = Math.max(rf, gf, bf), min = Math.min(rf, gf, bf);
+    const l = (max + min) / 2;
+    let h = 0, s = 0;
+    if (max !== min) {
+      const d = max - min;
+      s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
+      if (max === rf) h = ((gf - bf) / d + (gf < bf ? 6 : 0)) / 6;
+      else if (max === gf) h = ((bf - rf) / d + 2) / 6;
+      else h = ((rf - gf) / d + 4) / 6;
+      h *= 360;
+    }
+    const hRange = 25;
+    invoke<number[]>('asset_search_by_color', {
+      hMin: (h - hRange + 360) % 360,
+      hMax: (h + hRange) % 360,
+      sMin: Math.max(0, s - 0.3),
+      lMin: Math.max(0, l - 0.3),
+      lMax: Math.min(1, l + 0.3),
+    }).then(ids => {
+      setColorFilterIds(new Set(ids));
+    }).catch(() => setColorFilterIds(null));
+  }, [colorFilter]);
 
   // ---- Phase 2: Load smart folders ----
   const loadSmartFolders = useCallback(async () => {
@@ -2386,6 +3566,18 @@ export default function AssetManager() {
     }
   };
 
+  const handleBatchRename = async (renames: [number, string][]) => {
+    try {
+      const count = await invoke<number>('asset_batch_rename', { renames });
+      showToast('success', `已重命名 ${count} 个文件`);
+      setSelectedIds(new Set());
+      setShowBatchRename(false);
+      loadAssets(false);
+    } catch (e: any) {
+      showToast('error', e?.toString() || '批量重命名失败');
+    }
+  };
+
   const handleBatchSetRating = async (rating: number) => {
     if (selectedIds.size === 0) return;
     try {
@@ -2568,6 +3760,12 @@ export default function AssetManager() {
         e.preventDefault();
         setSelectedIds(new Set(assets.map(a => a.id)));
       }
+      // Ctrl+Shift+F: Spotlight quick search
+      if (e.key === 'F' && (e.ctrlKey || e.metaKey) && e.shiftKey) {
+        e.preventDefault();
+        setShowSpotlight(true);
+        return;
+      }
       // Ctrl+F: focus search
       if (e.key === 'f' && (e.ctrlKey || e.metaKey)) {
         const target = e.target as HTMLElement;
@@ -2675,21 +3873,33 @@ export default function AssetManager() {
   // ---- Derived ----
   const spaceFolders = useMemo(() => folders.filter(f => f.space_type === space), [folders, space]);
   const lockedPathsSet = useMemo(() => new Set(activeLocks.map(l => l.file_path)), [activeLocks]);
+  const displayAssets = useMemo(() => {
+    let result = assets;
+    if (colorFilterIds) {
+      result = result.filter(a => colorFilterIds.has(a.id));
+    }
+    if (aiMode && aiResults) {
+      const matched = result.filter(a => aiResults.has(a.id));
+      matched.sort((a, b) => (aiResults.get(b.id) || 0) - (aiResults.get(a.id) || 0));
+      return matched;
+    }
+    return result;
+  }, [assets, colorFilterIds, aiMode, aiResults]);
 
   // ---- Render ----
   return (
     <div className="h-full flex flex-col overflow-hidden">
-      {/* Top Bar */}
-      <div className="flex-none flex items-center gap-3 px-4 py-3 border-b border-[#222]">
+      {/* Top Bar - Row 1: Navigation & Search */}
+      <div className="flex-none flex items-center gap-2 px-4 py-2 border-b border-[#222]">
         {/* Space switch */}
-        <div className="flex bg-[#1a1a1a] rounded-lg p-0.5 gap-0.5">
+        <div className="flex bg-[#1a1a1a] rounded-lg p-0.5 gap-0.5 flex-none">
           <button
             onClick={() => { setSpace('personal'); setSelectedFolderId(null); }}
             className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${
               space === 'personal' ? 'bg-[#2a2a2a] text-white' : 'text-[#888] hover:text-[#aaa]'
             }`}
           >
-            <HardDrive size={13} /> 个人空间
+            <HardDrive size={13} /> 个人
           </button>
           <button
             onClick={() => { setSpace('team'); setSelectedFolderId(null); }}
@@ -2697,32 +3907,132 @@ export default function AssetManager() {
               space === 'team' ? 'bg-[#2a2a2a] text-white' : 'text-[#888] hover:text-[#aaa]'
             }`}
           >
-            <Globe size={13} /> 团队空间
+            <Globe size={13} /> 团队
           </button>
         </div>
 
         {/* Search */}
-        <div className="flex-1 relative max-w-md">
-          <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#555]" />
-          <input
-            type="text"
-            value={searchText}
-            onChange={e => setSearchText(e.target.value)}
-            placeholder="搜索文件名..."
-            className="w-full bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg pl-9 pr-3 py-1.5 text-xs text-[#ccc] placeholder-[#555] outline-none focus:border-[#3b82f6] transition-colors"
-          />
-          {searchText && (
-            <button
-              className="absolute right-2 top-1/2 -translate-y-1/2 text-[#555] hover:text-[#999]"
-              onClick={() => setSearchText('')}
-            >
-              <X size={12} />
-            </button>
+        <div className="flex-1 relative flex items-center gap-1.5">
+          <div className="relative flex-1">
+            {aiMode ? (
+              <Sparkles size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-purple-400" />
+            ) : (
+              <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#555]" />
+            )}
+            <input
+              type="text"
+              value={searchText}
+              onChange={e => setSearchText(e.target.value)}
+              placeholder={aiMode ? 'AI 语义搜索：描述你想找的内容…' : '搜索 (支持 A B 多词 | 或 -排除)'}
+              className={`w-full bg-[#1a1a1a] border rounded-lg pl-9 pr-8 py-1.5 text-xs text-[#ccc] placeholder-[#555] outline-none transition-colors ${
+                aiMode ? 'border-purple-500/50 focus:border-purple-500' : 'border-[#2a2a2a] focus:border-[#3b82f6]'
+              }`}
+            />
+            {searchText && (
+              <button
+                className="absolute right-2 top-1/2 -translate-y-1/2 text-[#555] hover:text-[#999]"
+                onClick={() => setSearchText('')}
+              >
+                <X size={12} />
+              </button>
+            )}
+          </div>
+          <button
+            onClick={() => {
+              if (!aiReady) { handleAiSetup(); return; }
+              setAiMode(!aiMode);
+              if (aiMode) { setAiResults(null); }
+            }}
+            title={aiReady ? (aiMode ? '关闭 AI 搜索' : '开启 AI 语义搜索') : '下载 AI 模型 (~600MB)'}
+            className={`flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[11px] font-medium transition-all whitespace-nowrap flex-none ${
+              aiDownloading || aiLoading ? 'bg-purple-500/20 text-purple-300 animate-pulse cursor-wait' :
+              aiMode ? 'bg-purple-600 text-white shadow-lg shadow-purple-500/20' :
+              aiReady ? 'bg-[#1a1a1a] text-purple-400 hover:bg-purple-500/20 border border-purple-500/30' :
+              'bg-[#1a1a1a] text-[#888] hover:text-purple-400 border border-[#2a2a2a]'
+            }`}
+          >
+            <Sparkles size={12} />
+            {aiDownloading ? '下载中…' : aiLoading ? '加载中…' : 'AI'}
+          </button>
+        </div>
+
+        {/* Divider */}
+        <div className="w-px h-5 bg-[#333] flex-none" />
+
+        {/* View mode + Zoom slider */}
+        <div className="flex items-center gap-1.5 bg-[#1a1a1a] rounded-lg px-2 py-1 flex-none">
+          <button
+            onClick={() => setViewMode('masonry')}
+            className={`p-1 rounded ${viewMode === 'masonry' ? 'bg-[#2a2a2a] text-white' : 'text-[#666] hover:text-[#aaa]'}`}
+            title="瀑布流"
+          >
+            <LayoutGrid size={14} />
+          </button>
+          <button
+            onClick={() => setViewMode('list')}
+            className={`p-1 rounded ${viewMode === 'list' ? 'bg-[#2a2a2a] text-white' : 'text-[#666] hover:text-[#aaa]'}`}
+            title="列表"
+          >
+            <Grid size={14} />
+          </button>
+          {viewMode === 'masonry' && (
+            <>
+              <div className="w-px h-4 bg-[#333] mx-0.5" />
+              <Grid size={11} className="text-[#555] flex-none" />
+              <input
+                type="range"
+                min={100}
+                max={400}
+                step={10}
+                value={thumbScale}
+                onChange={e => setThumbScale(+e.target.value)}
+                className="w-20 accent-[#3b82f6] cursor-pointer"
+                title={`缩略图宽度: ${thumbScale}px`}
+              />
+              <LayoutGrid size={11} className="text-[#555] flex-none" />
+            </>
           )}
         </div>
 
+        {/* Tool buttons group */}
+        <div className="flex items-center gap-1 flex-none">
+          <button
+            onClick={() => setShowSpotlight(true)}
+            className="p-1.5 bg-[#1a1a1a] hover:bg-[#2a2a2a] text-[#666] hover:text-[#aaa] rounded transition-colors"
+            title="快速搜索 (Ctrl+Shift+F)"
+          >
+            <Search size={13} />
+          </button>
+          <button
+            onClick={() => setShowDuplicates(true)}
+            className="p-1.5 bg-[#1a1a1a] hover:bg-[#2a2a2a] text-[#666] hover:text-[#aaa] rounded transition-colors"
+            title="重复文件检测"
+          >
+            <Copy size={13} />
+          </button>
+          <button
+            onClick={() => setShowFfmpegSettings(true)}
+            className="p-1.5 bg-[#1a1a1a] hover:bg-[#2a2a2a] text-[#666] hover:text-[#aaa] rounded transition-colors"
+            title="FFmpeg 设置"
+          >
+            <Settings size={13} />
+          </button>
+          <button
+            onClick={handleScanAll}
+            disabled={scanning || spaceFolders.length === 0}
+            className="flex items-center gap-1 px-2 py-1.5 bg-[#1a1a1a] hover:bg-[#2a2a2a] text-[#aaa] rounded text-[11px] disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+            title="扫描所有文件夹"
+          >
+            <RefreshCw size={12} className={scanning ? 'animate-spin' : ''} />
+            {scanning ? '扫描中' : '刷新'}
+          </button>
+        </div>
+      </div>
+
+      {/* Top Bar - Row 2: Filters */}
+      <div className="flex-none flex items-center gap-2 px-4 py-1.5 border-b border-[#1a1a1a] bg-[#111]">
         {/* Format filters */}
-        <div className="flex gap-1">
+        <div className="flex gap-0.5 flex-none">
           {FORMAT_GROUPS.map(g => {
             const active = g.exts.length === 0
               ? formatFilter.length === 0
@@ -2731,8 +4041,8 @@ export default function AssetManager() {
               <button
                 key={g.label}
                 onClick={() => setFormatFilter(g.exts)}
-                className={`px-2.5 py-1 rounded text-[11px] font-medium transition-colors ${
-                  active ? 'bg-[#2563eb] text-white' : 'bg-[#1a1a1a] text-[#888] hover:text-[#ccc]'
+                className={`px-2 py-0.5 rounded text-[11px] font-medium transition-colors ${
+                  active ? 'bg-[#2563eb] text-white' : 'text-[#777] hover:text-[#ccc] hover:bg-[#1a1a1a]'
                 }`}
               >
                 {g.label}
@@ -2741,19 +4051,51 @@ export default function AssetManager() {
           })}
         </div>
 
+        <div className="w-px h-4 bg-[#222] flex-none" />
+
+        {/* Color filter */}
+        <div className="relative flex items-center flex-none">
+          <input
+            type="color"
+            value={colorFilter || '#ff0000'}
+            onChange={e => setColorFilter(e.target.value)}
+            className="w-0 h-0 opacity-0 absolute"
+            id="color-filter-input"
+          />
+          <button
+            onClick={() => {
+              if (colorFilter) { setColorFilter(null); }
+              else { (document.getElementById('color-filter-input') as HTMLInputElement)?.click(); }
+            }}
+            className={`flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-medium transition-colors ${
+              colorFilter ? 'text-white' : 'text-[#777] hover:text-[#ccc] hover:bg-[#1a1a1a]'
+            }`}
+            style={colorFilter ? { background: colorFilter } : {}}
+            title={colorFilter ? '点击清除颜色过滤' : '按颜色搜索'}
+          >
+            <Palette size={12} />
+            {!colorFilter && '颜色'}
+          </button>
+          {!colorFilter && (
+            <label htmlFor="color-filter-input" className="cursor-pointer ml-0.5">
+              <div className="w-3.5 h-3.5 rounded-full border border-[#333] bg-gradient-to-br from-red-500 via-green-500 to-blue-500 hover:scale-110 transition-transform" title="选择颜色" />
+            </label>
+          )}
+        </div>
+
         {/* Favorite filter */}
         <button
           onClick={() => setFilterFavorites(!filterFavorites)}
-          className={`flex items-center gap-1 px-2 py-1 rounded text-[11px] font-medium transition-colors ${
-            filterFavorites ? 'bg-[#f59e0b] text-white' : 'bg-[#1a1a1a] text-[#888] hover:text-[#ccc]'
+          className={`flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-medium transition-colors flex-none ${
+            filterFavorites ? 'bg-[#f59e0b] text-white' : 'text-[#777] hover:text-[#ccc] hover:bg-[#1a1a1a]'
           }`}
           title="只看收藏"
         >
-          <Bookmark size={12} /> 收藏
+          <Bookmark size={11} /> 收藏
         </button>
 
         {/* Min rating filter */}
-        <div className="flex items-center gap-0.5">
+        <div className="flex items-center gap-0.5 flex-none">
           {[1, 2, 3, 4, 5].map(r => (
             <button
               key={r}
@@ -2762,19 +4104,21 @@ export default function AssetManager() {
               title={filterMinRating === r ? '取消评分过滤' : `最少 ${r} 星`}
             >
               <Star
-                size={13}
-                className={r <= filterMinRating ? 'text-yellow-400 fill-yellow-400' : 'text-[#333]'}
+                size={12}
+                className={r <= filterMinRating ? 'text-yellow-400 fill-yellow-400' : 'text-[#444]'}
               />
             </button>
           ))}
         </div>
+
+        <div className="w-px h-4 bg-[#222] flex-none" />
 
         {/* Tag filter */}
         {allTags.length > 0 && (
           <select
             value={filterByTag ?? ''}
             onChange={e => setFilterByTag(e.target.value ? Number(e.target.value) : null)}
-            className="bg-[#1a1a1a] border border-[#2a2a2a] rounded text-[11px] text-[#aaa] px-2 py-1 outline-none cursor-pointer"
+            className="bg-[#1a1a1a] border border-[#222] rounded text-[11px] text-[#aaa] px-2 py-0.5 outline-none cursor-pointer flex-none"
           >
             <option value="">全部标签</option>
             {allTags.map(t => (
@@ -2786,20 +4130,23 @@ export default function AssetManager() {
         {/* Tag Manager toggle */}
         <button
           onClick={() => setShowTagManager(!showTagManager)}
-          className={`flex items-center gap-1 px-2 py-1 rounded text-[11px] font-medium transition-colors ${
-            showTagManager ? 'bg-[#2563eb] text-white' : 'bg-[#1a1a1a] text-[#888] hover:text-[#ccc]'
+          className={`flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-medium transition-colors flex-none ${
+            showTagManager ? 'bg-[#2563eb] text-white' : 'text-[#777] hover:text-[#ccc] hover:bg-[#1a1a1a]'
           }`}
           title="标签管理"
         >
-          <Tag size={12} /> 标签
+          <Tag size={11} /> 标签
         </button>
 
+        {/* Spacer */}
+        <div className="flex-1" />
+
         {/* Sort */}
-        <div className="flex items-center gap-1">
+        <div className="flex items-center gap-1 flex-none">
           <select
             value={sortBy}
             onChange={e => setSortBy(e.target.value)}
-            className="bg-[#1a1a1a] border border-[#2a2a2a] rounded text-[11px] text-[#aaa] px-2 py-1 outline-none cursor-pointer"
+            className="bg-[#1a1a1a] border border-[#222] rounded text-[11px] text-[#aaa] px-2 py-0.5 outline-none cursor-pointer"
           >
             {SORT_OPTIONS.map(o => (
               <option key={o.value} value={o.value}>{o.label}</option>
@@ -2813,44 +4160,6 @@ export default function AssetManager() {
             {sortDesc ? '↓' : '↑'}
           </button>
         </div>
-
-        {/* Grid size toggle */}
-        <div className="flex bg-[#1a1a1a] rounded p-0.5 gap-0.5">
-          <button
-            onClick={() => setThumbSize('small')}
-            className={`p-1 rounded ${thumbSize === 'small' ? 'bg-[#2a2a2a] text-white' : 'text-[#666]'}`}
-            title="小图"
-          >
-            <Grid size={14} />
-          </button>
-          <button
-            onClick={() => setThumbSize('large')}
-            className={`p-1 rounded ${thumbSize === 'large' ? 'bg-[#2a2a2a] text-white' : 'text-[#666]'}`}
-            title="大图"
-          >
-            <LayoutGrid size={14} />
-          </button>
-        </div>
-
-        {/* FFmpeg settings */}
-        <button
-          onClick={() => setShowFfmpegSettings(true)}
-          className="p-1.5 bg-[#1a1a1a] hover:bg-[#2a2a2a] text-[#666] hover:text-[#aaa] rounded transition-colors"
-          title="FFmpeg 设置"
-        >
-          <Settings size={13} />
-        </button>
-
-        {/* Scan all */}
-        <button
-          onClick={handleScanAll}
-          disabled={scanning || spaceFolders.length === 0}
-          className="flex items-center gap-1 px-2.5 py-1.5 bg-[#1a1a1a] hover:bg-[#2a2a2a] text-[#aaa] rounded-lg text-[11px] disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
-          title="扫描所有文件夹"
-        >
-          <RefreshCw size={12} className={scanning ? 'animate-spin' : ''} />
-          {scanning ? '扫描中' : '刷新'}
-        </button>
       </div>
 
       {/* Scan progress bar */}
@@ -2871,6 +4180,36 @@ export default function AssetManager() {
               />
             </div>
           )}
+        </div>
+      )}
+
+      {/* AI indexing / download status */}
+      {(aiDownloading || aiIndexing || (aiMode && aiStats && aiStats.indexed < aiStats.total)) && (
+        <div className="flex-none px-4 py-1.5 bg-[#1a1024] border-b border-purple-500/20">
+          <div className="flex items-center gap-3 text-xs text-purple-300">
+            <Sparkles size={13} className={aiDownloading || aiIndexing ? 'animate-pulse' : ''} />
+            <span className="truncate max-w-[400px]">
+              {aiDownloading ? `正在下载 AI 模型 — ${aiDownloadProgress || '准备中…'}` :
+               aiIndexing && aiStats ? `AI 向量索引中 ${aiStats.indexed}/${aiStats.total}` :
+               aiStats ? `AI 索引: ${aiStats.indexed}/${aiStats.total} 张图片` : 'AI 准备中…'}
+            </span>
+            {aiDownloading && aiDownloadProgress && (
+              <div className="flex-1 h-1.5 bg-[#1a1a1a] rounded-full overflow-hidden max-w-[200px]">
+                <div
+                  className="h-full bg-purple-500 rounded-full transition-all duration-300"
+                  style={{ width: aiDownloadProgress.match(/\((\d+)%\)/)?.[1] ? `${aiDownloadProgress.match(/\((\d+)%\)/)?.[1]}%` : '0%' }}
+                />
+              </div>
+            )}
+            {!aiDownloading && aiStats && aiStats.total > 0 && (
+              <div className="flex-1 h-1 bg-[#1a1a1a] rounded-full overflow-hidden max-w-[200px]">
+                <div className="h-full bg-purple-500 rounded-full transition-all" style={{ width: `${aiStats.progress * 100}%` }} />
+              </div>
+            )}
+            {!aiIndexing && aiReady && aiStats && aiStats.indexed < aiStats.total && (
+              <button onClick={handleAiIndex} className="text-purple-400 hover:text-purple-300 text-[10px] underline">继续索引</button>
+            )}
+          </div>
         </div>
       )}
 
@@ -2939,6 +4278,13 @@ export default function AssetManager() {
             title="多视频同时播放"
           >
             <Video size={12} /> 同播
+          </button>
+          <button
+            onClick={() => setShowBatchRename(true)}
+            className="text-xs px-2 py-1 rounded bg-[#f97316]/20 text-[#f97316] hover:bg-[#f97316]/30 flex items-center gap-1"
+            title="批量重命名 (Ctrl+R)"
+          >
+            <Edit3 size={12} /> 重命名
           </button>
           <button
             onClick={handleBatchExport}
@@ -3148,14 +4494,45 @@ export default function AssetManager() {
             </span>
           </div>
 
-          {/* Scrollable grid */}
+          {/* Scrollable grid / list */}
           <div ref={scrollRef} className="flex-1 overflow-y-auto p-3">
-            {assets.length > 0 ? (
-              <VirtualGrid
-                assets={assets}
+            {displayAssets.length > 0 ? (
+              viewMode === 'list' ? (
+              <ListView
+                assets={displayAssets}
                 containerRef={scrollRef}
                 onClickAsset={(asset, _idx) => {
-                  // Multi-select with Ctrl/Cmd
+                  if (window.event && (window.event as any).ctrlKey) {
+                    setSelectedIds(prev => { const next = new Set(prev); if (next.has(asset.id)) next.delete(asset.id); else next.add(asset.id); return next; });
+                    return;
+                  }
+                  if (window.event && (window.event as any).shiftKey && selectedIds.size > 0) {
+                    const lastId = Array.from(selectedIds).pop()!;
+                    const lastIdx = assets.findIndex(a => a.id === lastId);
+                    const curIdx = assets.findIndex(a => a.id === asset.id);
+                    if (lastIdx >= 0 && curIdx >= 0) {
+                      const start = Math.min(lastIdx, curIdx);
+                      const end = Math.max(lastIdx, curIdx);
+                      const newIds = new Set(selectedIds);
+                      for (let i = start; i <= end; i++) newIds.add(assets[i].id);
+                      setSelectedIds(newIds);
+                      return;
+                    }
+                  }
+                  setSelectedIds(new Set());
+                  setDetailAssetId(asset.id);
+                }}
+                onDoubleClickAsset={(_asset, idx) => { setPreviewIndex(idx); }}
+                onContextMenu={handleContextMenu}
+                selectedIds={selectedIds}
+                assetTagsMap={assetTagsMap}
+                assetRatingsMap={assetRatingsMap}
+              />
+              ) : (
+              <VirtualGrid
+                assets={displayAssets}
+                containerRef={scrollRef}
+                onClickAsset={(asset, _idx) => {
                   if (window.event && (window.event as any).ctrlKey) {
                     setSelectedIds(prev => {
                       const next = new Set(prev);
@@ -3165,7 +4542,6 @@ export default function AssetManager() {
                     });
                     return;
                   }
-                  // Shift-click for range select
                   if (window.event && (window.event as any).shiftKey && selectedIds.size > 0) {
                     const lastId = Array.from(selectedIds).pop()!;
                     const lastIdx = assets.findIndex(a => a.id === lastId);
@@ -3201,10 +4577,11 @@ export default function AssetManager() {
                 assetTagsMap={assetTagsMap}
                 assetRatingsMap={assetRatingsMap}
                 lockedPaths={lockedPathsSet}
-                thumbSize={thumbSize}
+                colMinWidth={thumbScale}
               />
+              )
             ) : loading ? (
-              <SkeletonMasonryGrid columns={thumbSize === 'large' ? 3 : 5} items={15} gap={12} className="p-1" />
+              <SkeletonMasonryGrid columns={thumbScale > 280 ? 3 : thumbScale > 180 ? 5 : 7} items={15} gap={12} className="p-1" />
             ) : (
               <div className="flex flex-col items-center justify-center h-full text-[#444]">
                 {spaceFolders.length === 0 ? (
@@ -3305,6 +4682,27 @@ export default function AssetManager() {
           onSetRating={r => handleSetRating(contextMenu.assetId, r)}
           onCopyPath={handleCopyPath}
           onShowDetail={() => setDetailAssetId(contextMenu.assetId)}
+          onOpenInNewWindow={async () => {
+            const asset = assets.find(a => a.id === contextMenu.assetId);
+            if (!asset) return;
+            try {
+              const { WebviewWindow } = await import('@tauri-apps/api/window');
+              const label = `preview_${asset.id}`;
+              const previewUrl = IMAGE_EXTS.has(asset.file_ext)
+                ? convertFileSrc(asset.file_path)
+                : (asset.thumb_path ? convertFileSrc(asset.thumb_path) : '');
+              if (!previewUrl) return;
+              new WebviewWindow(label, {
+                url: previewUrl,
+                title: asset.file_name,
+                width: Math.min(asset.width || 800, 1200),
+                height: Math.min(asset.height || 600, 900),
+                alwaysOnTop: true,
+                decorations: true,
+                resizable: true,
+              });
+            } catch (e) { console.error('Open new window failed', e); }
+          }}
         />
       )}
 
@@ -3351,6 +4749,36 @@ export default function AssetManager() {
         <MultiVideoPanel
           assets={assets.filter(a => selectedIds.has(a.id) && VIDEO_EXTS.has(a.file_ext))}
           onClose={() => setShowMultiVideo(false)}
+        />
+      )}
+
+      {/* Batch Rename */}
+      {showBatchRename && selectedIds.size > 0 && (
+        <BatchRenameModal
+          assets={assets.filter(a => selectedIds.has(a.id))}
+          onRename={handleBatchRename}
+          onClose={() => setShowBatchRename(false)}
+        />
+      )}
+
+      {/* Spotlight Quick Search */}
+      {showSpotlight && (
+        <SpotlightSearch
+          onSelect={(asset) => {
+            setShowSpotlight(false);
+            setDetailAssetId(asset.id);
+            const idx = displayAssets.findIndex(a => a.id === asset.id);
+            if (idx >= 0) setPreviewIndex(idx);
+          }}
+          onClose={() => setShowSpotlight(false)}
+        />
+      )}
+
+      {/* Duplicate Finder */}
+      {showDuplicates && (
+        <DuplicateFinderModal
+          onClose={() => setShowDuplicates(false)}
+          onSelectAsset={(id) => { setShowDuplicates(false); setDetailAssetId(id); }}
         />
       )}
     </div>

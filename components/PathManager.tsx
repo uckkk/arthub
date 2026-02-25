@@ -387,6 +387,38 @@ const PathManager: React.FC = () => {
     setIsDraggingOver(false);
   };
 
+  // Tauri 原生文件拖拽：支持从系统资源管理器直接拖入文件夹/路径
+  const pathManagerRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (typeof window === 'undefined' || !(window as any).__TAURI__) return;
+    let cleanups: (() => void)[] = [];
+    const setup = async () => {
+      const { listen } = await import('@tauri-apps/api/event');
+      const isVisible = () => pathManagerRef.current ? pathManagerRef.current.offsetWidth > 0 : false;
+
+      const unDrop = await listen<string[]>('tauri://file-drop', async (event) => {
+        setIsDraggingOver(false);
+        if (!isVisible()) return;
+        const paths = (Array.isArray(event.payload) ? event.payload : []).filter(p => {
+          const lower = p.toLowerCase();
+          return !lower.endsWith('.exe') && !lower.endsWith('.lnk') && !lower.endsWith('.bat');
+        });
+        if (paths.length > 0) {
+          const filePath = paths[0];
+          const parts = filePath.replace(/\\/g, '/').split('/').filter(Boolean);
+          const name = parts[parts.length - 1] || filePath;
+          setDraggedPath({ path: filePath, name, type: 'local' });
+          setShowDragModal(true);
+        }
+      });
+      const unHover = await listen('tauri://file-drop-hover', () => { if (isVisible()) setIsDraggingOver(true); });
+      const unCancel = await listen('tauri://file-drop-cancelled', () => { setIsDraggingOver(false); });
+      cleanups = [unDrop, unHover, unCancel];
+    };
+    setup();
+    return () => cleanups.forEach(fn => fn());
+  }, []);
+
   const handleDragOverCreatePath = (e: React.DragEvent) => {
     if (draggedGroup) {
       return;
@@ -1075,7 +1107,7 @@ const PathManager: React.FC = () => {
   );
 
   return (
-    <div className="h-full flex flex-col overflow-hidden bg-[#0a0a0a]">
+    <div ref={pathManagerRef} className="h-full flex flex-col overflow-hidden bg-[#0a0a0a]">
       {/* 顶部工具栏 */}
       <div className="flex items-center justify-between p-6 border-b border-[#1a1a1a] shrink-0">
         <div className="flex items-center gap-2">
@@ -1294,11 +1326,6 @@ const PathManager: React.FC = () => {
       {isModalOpen && (
         <div 
           className={'fixed inset-0 z-50 flex items-center justify-center ' + OPACITY_CLASSES.bgBlack70 + ' backdrop-blur-sm'}
-          onClick={(e) => {
-            if (e.target === e.currentTarget) {
-              handleCloseAddModal();
-            }
-          }}
         >
           <div 
             className={'w-full max-w-md mx-4 bg-[#151515] border border-[#2a2a2a] rounded-xl shadow-2xl ' + OPACITY_CLASSES.shadowBlack50 + ' animate-scale-in'}
@@ -1395,7 +1422,6 @@ const PathManager: React.FC = () => {
       {editingItem && (
         <div 
           className={'fixed inset-0 z-50 flex items-center justify-center ' + OPACITY_CLASSES.bgBlack70 + ' backdrop-blur-sm'}
-          onClick={handleEditCancel}
         >
           <div 
             className={'w-full max-w-md mx-4 bg-[#151515] border border-[#2a2a2a] rounded-xl shadow-2xl ' + OPACITY_CLASSES.shadowBlack50 + ' animate-scale-in'}

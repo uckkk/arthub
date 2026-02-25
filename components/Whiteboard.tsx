@@ -460,6 +460,7 @@ const Whiteboard: React.FC = () => {
   }, [currentProject, showToast]);
 
   // 处理拖拽上传
+  const whiteboardContainerRef = useRef<HTMLDivElement>(null);
   const handleDrop = useCallback(async (e: React.DragEvent) => {
     e.preventDefault();
     e.stopPropagation();
@@ -476,8 +477,49 @@ const Whiteboard: React.FC = () => {
     if (files && files.length > 0) {
       await handleFileUpload(files);
     }
-    // 重置 input，允许重复选择同一文件
     e.target.value = '';
+  }, [handleFileUpload]);
+
+  // Tauri 原生文件拖拽：支持从系统资源管理器直接拖入图片/视频
+  useEffect(() => {
+    if (typeof window === 'undefined' || !(window as any).__TAURI__) return;
+    let cleanups: (() => void)[] = [];
+    const ACCEPTED_EXTS = ['.png', '.jpg', '.jpeg', '.gif', '.webp', '.bmp', '.mp4', '.webm', '.ogg', '.mov'];
+    const MIME_MAP: Record<string, string> = {
+      png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', webp: 'image/webp',
+      bmp: 'image/bmp', gif: 'image/gif',
+      mp4: 'video/mp4', webm: 'video/webm', ogg: 'video/ogg', mov: 'video/mp4',
+    };
+    const setup = async () => {
+      const { listen } = await import('@tauri-apps/api/event');
+      const { invoke } = await import('@tauri-apps/api/tauri');
+      const isVisible = () => whiteboardContainerRef.current ? whiteboardContainerRef.current.offsetWidth > 0 : false;
+
+      const unDrop = await listen<string[]>('tauri://file-drop', async (event) => {
+        if (!isVisible()) return;
+        let paths = (Array.isArray(event.payload) ? event.payload : []).filter(
+          p => ACCEPTED_EXTS.some(ext => p.toLowerCase().endsWith(ext))
+        );
+        if (paths.length === 0) return;
+        const files: File[] = [];
+        for (const p of paths) {
+          try {
+            const data: number[] = await invoke('read_binary_file_with_path', { filePath: p });
+            const ext = p.split('.').pop()?.toLowerCase() || 'png';
+            const name = p.split(/[\\/]/).pop() || 'file';
+            files.push(new File([new Uint8Array(data)], name, { type: MIME_MAP[ext] || 'application/octet-stream' }));
+          } catch (err) {
+            console.error('[Whiteboard] Failed to read file:', p, err);
+          }
+        }
+        if (files.length > 0) handleFileUpload(files);
+      });
+      const unHover = await listen('tauri://file-drop-hover', () => {});
+      const unCancel = await listen('tauri://file-drop-cancelled', () => {});
+      cleanups = [unDrop, unHover, unCancel];
+    };
+    setup();
+    return () => cleanups.forEach(fn => fn());
   }, [handleFileUpload]);
 
   // 导出画布为 PNG
@@ -628,7 +670,7 @@ const Whiteboard: React.FC = () => {
   }
 
   return (
-    <div className="h-full flex flex-col bg-[#0a0a0a] relative">
+    <div ref={whiteboardContainerRef} className="h-full flex flex-col bg-[#0a0a0a] relative">
       {/* 顶部工具栏 */}
       <div className="flex items-center justify-between px-3 py-2 sm:px-4 sm:py-3 border-b border-[#1a1a1a] shrink-0">
         <div className="flex items-center gap-3">

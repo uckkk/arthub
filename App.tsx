@@ -15,6 +15,7 @@ import { CURRENT_VERSION } from './services/updateService';
 import { consoleService } from './services/consoleService';
 import Console from './components/Console';
 import ErrorNotification from './components/ErrorNotification';
+import LogTips from './components/LogTips';
 
 // 懒加载组件以提升初始加载性能
 const PathManager = lazy(() => import('./components/PathManager'));
@@ -623,6 +624,8 @@ const AppContent: React.FC = () => {
 
           {/* 错误通知 - 右下角自动弹出 */}
           <ErrorNotification maxHeight={400} />
+          {/* 日志诊断 - 右下角一键复制 */}
+          <LogTips />
         </div>
   );
 };

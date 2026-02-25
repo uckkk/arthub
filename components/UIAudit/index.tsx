@@ -19,7 +19,8 @@ import {
 import {
   contrastRatio, getWCAGLevel, getWCAGColor,
   pickAreaColor, rgbToHex, hexToRgb,
-  type WCAGLevel,
+  batchWCAGAudit,
+  type WCAGLevel, type WCAGAuditReport, type WCAGAuditItem,
 } from './contrastUtils';
 import {
   drawReachabilityOverlay, drawFittsOverlay, calculateFitts,
@@ -54,7 +55,7 @@ type AndroidNav = 'gesture' | 'threeButton';
 type AspectMode = 'device' | 'preset' | 'custom';
 
 /** P1 分析工具的交互模式 */
-type AnalysisMode = 'none' | 'contrast' | 'fitts' | 'detect';
+type AnalysisMode = 'none' | 'contrast' | 'fitts' | 'detect' | 'wcag';
 
 /* ============================================================
    检测元素类型
@@ -262,9 +263,16 @@ const UIAudit: React.FC = () => {
   // 审计报告
   const [auditReport, setAuditReport] = useState<AuditReport | null>(null);
 
+  // WCAG 批量审计
+  const [wcagReport, setWcagReport] = useState<WCAGAuditReport | null>(null);
+  const [wcagRunning, setWcagRunning] = useState(false);
+  const [wcagSelectedId, setWcagSelectedId] = useState<string | null>(null);
+  const [wcagFilter, setWcagFilter] = useState<'all' | 'fail' | 'pass'>('all');
+
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const canvasAreaRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const screenOffsetRef = useRef({ x: 0, y: 0 });
   const dropdownRef = useRef<HTMLDivElement>(null);
 
   /* ---------- 衍生数据 ---------- */
@@ -681,6 +689,7 @@ const UIAudit: React.FC = () => {
     const deviceY = 20;                // 设备帧左上角 Y
     const screenX = deviceX;           // 屏幕 = 设备帧 (无间距)
     const screenY = deviceY;
+    screenOffsetRef.current = { x: screenX, y: screenY };
 
     // 清空
     ctx.clearRect(0, 0, cw, ch);
@@ -1155,6 +1164,38 @@ const UIAudit: React.FC = () => {
       ctx.restore();
     }
 
+    // WCAG 审计模式叠加
+    if (analysisMode === 'wcag' && wcagReport && wcagReport.items.length > 0) {
+      ctx.save();
+      for (const item of wcagReport.items) {
+        const bx = screenX + item.x, by = screenY + item.y;
+        const color = getWCAGColor(item.wcagLevel);
+        const isSelected = wcagSelectedId === item.elementId;
+
+        ctx.strokeStyle = color;
+        ctx.lineWidth = isSelected ? 3 : 2;
+        ctx.globalAlpha = isSelected ? 1 : 0.7;
+        ctx.strokeRect(bx, by, item.w, item.h);
+
+        ctx.fillStyle = color + (isSelected ? '25' : '12');
+        ctx.fillRect(bx, by, item.w, item.h);
+        ctx.globalAlpha = 1;
+
+        const labelText = `${item.wcagLevel} ${item.minContrast.toFixed(1)}:1`;
+        ctx.font = `${isSelected ? 'bold ' : ''}9px "SF Pro Display", -apple-system, sans-serif`;
+        const lw = ctx.measureText(labelText).width + 6;
+        const lh = 13;
+        const ly = by - lh - 1 > screenY ? by - lh - 1 : by + item.h + 1;
+        ctx.fillStyle = color;
+        ctx.fillRect(bx, ly, lw, lh);
+        ctx.fillStyle = '#fff';
+        ctx.textAlign = 'left';
+        ctx.textBaseline = 'top';
+        ctx.fillText(labelText, bx + 3, ly + 2);
+      }
+      ctx.restore();
+    }
+
     setWarnings(newWarnings);
     ctx.restore(); // 结束屏幕裁剪
 
@@ -1195,7 +1236,8 @@ const UIAudit: React.FC = () => {
       showHeatmap, saliencyData, heatmapOpacity, showReachability,
       fittsFrom, fittsTo, fittsResult,
       analysisMode, detectedElements, selectedElementId, hoveredElementId,
-      showDetectBoxes, showPressureOverlay, thumbHand]);
+      showDetectBoxes, showPressureOverlay, thumbHand,
+      wcagReport, wcagSelectedId]);
 
   useEffect(() => { renderCanvas(); }, [renderCanvas]);
 
@@ -1391,6 +1433,20 @@ const UIAudit: React.FC = () => {
         };
         e.preventDefault();
       }
+      return;
+    }
+
+    // WCAG 审计模式: 点击选中元素（item 坐标在屏幕相对空间）
+    if (analysisMode === 'wcag' && wcagReport) {
+      for (const item of wcagReport.items) {
+        if (pos.sx >= item.x && pos.sx <= item.x + item.w &&
+            pos.sy >= item.y && pos.sy <= item.y + item.h) {
+          setWcagSelectedId(wcagSelectedId === item.elementId ? null : item.elementId);
+          e.preventDefault();
+          return;
+        }
+      }
+      setWcagSelectedId(null);
       return;
     }
 
@@ -1600,6 +1656,7 @@ const UIAudit: React.FC = () => {
           cursor: isPanningRef.current ? 'grabbing'
             : analysisMode === 'contrast' ? 'crosshair'
             : analysisMode === 'fitts' ? 'crosshair'
+            : analysisMode === 'wcag' ? 'pointer'
             : 'default',
         }}
       >
@@ -1917,20 +1974,30 @@ const UIAudit: React.FC = () => {
           </label>
           {showMiniProgramPanel && (
             <div className="mt-2 grid grid-cols-2 gap-1">
-              {MINIPROGRAM_PRESETS.map(mp => (
-                <button
-                  key={mp.id}
-                  className={`flex items-center gap-1.5 px-2 py-1 rounded text-[11px] transition-colors ${
-                    selectedMiniPrograms.has(mp.id)
-                      ? 'bg-blue-500/15 text-blue-400'
-                      : 'text-[#666] hover:text-[#999] hover:bg-[#1a1a1a]'
-                  }`}
-                  onClick={() => toggleMiniProgram(mp.id)}
-                >
-                  <span className="text-[10px]">{mp.icon}</span>
-                  <span className="truncate">{mp.name.replace('小程序', '')}</span>
-                </button>
-              ))}
+              {MINIPROGRAM_PRESETS.map(mp => {
+                const isSelected = selectedMiniPrograms.has(mp.id);
+                return (
+                  <button
+                    key={mp.id}
+                    className={`flex items-center gap-1.5 px-2 py-1.5 rounded text-[11px] transition-all border ${
+                      isSelected
+                        ? 'bg-blue-500/25 text-blue-300 border-blue-500/60 ring-1 ring-blue-500/30'
+                        : 'text-[#666] hover:text-[#999] hover:bg-[#1a1a1a] border-transparent'
+                    }`}
+                    onClick={() => toggleMiniProgram(mp.id)}
+                  >
+                    <span className={`w-3.5 h-3.5 rounded-sm flex items-center justify-center flex-shrink-0 text-[9px] ${
+                      isSelected
+                        ? 'bg-blue-500 text-white'
+                        : 'border border-[#444]'
+                    }`}>
+                      {isSelected && '✓'}
+                    </span>
+                    <span className="text-[10px]">{mp.icon}</span>
+                    <span className="truncate">{mp.name.replace('小程序', '')}</span>
+                  </button>
+                );
+              })}
             </div>
           )}
         </div>
@@ -2448,6 +2515,226 @@ const UIAudit: React.FC = () => {
                     ))}
                   </div>
                 </>
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* == WCAG 批量审计 == */}
+        <div className="border-b border-[#1e1e1e] px-4 py-2.5">
+          <div className="flex items-center justify-between mb-2">
+            <button
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs transition-colors ${
+                analysisMode === 'wcag'
+                  ? 'bg-orange-500/20 text-orange-400 ring-1 ring-orange-500/30'
+                  : 'bg-[#1e1e1e] text-[#aaa] hover:bg-[#252525]'
+              }`}
+              onClick={() => setAnalysisMode(analysisMode === 'wcag' ? 'none' : 'wcag')}
+            >
+              <Eye size={12} />
+              WCAG 审计
+            </button>
+            {wcagRunning && <Loader2 size={14} className="text-orange-400 animate-spin" />}
+          </div>
+
+          {analysisMode === 'wcag' && (
+            <div className="space-y-2.5">
+              <button
+                className="w-full py-1.5 bg-orange-500/15 text-orange-400 text-[11px] rounded-lg hover:bg-orange-500/25 transition-colors flex items-center justify-center gap-1"
+                onClick={() => {
+                  if (!image || wcagRunning) return;
+                  setWcagRunning(true);
+                  requestAnimationFrame(() => {
+                    try {
+                      const sw = screenSize.width, sh = screenSize.height;
+
+                      // 创建干净临时画布：与 detectUIElements 坐标系一致
+                      // 把原始图像绘制到 screenW × screenH，
+                      // 元素坐标直接在此空间中，无 cover 偏移、无叠加层
+                      const tmpCanvas = document.createElement('canvas');
+                      tmpCanvas.width = sw;
+                      tmpCanvas.height = sh;
+                      const tmpCtx = tmpCanvas.getContext('2d');
+                      if (!tmpCtx) return;
+                      tmpCtx.drawImage(image, 0, 0, sw, sh);
+
+                      let elements = detectedElements.map((el, i) => ({
+                        id: el.id,
+                        label: el.label || `元素 ${i + 1}`,
+                        x: el.x, y: el.y, w: el.w, h: el.h,
+                      }));
+
+                      if (elements.length === 0) {
+                        runAutoDetect();
+                        setTimeout(() => {
+                          const sw2 = screenSize.width, sh2 = screenSize.height;
+                          const tc2 = document.createElement('canvas');
+                          tc2.width = sw2; tc2.height = sh2;
+                          const ctx2 = tc2.getContext('2d');
+                          if (!ctx2) return;
+                          ctx2.drawImage(image, 0, 0, sw2, sh2);
+                          const els = detectedElements.map((el, i) => ({
+                            id: el.id,
+                            label: el.label || `元素 ${i + 1}`,
+                            x: el.x, y: el.y, w: el.w, h: el.h,
+                          }));
+                          const report = batchWCAGAudit(ctx2, els);
+                          setWcagReport(report);
+                          setWcagRunning(false);
+                        }, 1500);
+                        return;
+                      }
+
+                      const report = batchWCAGAudit(tmpCtx, elements);
+                      setWcagReport(report);
+                    } finally {
+                      setWcagRunning(false);
+                    }
+                  });
+                }}
+                disabled={!image || wcagRunning}
+              >
+                <Scan size={11} />
+                {wcagReport ? '重新审计' : '一键 WCAG 审计'}
+              </button>
+
+              {wcagReport && (
+                <div className="space-y-2">
+                  {/* 总览 */}
+                  <div className="bg-[#1a1a1a] rounded-lg p-2.5">
+                    <div className="flex items-center justify-between mb-1.5">
+                      <span className="text-[10px] text-[#666] uppercase tracking-wider">WCAG 总览</span>
+                      <span
+                        className="text-lg font-bold"
+                        style={{ color: getWCAGColor(wcagReport.overallLevel) }}
+                      >
+                        {wcagReport.overallLevel}
+                      </span>
+                    </div>
+                    <div className="grid grid-cols-3 gap-2 text-[10px]">
+                      <div className="text-center">
+                        <div className="text-white font-bold text-sm">{wcagReport.items.length}</div>
+                        <div className="text-[#555]">检测项</div>
+                      </div>
+                      <div className="text-center">
+                        <div className="text-green-400 font-bold text-sm">{wcagReport.passCount}</div>
+                        <div className="text-[#555]">通过</div>
+                      </div>
+                      <div className="text-center">
+                        <div className="text-red-400 font-bold text-sm">{wcagReport.failCount}</div>
+                        <div className="text-[#555]">不通过</div>
+                      </div>
+                    </div>
+                    <div className="mt-2 h-2 bg-[#111] rounded-full overflow-hidden flex">
+                      <div
+                        className="h-full bg-green-500/70 transition-all"
+                        style={{ width: `${wcagReport.passRate * 100}%` }}
+                      />
+                      <div
+                        className="h-full bg-red-500/70 transition-all"
+                        style={{ width: `${(1 - wcagReport.passRate) * 100}%` }}
+                      />
+                    </div>
+                    <div className="text-center text-[10px] text-[#777] mt-1">
+                      通过率 {(wcagReport.passRate * 100).toFixed(0)}%
+                    </div>
+                  </div>
+
+                  {/* 过滤 */}
+                  <div className="flex gap-1">
+                    {(['all', 'fail', 'pass'] as const).map(f => (
+                      <button
+                        key={f}
+                        className={`flex-1 py-1 text-[10px] rounded transition-colors ${
+                          wcagFilter === f
+                            ? f === 'fail' ? 'bg-red-500/20 text-red-400'
+                              : f === 'pass' ? 'bg-green-500/20 text-green-400'
+                              : 'bg-[#333] text-white'
+                            : 'bg-[#1e1e1e] text-[#666] hover:text-[#aaa]'
+                        }`}
+                        onClick={() => setWcagFilter(f)}
+                      >
+                        {f === 'all' ? '全部' : f === 'fail' ? '不通过' : '通过'}
+                      </button>
+                    ))}
+                  </div>
+
+                  {/* 元素列表 */}
+                  <div className="max-h-48 overflow-y-auto space-y-0.5">
+                    {wcagReport.items
+                      .filter(item => wcagFilter === 'all' || (wcagFilter === 'fail' ? !item.pass : item.pass))
+                      .map((item, idx) => (
+                        <button
+                          key={item.elementId}
+                          className={`w-full text-left px-2 py-1.5 rounded text-[10px] transition-colors ${
+                            wcagSelectedId === item.elementId
+                              ? 'bg-orange-500/15 text-orange-300'
+                              : 'text-[#aaa] hover:bg-[#1e1e1e]'
+                          }`}
+                          onClick={() => setWcagSelectedId(
+                            wcagSelectedId === item.elementId ? null : item.elementId
+                          )}
+                        >
+                          <div className="flex items-center gap-1.5">
+                            <span
+                              className="w-2 h-2 rounded-full shrink-0"
+                              style={{ backgroundColor: getWCAGColor(item.wcagLevel) }}
+                            />
+                            <span className="truncate flex-1">{item.label}</span>
+                            <span
+                              className="font-mono font-bold shrink-0"
+                              style={{ color: getWCAGColor(item.wcagLevel) }}
+                            >
+                              {item.minContrast.toFixed(1)}:1
+                            </span>
+                            <span
+                              className="text-[9px] shrink-0"
+                              style={{ color: getWCAGColor(item.wcagLevel) }}
+                            >
+                              {item.wcagLevel}
+                            </span>
+                          </div>
+                          {wcagSelectedId === item.elementId && (
+                            <div className="mt-1.5 pl-3.5 space-y-1 text-[9px]">
+                              <div className="flex items-center gap-2">
+                                <span className="text-[#555]">前景</span>
+                                <span
+                                  className="w-3 h-3 rounded border border-[#333]"
+                                  style={{ backgroundColor: rgbToHex(...item.fgColor) }}
+                                />
+                                <span className="text-[#777] font-mono">{rgbToHex(...item.fgColor)}</span>
+                              </div>
+                              <div className="flex items-center gap-2">
+                                <span className="text-[#555]">背景 (最差)</span>
+                                <span
+                                  className="w-3 h-3 rounded border border-[#333]"
+                                  style={{ backgroundColor: rgbToHex(...item.bgWorstColor) }}
+                                />
+                                <span className="text-[#777] font-mono">{rgbToHex(...item.bgWorstColor)}</span>
+                              </div>
+                              <div className="flex gap-3">
+                                <div>
+                                  <span className="text-[#555]">平均 </span>
+                                  <span className="text-[#999]">{item.avgContrast.toFixed(1)}:1</span>
+                                </div>
+                                <div>
+                                  <span className="text-[#555]">大文本 </span>
+                                  <span style={{ color: getWCAGColor(item.wcagLevelLarge) }}>
+                                    {item.wcagLevelLarge}
+                                  </span>
+                                </div>
+                              </div>
+                              {!item.touchTargetPass && (
+                                <div className="text-red-400">
+                                  ⚠ {item.touchTargetWarning}
+                                </div>
+                              )}
+                            </div>
+                          )}
+                        </button>
+                      ))}
+                  </div>
+                </div>
               )}
             </div>
           )}

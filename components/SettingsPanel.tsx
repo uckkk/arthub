@@ -174,6 +174,14 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ isOpen, onClose, triggerR
       const result = await selectStorageDirectory();
       if (result) {
         setSelectedDirectory(result.path);
+        // 先检查目标目录是否已有数据文件，有则先导入再启用同步
+        try {
+          const { importAllDataFromFile } = await import('../services/fileStorageService');
+          await importAllDataFromFile();
+          console.log('从已有数据文件恢复数据后再启用同步');
+        } catch {
+          // 文件不存在是正常情况，忽略
+        }
         await autoSyncToFile();
         const config = getStorageConfig();
         setLastSyncTime(config.lastSyncTime);

@@ -81,6 +81,7 @@ const AppLauncher: React.FC = () => {
         // 监听文件拖拽事件
         // 注意：在 Tauri 1.5 中，payload 是 string[] 类型（文件路径数组）
         const unlisten = await listen<string[]>('tauri://file-drop', async (event) => {
+          setIsDraggingOver(false);
           console.log('[AppLauncher] Tauri file-drop event received:', {
             event: event.event,
             windowLabel: event.windowLabel,
@@ -641,7 +642,8 @@ const AppLauncher: React.FC = () => {
         }}
         onDragLeave={(e) => {
           if (e.dataTransfer.types.includes('Files')) {
-            if (e.currentTarget === e.target) {
+            const related = e.relatedTarget as Node | null;
+            if (!related || !e.currentTarget.contains(related)) {
               setIsDraggingOver(false);
             }
           } else {
