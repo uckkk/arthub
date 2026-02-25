@@ -44,14 +44,14 @@ md5 = "0.7"
 walkdir = "2"
 zip = "2"
 futures-util = "0.3"
+ndarray = "0.17"
+tokenizers = { version = "0.20", default-features = false, features = ["onig"] }
 # ort 不支持 macOS Intel (x86_64-apple-darwin) 的预编译二进制
 # 仅在 Windows 和 macOS ARM 上启用
 [target.'cfg(target_os = "windows")'.dependencies]
 ort = { version = "2.0.0-rc.9", features = ["download-binaries", "ndarray"] }
 [target.'cfg(all(target_os = "macos", target_arch = "aarch64"))'.dependencies]
 ort = { version = "2.0.0-rc.9", features = ["download-binaries", "ndarray"] }
-ndarray = "0.17"
-tokenizers = { version = "0.20", default-features = false, features = ["onig"] }
 
 [target.'cfg(windows)'.dependencies]
 winapi = { version = "0.3", features = ["winuser", "windef", "synchapi", "handleapi", "errhandlingapi", "winnt", "winreg"] }

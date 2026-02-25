@@ -139,7 +139,7 @@ pub fn load_model(d: &Path) -> Result<ClipModel, String> {
     let tp = text_model_path(d);
     let tkp = tokenizer_path(d);
     if !vp.exists() || !tp.exists() || !tkp.exists() {
-        return Err("模型文件未下载完�?.into());
+        return Err("Model files not downloaded".into());
     }
 
     let vision_session = Session::builder()
@@ -267,17 +267,18 @@ pub fn bytes_to_embedding(bytes: &[u8]) -> Vec<f32> {
 pub const fn get_model_version() -> &'static str { MODEL_VERSION }
 
 // macOS Intel stub implementations - ort 不支持此平台
+// macOS Intel stub implementations - ort does not support this platform
 #[cfg(all(target_os = "macos", target_arch = "x86_64"))]
 pub fn load_model(_d: &Path) -> Result<ClipModel, String> {
-    Err("AI 模型功能�?macOS Intel 上不可用：ort 不支�?x86_64-apple-darwin 平台".into())
+    Err("AI model feature is not available on macOS Intel (x86_64): ort does not support this platform".into())
 }
 
 #[cfg(all(target_os = "macos", target_arch = "x86_64"))]
 pub fn embed_image(_model: &mut ClipModel, _img_path: &str) -> Result<Vec<f32>, String> {
-    Err("AI 模型功能�?macOS Intel 上不可用：ort 不支�?x86_64-apple-darwin 平台".into())
+    Err("AI model feature is not available on macOS Intel (x86_64): ort does not support this platform".into())
 }
 
 #[cfg(all(target_os = "macos", target_arch = "x86_64"))]
 pub fn embed_text(_model: &mut ClipModel, _text: &str) -> Result<Vec<f32>, String> {
-    Err("AI 模型功能�?macOS Intel 上不可用：ort 不支�?x86_64-apple-darwin 平台".into())
+    Err("AI model feature is not available on macOS Intel (x86_64): ort does not support this platform".into())
 }
