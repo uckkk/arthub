@@ -1,7 +1,7 @@
-use std::path::{Path, PathBuf};
+﻿use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
-// ort 不支�?macOS Intel (x86_64-apple-darwin)
+// ort 不支�?macOS Intel (x86_64-apple-darwin)
 #[cfg(not(all(target_os = "macos", target_arch = "x86_64")))]
 use image::GenericImageView;
 #[cfg(not(all(target_os = "macos", target_arch = "x86_64")))]
@@ -105,7 +105,7 @@ pub async fn download_model_file(url: &str, dest: &Path, on_progress: impl Fn(u6
     let mut stream = resp.bytes_stream();
 
     while let Some(chunk) = stream.next().await {
-        let chunk = chunk.map_err(|e| format!("下载数据块失�? {}", e))?;
+        let chunk = chunk.map_err(|e| format!("下载数据块失�? {}", e))?;
         std::io::Write::write_all(&mut file, &chunk).map_err(|e| format!("写入失败: {}", e))?;
         downloaded += chunk.len() as u64;
         if downloaded - last_report >= report_interval || downloaded == total {
@@ -115,7 +115,7 @@ pub async fn download_model_file(url: &str, dest: &Path, on_progress: impl Fn(u6
     }
 
     drop(file);
-    std::fs::rename(&tmp, dest).map_err(|e| format!("重命名文件失�? {}", e))?;
+    std::fs::rename(&tmp, dest).map_err(|e| format!("重命名文件失�? {}", e))?;
     Ok(())
 }
 
@@ -139,7 +139,7 @@ pub fn load_model(d: &Path) -> Result<ClipModel, String> {
     let tp = text_model_path(d);
     let tkp = tokenizer_path(d);
     if !vp.exists() || !tp.exists() || !tkp.exists() {
-        return Err("模型文件未下载完�?.into());
+        return Err("模型文件未下载完�?.into());
     }
 
     let vision_session = Session::builder()
@@ -153,7 +153,7 @@ pub fn load_model(d: &Path) -> Result<ClipModel, String> {
         .commit_from_file(&tp).map_err(|e| format!("加载文本模型失败: {}", e))?;
 
     let tokenizer = tokenizers::Tokenizer::from_file(&tkp)
-        .map_err(|e| format!("加载分词器失�? {}", e))?;
+        .map_err(|e| format!("加载分词器失�? {}", e))?;
 
     Ok(ClipModel { vision_session, text_session, tokenizer })
 }
@@ -269,15 +269,15 @@ pub const fn get_model_version() -> &'static str { MODEL_VERSION }
 // macOS Intel stub implementations - ort 不支持此平台
 #[cfg(all(target_os = "macos", target_arch = "x86_64"))]
 pub fn load_model(_d: &Path) -> Result<ClipModel, String> {
-    Err("AI 模型功能�?macOS Intel 上不可用：ort 不支�?x86_64-apple-darwin 平台".into())
+    Err("AI 模型功能�?macOS Intel 上不可用：ort 不支�?x86_64-apple-darwin 平台".into())
 }
 
 #[cfg(all(target_os = "macos", target_arch = "x86_64"))]
-#[cfg(not(all(target_os = "macos", target_arch = "x86_64")))]pub fn embed_image(_model: &mut ClipModel, _img_path: &str) -> Result<Vec<f32>, String> {
-    Err("AI 模型功能�?macOS Intel 上不可用：ort 不支�?x86_64-apple-darwin 平台".into())
+pub fn embed_image(_model: &mut ClipModel, _img_path: &str) -> Result<Vec<f32>, String> {
+    Err("AI 模型功能�?macOS Intel 上不可用：ort 不支�?x86_64-apple-darwin 平台".into())
 }
 
 #[cfg(all(target_os = "macos", target_arch = "x86_64"))]
-#[cfg(not(all(target_os = "macos", target_arch = "x86_64")))]pub fn embed_text(_model: &mut ClipModel, _text: &str) -> Result<Vec<f32>, String> {
-    Err("AI 模型功能�?macOS Intel 上不可用：ort 不支�?x86_64-apple-darwin 平台".into())
+pub fn embed_text(_model: &mut ClipModel, _text: &str) -> Result<Vec<f32>, String> {
+    Err("AI 模型功能�?macOS Intel 上不可用：ort 不支�?x86_64-apple-darwin 平台".into())
 }

@@ -145,7 +145,7 @@ export function pickColor(
 }
 
 /**
- * 从 Canvas 取区域平均色 (5x5 采样)
+ * 从 Canvas 取区域平均色 (radius×2+1 的正方形采样)
  */
 export function pickAreaColor(
   ctx: CanvasRenderingContext2D,
@@ -153,22 +153,32 @@ export function pickAreaColor(
   y: number,
   radius: number = 2,
 ): [number, number, number] {
+  const canvasW = ctx.canvas.width, canvasH = ctx.canvas.height;
   const size = radius * 2 + 1;
-  const px = Math.max(0, Math.round(x - radius));
-  const py = Math.max(0, Math.round(y - radius));
-  const imageData = ctx.getImageData(px, py, size, size);
-  const data = imageData.data;
-  let r = 0, g = 0, b = 0, count = 0;
-  for (let i = 0; i < data.length; i += 4) {
-    if (data[i + 3] > 0) { // 忽略透明像素
-      r += data[i];
-      g += data[i + 1];
-      b += data[i + 2];
-      count++;
+  const px = Math.max(0, Math.floor(x - radius));
+  const py = Math.max(0, Math.floor(y - radius));
+  const px1 = Math.min(canvasW, px + size);
+  const py1 = Math.min(canvasH, py + size);
+  const w = px1 - px, h = py1 - py;
+  if (w <= 0 || h <= 0) return [0, 0, 0];
+  
+  try {
+    const imageData = ctx.getImageData(px, py, w, h);
+    const data = imageData.data;
+    let r = 0, g = 0, b = 0, count = 0;
+    for (let i = 0; i < data.length; i += 4) {
+      if (data[i + 3] > 0) { // 忽略透明像素
+        r += data[i];
+        g += data[i + 1];
+        b += data[i + 2];
+        count++;
+      }
     }
+    if (count === 0) return [0, 0, 0];
+    return [Math.round(r / count), Math.round(g / count), Math.round(b / count)];
+  } catch {
+    return [0, 0, 0];
   }
-  if (count === 0) return [0, 0, 0];
-  return [Math.round(r / count), Math.round(g / count), Math.round(b / count)];
 }
 
 /** RGB → Hex */
@@ -200,45 +210,118 @@ export function sampleGradientAware(
   if (w < 4 || h < 4) return null;
   const cW = ctx.canvas.width, cH = ctx.canvas.height;
 
-  // --- 前景色：内部 20%-80% 区域众数 ---
-  const inX = Math.round(x + w * 0.2), inY = Math.round(y + h * 0.2);
-  const inW = Math.max(2, Math.round(w * 0.6)), inH = Math.max(2, Math.round(h * 0.6));
-  const fgColor = sampleModeColor(ctx, inX, inY, inW, inH);
+  // --- 前景色：智能采样策略 ---
+  // 对于小元素：采样中心区域
+  // 对于大元素：采样多个候选区域（中心、左上、右上、左下、右下），选择与背景对比度最高的
+  let fgColor: RGB | null = null;
+  if (w < 50 && h < 50) {
+    // 小元素：直接采样中心区域
+    const cx = Math.round(x + w / 2), cy = Math.round(y + h / 2);
+    const r = Math.min(3, Math.floor(Math.min(w, h) / 4));
+    fgColor = sampleModeColor(ctx, cx - r, cy - r, r * 2, r * 2);
+  } else {
+    // 大元素：采样多个候选区域，选择对比度最高的
+    const candidates: Array<{ x: number; y: number; w: number; h: number }> = [
+      { x: x + w * 0.2, y: y + h * 0.2, w: w * 0.6, h: h * 0.6 }, // 中心
+      { x: x + w * 0.1, y: y + h * 0.1, w: w * 0.3, h: h * 0.3 }, // 左上
+      { x: x + w * 0.6, y: y + h * 0.1, w: w * 0.3, h: h * 0.3 }, // 右上
+      { x: x + w * 0.1, y: y + h * 0.6, w: w * 0.3, h: h * 0.3 }, // 左下
+      { x: x + w * 0.6, y: y + h * 0.6, w: w * 0.3, h: h * 0.3 }, // 右下
+    ];
+    
+    // 先快速采样一个背景色作为参考
+    const bgRef = pickAreaColor(ctx, x - offset, y - offset, 2);
+    
+    let bestFg: RGB | null = null;
+    let bestContrast = 0;
+    
+    for (const cand of candidates) {
+      const candFg = sampleModeColor(ctx, Math.round(cand.x), Math.round(cand.y), 
+                                     Math.max(2, Math.round(cand.w)), Math.max(2, Math.round(cand.h)));
+      if (!candFg) continue;
+      const cr = contrastRatio(candFg, bgRef);
+      if (cr > bestContrast) {
+        bestContrast = cr;
+        bestFg = candFg;
+      }
+    }
+    fgColor = bestFg;
+  }
+  
   if (!fgColor) return null;
 
   // --- 背景色：外扩环形等距采样 ---
+  // 自适应外扩距离：小元素外扩更多，大元素外扩适中
+  const adaptiveOffset = Math.max(offset, Math.min(offset * 2, Math.min(w, h) * 0.15));
   const bgSamples: RGB[] = [];
-  const perimeter = 2 * (w + h + offset * 4);
+  const perimeter = 2 * (w + h + adaptiveOffset * 4);
   const step = perimeter / numPoints;
 
   for (let i = 0; i < numPoints; i++) {
     let dist = i * step;
     let sx: number, sy: number;
 
-    const topLen = w + offset * 2;
-    const rightLen = h + offset * 2;
+    const topLen = w + adaptiveOffset * 2;
+    const rightLen = h + adaptiveOffset * 2;
     const bottomLen = topLen;
 
     if (dist < topLen) {
-      sx = x - offset + dist;
-      sy = y - offset;
+      sx = x - adaptiveOffset + dist;
+      sy = y - adaptiveOffset;
     } else if (dist < topLen + rightLen) {
       const d = dist - topLen;
-      sx = x + w + offset;
-      sy = y - offset + d;
+      sx = x + w + adaptiveOffset;
+      sy = y - adaptiveOffset + d;
     } else if (dist < topLen + rightLen + bottomLen) {
       const d = dist - topLen - rightLen;
-      sx = x + w + offset - d;
-      sy = y + h + offset;
+      sx = x + w + adaptiveOffset - d;
+      sy = y + h + adaptiveOffset;
     } else {
       const d = dist - topLen - rightLen - bottomLen;
-      sx = x - offset;
-      sy = y + h + offset - d;
+      sx = x - adaptiveOffset;
+      sy = y + h + adaptiveOffset - d;
     }
 
     sx = Math.max(0, Math.min(cW - 1, Math.round(sx)));
     sy = Math.max(0, Math.min(cH - 1, Math.round(sy)));
+    
+    // 跳过太靠近画布边界的采样点（可能采样到无效区域）
+    if (sx < 2 || sx > cW - 3 || sy < 2 || sy > cH - 3) {
+      // 尝试向内移动一点
+      const dx = sx < 2 ? 2 - sx : sx > cW - 3 ? (cW - 3) - sx : 0;
+      const dy = sy < 2 ? 2 - sy : sy > cH - 3 ? (cH - 3) - sy : 0;
+      sx = Math.max(2, Math.min(cW - 3, sx + dx));
+      sy = Math.max(2, Math.min(cH - 3, sy + dy));
+    }
+    
     bgSamples.push(pickAreaColor(ctx, sx, sy, 1));
+  }
+
+  // --- 验证背景采样有效性 ---
+  // 如果所有背景采样点颜色非常相似（可能是采样到了元素本身），增加外扩重试
+  if (bgSamples.length > 0) {
+    const firstBg = bgSamples[0];
+    let allSimilar = true;
+    for (let i = 1; i < bgSamples.length; i++) {
+      const dr = Math.abs(bgSamples[i][0] - firstBg[0]);
+      const dg = Math.abs(bgSamples[i][1] - firstBg[1]);
+      const db = Math.abs(bgSamples[i][2] - firstBg[2]);
+      if (dr > 30 || dg > 30 || db > 30) {
+        allSimilar = false;
+        break;
+      }
+    }
+    
+    // 如果背景采样点都太相似，且与前景色也很相似，说明可能采样到了元素本身
+    if (allSimilar) {
+      const fgBgDiff = Math.abs(fgColor[0] - firstBg[0]) + 
+                       Math.abs(fgColor[1] - firstBg[1]) + 
+                       Math.abs(fgColor[2] - firstBg[2]);
+      if (fgBgDiff < 50) {
+        // 采样可能无效，但先返回结果，让调用者决定如何处理
+        // （对于纯色元素，这可能是正常的）
+      }
+    }
   }
 
   // --- 计算所有采样点的对比度 ---
@@ -252,6 +335,21 @@ export function sampleGradientAware(
     if (cr < minContrast) {
       minContrast = cr;
       worstIdx = i;
+    }
+  }
+
+  // 如果最小对比度异常低（< 1.1），可能是采样错误，返回 null 让调用者处理
+  if (minContrast < 1.1 && bgSamples.length > 0) {
+    // 检查是否所有采样点都太接近前景色
+    const avgBgDiff = bgSamples.reduce((sum, bg) => {
+      return sum + Math.abs(bg[0] - fgColor[0]) + 
+                   Math.abs(bg[1] - fgColor[1]) + 
+                   Math.abs(bg[2] - fgColor[2]);
+    }, 0) / bgSamples.length;
+    
+    if (avgBgDiff < 20) {
+      // 背景和前景太相似，采样可能失败
+      return null;
     }
   }
 
