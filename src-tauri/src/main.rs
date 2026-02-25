@@ -11,7 +11,7 @@ mod asset_manager;
 use winapi::um::winuser::{
     MonitorFromPoint, GetMonitorInfoW, MONITOR_DEFAULTTONEAREST,
     EnumWindows, GetWindowTextW, SetForegroundWindow, ShowWindow, 
-    SW_RESTORE, SW_MINIMIZE, IsWindowVisible, IsIconic, GetClassNameW,
+    SW_RESTORE, IsWindowVisible, IsIconic, GetClassNameW,
     GetCursorPos, GetAsyncKeyState, VK_LBUTTON,
     CreatePopupMenu, AppendMenuW, TrackPopupMenu, DestroyMenu,
     PostMessageW, GetDesktopWindow,
