@@ -1,0 +1,50 @@
+﻿use std::path::{Path, PathBuf};
+use std::sync::Mutex;
+
+// ort 涓嶆敮鎸?macOS Intel (x86_64-apple-darwin)
+#[cfg(not(all(target_os = "macos", target_arch = "x86_64")))]
+use image::GenericImageView;
+#[cfg(not(all(target_os = "macos", target_arch = "x86_64")))]
+use ndarray::Array4;
+#[cfg(not(all(target_os = "macos", target_arch = "x86_64")))]
+use ort::session::Session;
+#[cfg(not(all(target_os = "macos", target_arch = "x86_64")))]
+use ort::value::Tensor;
+
+const CLIP_IMAGE_SIZE: u32 = 224;
+const MODEL_VERSION: &str = "clip-vit-base-patch32";
+
+const CLIP_MEAN: [f32; 3] = [0.48145466, 0.4578275, 0.40821073];
+const CLIP_STD: [f32; 3] = [0.26862954, 0.26130258, 0.27577711];
+
+const VISION_MODEL_URL: &str = "https://huggingface.co/Xenova/clip-vit-base-patch32/resolve/main/onnx/vision_model.onnx";
+const TEXT_MODEL_URL: &str = "https://huggingface.co/Xenova/clip-vit-base-patch32/resolve/main/onnx/text_model.onnx";
+const TOKENIZER_URL: &str = "https://huggingface.co/Xenova/clip-vit-base-patch32/resolve/main/tokenizer.json";
+
+#[cfg(not(all(target_os = "macos", target_arch = "x86_64")))]
+pub struct ClipModel {
+    vision_session: Session,
+    text_session: Session,
+    tokenizer: tokenizers::Tokenizer,
+}
+
+// macOS Intel stub - ort 涓嶆敮鎸佹骞冲彴
+#[cfg(all(target_os = "macos", target_arch = "x86_64"))]
+pub struct ClipModel {
+    _phantom: std::marker::PhantomData<()>,
+}
+
+pub struct AiState {
+    pub model: Mutex<Option<ClipModel>>,
+    pub models_dir: Mutex<PathBuf>,
+    pub default_models_dir: PathBuf,
+    pub config_path: PathBuf,
+}
+
+impl AiState {
+    pub fn new(app_data_dir: &Path) -> Self {
+        let default_dir = app_data_dir.join("models");
+        std::fs::create_dir_all(&default_dir).ok();
+        let config_path = app_data_dir.join("ai_models_config.json");
+        let saved_dir = Self::load_saved_dir(&config_path).unwrap_or_else(|| default_dir.clone());
+        std::fs::create_dir_all(&saved_dir).ok();

@@ -6,6 +6,21 @@ use serde::{Deserialize, Serialize};
 use std::sync::Mutex;
 
 mod asset_manager;
+#[cfg(target_os = "windows")]
+mod embedded_resources;
+
+// 嵌入的 DirectML.dll（如果存在）
+// 构建脚本会在构建时自动生成 embedded_directml.rs 文件
+#[cfg(target_os = "windows")]
+#[path = ""]
+mod embedded_dll {
+    // 包含构建时生成的嵌入 DLL 代码
+    include!(concat!(env!("OUT_DIR"), "/embedded_directml.rs"));
+}
+
+// 在 Windows 上使用嵌入的 DLL
+#[cfg(target_os = "windows")]
+use embedded_dll::EMBEDDED_DIRECTML_DLL;
 
 #[cfg(target_os = "windows")]
 use winapi::um::winuser::{
@@ -2365,6 +2380,69 @@ fn check_single_instance() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
+// 嵌入的 DirectML.dll 数据（如果存在）
+#[cfg(target_os = "windows")]
+const EMBEDDED_DIRECTML_DLL: Option<&[u8]> = {
+    // 尝试包含嵌入的 DLL
+    // 如果启用了 embed-directml feature 且 resources/DirectML.dll 存在，它会被编译进二进制
+    #[cfg(feature = "embed-directml")]
+    {
+        // 使用 include_bytes! 宏将 DLL 编译进二进制
+        // 注意：如果文件不存在，编译会失败
+        const DLL_DATA: &[u8] = include_bytes!("../../resources/DirectML.dll");
+        Some(DLL_DATA)
+    }
+    #[cfg(not(feature = "embed-directml"))]
+    {
+        None
+    }
+};
+
+// 提取嵌入的 DirectML.dll（如果存在）
+#[cfg(target_os = "windows")]
+fn extract_embedded_dlls() -> Result<(), Box<dyn std::error::Error>> {
+    use std::path::PathBuf;
+    use std::fs;
+    use std::io::Write;
+    
+    // 获取 exe 所在目录
+    let exe_path = std::env::current_exe()?;
+    let exe_dir = exe_path.parent()
+        .ok_or("无法获取 exe 目录")?;
+    
+    let dll_name = "DirectML.dll";
+    let dll_path = exe_dir.join(dll_name);
+    
+    // 如果 DLL 已存在，跳过
+    if dll_path.exists() {
+        return Ok(());
+    }
+    
+    // 尝试从嵌入的资源中提取
+    #[cfg(target_os = "windows")]
+    {
+        use embedded_resources::windows_dlls::DIRECTML_DLL;
+        
+        if !DIRECTML_DLL.is_empty() {
+            println!("[DLL Extract] 从嵌入资源提取 {}...", dll_name);
+            let mut file = fs::File::create(&dll_path)?;
+            file.write_all(DIRECTML_DLL)?;
+            file.sync_all()?;
+            println!("[DLL Extract] {} 已提取到: {:?}", dll_name, dll_path);
+        } else {
+            println!("[DLL Extract] {} 未嵌入，将使用外部 DLL（如果存在）", dll_name);
+        }
+    }
+    
+    Ok(())
+}
+
+#[cfg(not(target_os = "windows"))]
+fn extract_embedded_dlls() -> Result<(), Box<dyn std::error::Error>> {
+    // 非 Windows 系统不需要提取 DLL
+    Ok(())
+}
+
 fn main() {
     // 单实例检查
     if let Err(e) = check_single_instance() {
@@ -2385,6 +2463,14 @@ fn main() {
         })
         .setup(|app| {
             println!("=== Tauri setup started ===");
+
+            // ---- 提取嵌入的 DLL（Windows） ----
+            #[cfg(target_os = "windows")]
+            {
+                if let Err(e) = extract_embedded_dlls() {
+                    eprintln!("[Warning] 提取嵌入 DLL 失败: {}", e);
+                }
+            }
 
             // ---- 初始化资源管理器 ----
             {
