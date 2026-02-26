@@ -2373,6 +2373,8 @@ fn check_single_instance() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 // 提取嵌入的 DirectML.dll（如果存在）
+// 注意：ONNX Runtime 需要 DLL 文件在文件系统中才能加载
+// 所以即使 DLL 被嵌入到 exe 中，也需要提取到文件系统
 #[cfg(target_os = "windows")]
 fn extract_embedded_dlls() -> Result<(), Box<dyn std::error::Error>> {
     use std::path::PathBuf;
@@ -2387,7 +2389,7 @@ fn extract_embedded_dlls() -> Result<(), Box<dyn std::error::Error>> {
     let dll_name = "DirectML.dll";
     let dll_path = exe_dir.join(dll_name);
     
-    // 如果 DLL 已存在，跳过
+    // 如果 DLL 已存在，跳过提取
     if dll_path.exists() {
         return Ok(());
     }
@@ -2398,13 +2400,16 @@ fn extract_embedded_dlls() -> Result<(), Box<dyn std::error::Error>> {
         use embedded_resources::windows_dlls::DIRECTML_DLL;
         
         if !DIRECTML_DLL.is_empty() {
+            // 只有在 DLL 不存在时才提取
+            // 这样可以避免每次启动都提取，但如果用户删除了 DLL，会自动恢复
             println!("[DLL Extract] 从嵌入资源提取 {}...", dll_name);
             let mut file = fs::File::create(&dll_path)?;
             file.write_all(DIRECTML_DLL)?;
             file.sync_all()?;
             println!("[DLL Extract] {} 已提取到: {:?}", dll_name, dll_path);
         } else {
-            println!("[DLL Extract] {} 未嵌入，将使用外部 DLL（如果存在）", dll_name);
+            // DLL 未嵌入，ONNX Runtime 会尝试从系统 PATH 或当前目录加载
+            println!("[DLL Extract] {} 未嵌入，ONNX Runtime 将尝试从系统加载", dll_name);
         }
     }
     

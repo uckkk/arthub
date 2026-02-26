@@ -399,107 +399,47 @@ class ConsoleService {
         const originalInvoke = tauriModule.invoke;
         const service = this;
         
-        // 重写 invoke 方法 - 使用 Object.defineProperty 确保覆盖
-        Object.defineProperty(tauriModule, 'invoke', {
-          value: async function(command: string, args?: any) {
-            const startTime = Date.now();
-            const requestId = Math.random().toString(36).substr(2, 9);
-            const memoryBefore = service.getMemoryUsage();
-            
-            // 记录调用开始（仅对重要命令）
-            const importantCommands = ['ai_index_embeddings', 'ai_search', 'asset_scan_folder', 'asset_query', 'ai_embedding_stats'];
-            if (importantCommands.includes(command)) {
-              const memory = service.getMemoryUsage();
-              service.addLog('info', [
-                `[Tauri] 调用命令: ${command}`,
-                args ? `参数: ${JSON.stringify(args).substring(0, 200)}` : '无参数',
-                `请求ID: ${requestId}`,
-                memory ? `内存使用: ${Math.round(memory.usedJSHeapSize / 1024 / 1024)}MB` : ''
-              ]);
+        // 尝试拦截 invoke 方法
+        // 注意：Tauri 的 invoke 可能是只读的，所以我们需要使用 Proxy 或其他方式
+        try {
+          // 先尝试直接赋值（最简单的方式）
+          const wrappedInvoke = async function(command: string, args?: any) {
+            return service.wrapInvoke(originalInvoke.bind(this), command, args);
+          };
+          
+          // 检查是否可以重定义
+          const descriptor = Object.getOwnPropertyDescriptor(tauriModule, 'invoke');
+          if (descriptor) {
+            if (descriptor.configurable) {
+              // 可以配置，使用 defineProperty
+              Object.defineProperty(tauriModule, 'invoke', {
+                value: wrappedInvoke,
+                writable: true,
+                configurable: true
+              });
+            } else if (descriptor.writable) {
+              // 可写但不可配置，直接赋值
+              (tauriModule as any).invoke = wrappedInvoke;
+            } else {
+              // 不可写也不可配置，无法拦截，静默失败
+              console.warn('[日志服务] 无法拦截 Tauri invoke：属性不可写且不可配置');
+              return;
             }
-            
-            try {
-              const result = await originalInvoke.call(this, command, args);
-              const duration = Date.now() - startTime;
-              const memoryAfter = service.getMemoryUsage();
-              const memoryDelta = memoryBefore && memoryAfter 
-                ? memoryAfter.usedJSHeapSize - memoryBefore.usedJSHeapSize 
-                : null;
-              
-              // 记录慢调用（>1秒）
-              if (duration > 1000) {
-                service.addLog('warn', [
-                  `[Tauri] 命令执行较慢: ${command}`,
-                  `耗时: ${duration}ms`,
-                  `请求ID: ${requestId}`,
-                  `结果类型: ${typeof result}`,
-                  memoryDelta ? `内存变化: ${memoryDelta > 0 ? '+' : ''}${Math.round(memoryDelta / 1024 / 1024)}MB` : ''
-                ]);
-              }
-              
-              // 记录性能瓶颈（>5秒）
-              if (duration > 5000) {
-                service.addLog('warn', [
-                  `[性能瓶颈] Tauri 命令执行超时: ${command}`,
-                  `耗时: ${duration}ms (${Math.round(duration / 1000)}秒)`,
-                  `请求ID: ${requestId}`,
-                  `建议: 检查后端处理逻辑或数据量`,
-                  memoryDelta ? `内存变化: ${memoryDelta > 0 ? '+' : ''}${Math.round(memoryDelta / 1024 / 1024)}MB` : ''
-                ]);
-              }
-              
-              // 记录错误结果
-              if (result && typeof result === 'object' && 'error' in result) {
-                service.addLog('error', [
-                  `[Tauri] 命令返回错误: ${command}`,
-                  `错误: ${JSON.stringify(result.error)}`,
-                  `耗时: ${duration}ms`,
-                  `请求ID: ${requestId}`,
-                  { result, command, args }
-                ]);
-              }
-              
-              return result;
-            } catch (error: any) {
-              const duration = Date.now() - startTime;
-              const errorMessage = error?.message || String(error);
-              const errorCode = error?.code;
-              const errorStack = error?.stack;
-              const errorName = error?.name;
-              const memoryAfter = service.getMemoryUsage();
-              const memoryDelta = memoryBefore && memoryAfter 
-                ? memoryAfter.usedJSHeapSize - memoryBefore.usedJSHeapSize 
-                : null;
-              
-              // 记录所有 invoke 错误（详细）- 这是关键的错误记录点
-              service.addLog('error', [
-                `[Tauri] 命令调用失败: ${command}`,
-                `错误类型: ${errorName || 'Unknown'}`,
-                `错误消息: ${errorMessage}`,
-                errorCode ? `错误代码: ${errorCode}` : '',
-                `耗时: ${duration}ms`,
-                `请求ID: ${requestId}`,
-                args ? `参数: ${JSON.stringify(args).substring(0, 200)}` : '',
-                memoryDelta ? `内存变化: ${memoryDelta > 0 ? '+' : ''}${Math.round(memoryDelta / 1024 / 1024)}MB` : '',
-                errorStack ? `堆栈:\n${errorStack}` : '',
-                { 
-                  error, 
-                  stack: errorStack, 
-                  command, 
-                  args, 
-                  duration, 
-                  memoryDelta,
-                  timestamp: new Date().toISOString(),
-                  userAgent: navigator.userAgent
-                }
-              ]);
-              
-              throw error;
-            }
-          },
-          writable: true,
-          configurable: true
-        });
+          } else {
+            // 没有描述符，直接赋值
+            (tauriModule as any).invoke = wrappedInvoke;
+          }
+        } catch (e: any) {
+          // 拦截失败，记录警告但不阻止应用运行
+          const errorMsg = e?.message || String(e);
+          if (!errorMsg.includes('Cannot redefine property')) {
+            // 只有非重定义错误才记录
+            this.addLog('warn', [
+              '[日志服务] 拦截 Tauri invoke 失败',
+              `错误: ${errorMsg}`
+            ]);
+          }
+        }
       }).catch((importError) => {
         // Tauri API 不可用，记录警告
         this.addLog('warn', [
@@ -516,6 +456,119 @@ class ConsoleService {
       ]);
     }
   }
+  
+  // 包装 invoke 调用的通用方法
+  private wrapInvoke(originalInvoke: any, command: string, args?: any): Promise<any> {
+    const startTime = Date.now();
+    const requestId = Math.random().toString(36).substr(2, 9);
+    const memoryBefore = this.getMemoryUsage();
+    
+    // 记录调用开始（仅对重要命令）
+    const importantCommands = ['ai_index_embeddings', 'ai_search', 'asset_scan_folder', 'asset_query', 'ai_embedding_stats'];
+    if (importantCommands.includes(command)) {
+      const memory = this.getMemoryUsage();
+      this.addLog('info', [
+        `[Tauri] 调用命令: ${command}`,
+        args ? `参数: ${JSON.stringify(args).substring(0, 200)}` : '无参数',
+        `请求ID: ${requestId}`,
+        memory ? `内存使用: ${Math.round(memory.usedJSHeapSize / 1024 / 1024)}MB` : ''
+      ]);
+    }
+    
+    try {
+      const resultPromise = originalInvoke.call(this, command, args);
+      return resultPromise.then((result: any) => {
+        const duration = Date.now() - startTime;
+        const memoryAfter = this.getMemoryUsage();
+        const memoryDelta = memoryBefore && memoryAfter 
+          ? memoryAfter.usedJSHeapSize - memoryBefore.usedJSHeapSize 
+          : null;
+        
+        // 记录慢调用（>1秒）
+        if (duration > 1000) {
+          this.addLog('warn', [
+            `[Tauri] 命令执行较慢: ${command}`,
+            `耗时: ${duration}ms`,
+            `请求ID: ${requestId}`,
+            `结果类型: ${typeof result}`,
+            memoryDelta ? `内存变化: ${memoryDelta > 0 ? '+' : ''}${Math.round(memoryDelta / 1024 / 1024)}MB` : ''
+          ]);
+        }
+        
+        // 记录性能瓶颈（>5秒）
+        if (duration > 5000) {
+          this.addLog('warn', [
+            `[性能瓶颈] Tauri 命令执行超时: ${command}`,
+            `耗时: ${duration}ms (${Math.round(duration / 1000)}秒)`,
+            `请求ID: ${requestId}`,
+            `建议: 检查后端处理逻辑或数据量`,
+            memoryDelta ? `内存变化: ${memoryDelta > 0 ? '+' : ''}${Math.round(memoryDelta / 1024 / 1024)}MB` : ''
+          ]);
+        }
+        
+        // 记录错误结果
+        if (result && typeof result === 'object' && 'error' in result) {
+          this.addLog('error', [
+            `[Tauri] 命令返回错误: ${command}`,
+            `错误: ${JSON.stringify(result.error)}`,
+            `耗时: ${duration}ms`,
+            `请求ID: ${requestId}`,
+            { result, command, args }
+          ]);
+        }
+        
+        return result;
+      }).catch((error: any) => {
+        const duration = Date.now() - startTime;
+        const errorMessage = error?.message || String(error);
+        const errorCode = error?.code;
+        const errorStack = error?.stack;
+        const errorName = error?.name;
+        const memoryAfter = this.getMemoryUsage();
+        const memoryDelta = memoryBefore && memoryAfter 
+          ? memoryAfter.usedJSHeapSize - memoryBefore.usedJSHeapSize 
+          : null;
+        
+        // 记录所有 invoke 错误（详细）- 这是关键的错误记录点
+        this.addLog('error', [
+          `[Tauri] 命令调用失败: ${command}`,
+          `错误类型: ${errorName || 'Unknown'}`,
+          `错误消息: ${errorMessage}`,
+          errorCode ? `错误代码: ${errorCode}` : '',
+          `耗时: ${duration}ms`,
+          `请求ID: ${requestId}`,
+          args ? `参数: ${JSON.stringify(args).substring(0, 200)}` : '',
+          memoryDelta ? `内存变化: ${memoryDelta > 0 ? '+' : ''}${Math.round(memoryDelta / 1024 / 1024)}MB` : '',
+          errorStack ? `堆栈:\n${errorStack}` : '',
+          { 
+            error, 
+            stack: errorStack, 
+            command, 
+            args, 
+            duration, 
+            memoryDelta,
+            timestamp: new Date().toISOString(),
+            userAgent: navigator.userAgent
+          }
+        ]);
+        
+        throw error;
+      });
+    } catch (error: any) {
+      // 同步错误处理
+      const duration = Date.now() - startTime;
+      const errorMessage = error?.message || String(error);
+      this.addLog('error', [
+        `[Tauri] 命令调用同步失败: ${command}`,
+        `错误: ${errorMessage}`,
+        `耗时: ${duration}ms`,
+        `请求ID: ${requestId}`,
+        { error, command, args }
+      ]);
+      throw error;
+    }
+  }
+  
   
   // 启动崩溃检测
   private startCrashDetection() {
