@@ -898,9 +898,26 @@ pub fn team_get_user_role(
 // Phase 4: FFmpeg Commands
 // ============================================================
 
-/// 检查 FFmpeg 是否已安装
+/// 检查 FFmpeg 是否已安装（优先检查应用内安装目录，与 download 安装位置一致）
 #[tauri::command]
-pub fn ffmpeg_check() -> ffmpeg::FfmpegStatus {
+pub fn ffmpeg_check(app: tauri::AppHandle) -> ffmpeg::FfmpegStatus {
+    if let Some(app_data) = app.path_resolver().app_data_dir() {
+        if let Some(ff_path) = ffmpeg::get_ffmpeg_path(&app_data) {
+            if ff_path.exists() {
+                if let Ok(output) = std::process::Command::new(&ff_path).arg("-version").output() {
+                    if output.status.success() {
+                        let version_str = String::from_utf8_lossy(&output.stdout);
+                        let version = version_str.lines().next().unwrap_or("").to_string();
+                        return ffmpeg::FfmpegStatus {
+                            installed: true,
+                            path: Some(ff_path.to_string_lossy().to_string()),
+                            version: Some(version),
+                        };
+                    }
+                }
+            }
+        }
+    }
     ffmpeg::check_ffmpeg()
 }
 

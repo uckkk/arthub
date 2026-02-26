@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { Camera, Square, Monitor, Settings, Keyboard, Download } from 'lucide-react';
+import { Camera, Square, Monitor, Settings, Keyboard, Download, Crop } from 'lucide-react';
 import { invoke } from '@tauri-apps/api/tauri';
 import { open } from '@tauri-apps/api/dialog';
+import { getCurrentWindow } from '@tauri-apps/api/window';
 import { useToast } from './Toast';
 import {
   getSavedScreenshotHotkey,
@@ -44,6 +45,75 @@ export default function ScreenCapture() {
   const [lastCapturePath, setLastCapturePath] = useState('');
   const [showCaptureSavedPrompt, setShowCaptureSavedPrompt] = useState(false);
   const [captureSavedType, setCaptureSavedType] = useState<'screenshot' | 'record' | null>(null);
+  const [captureMode, setCaptureMode] = useState<'fullscreen' | 'region'>('fullscreen');
+  const [selectedRegion, setSelectedRegion] = useState<{ x: number; y: number; width: number; height: number } | null>(null);
+  const [regionPickerActive, setRegionPickerActive] = useState(false);
+  const [regionDragStart, setRegionDragStart] = useState<{ x: number; y: number } | null>(null);
+  const [regionDragCurrent, setRegionDragCurrent] = useState<{ x: number; y: number } | null>(null);
+  const regionStartRef = useRef<{ x: number; y: number } | null>(null);
+  const regionCurrentRef = useRef<{ x: number; y: number } | null>(null);
+
+  const startRegionPicker = useCallback(async () => {
+    if (!isTauri) return;
+    try {
+      const win = getCurrentWindow();
+      await win.setFullscreen(true);
+      setRegionPickerActive(true);
+    } catch (e) {
+      showToast('error', '无法进入全屏，请重试');
+    }
+  }, [showToast]);
+
+  const endRegionPicker = useCallback((rect: { x: number; y: number; width: number; height: number } | null) => {
+    setRegionPickerActive(false);
+    setRegionDragStart(null);
+    setRegionDragCurrent(null);
+    if (rect && rect.width > 4 && rect.height > 4) setSelectedRegion(rect);
+    getCurrentWindow().setFullscreen(false).catch(() => {});
+  }, []);
+
+  const onRegionMouseDown = useCallback((e: React.MouseEvent) => {
+    const pt = { x: e.clientX, y: e.clientY };
+    regionStartRef.current = pt;
+    regionCurrentRef.current = pt;
+    setRegionDragStart(pt);
+    setRegionDragCurrent(pt);
+  }, []);
+
+  const onRegionMouseMove = useCallback((e: React.MouseEvent) => {
+    if (!regionStartRef.current) return;
+    const pt = { x: e.clientX, y: e.clientY };
+    regionCurrentRef.current = pt;
+    setRegionDragCurrent(pt);
+  }, []);
+
+  const onRegionMouseUp = useCallback(() => {
+    const start = regionStartRef.current;
+    const current = regionCurrentRef.current;
+    regionStartRef.current = null;
+    regionCurrentRef.current = null;
+    setRegionDragStart(null);
+    setRegionDragCurrent(null);
+    if (!start || !current) return;
+    const dpr = window.devicePixelRatio || 1;
+    const x = Math.round(Math.min(start.x, current.x) * dpr);
+    const y = Math.round(Math.min(start.y, current.y) * dpr);
+    const w = Math.round(Math.abs(current.x - start.x) * dpr);
+    const h = Math.round(Math.abs(current.y - start.y) * dpr);
+    endRegionPicker({ x, y, width: w, height: h });
+  }, [endRegionPicker]);
+
+  useEffect(() => {
+    if (!regionPickerActive) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        endRegionPicker(null);
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [regionPickerActive, endRegionPicker]);
 
   useEffect(() => {
     if (!isTauri) return;
@@ -178,17 +248,38 @@ export default function ScreenCapture() {
     return pollRecording();
   }, [recording, pollRecording]);
 
-  const choosePath = async (isVideo: boolean) => {
-    const defaultName = isVideo
-      ? `录屏_${new Date().toISOString().slice(0, 19).replace(/[-:T]/g, '')}.mp4`
-      : `截图_${new Date().toISOString().slice(0, 19).replace(/[-:T]/g, '')}.png`;
-    const path = await open({
-      directory: false,
+  const choosePath = async () => {
+    let defaultPath: string | undefined;
+    if (savePath.trim()) defaultPath = savePath.trim();
+    else {
+      try {
+        const path = await import('@tauri-apps/api/path');
+        defaultPath = (await path.documentDir()) ?? (await path.homeDir()) ?? undefined;
+      } catch {
+        defaultPath = undefined;
+      }
+    }
+    const chosen = await open({
+      directory: true,
       multiple: false,
-      title: isVideo ? '选择录屏保存位置' : '选择截图保存位置',
-      defaultPath: defaultName,
+      title: '选择保存目录（截图与录屏文件将保存在此文件夹）',
+      defaultPath,
     });
-    if (typeof path === 'string') setSavePath(path);
+    if (typeof chosen === 'string') {
+      const dir = chosen.replace(/[/\\]+$/, '');
+      setSavePath(dir);
+      saveCaptureOutputDir(dir);
+    }
+  };
+
+  const buildOutputPath = (dirOrFile: string, ext: 'png' | 'mp4') => {
+    const base = dirOrFile.trim().replace(/[/\\]+$/, '');
+    if (!base) return '';
+    const isFile = base.toLowerCase().endsWith('.png') || base.toLowerCase().endsWith('.mp4');
+    if (isFile) return ext === 'png' ? (base.endsWith('.png') ? base : base + '.png') : (base.endsWith('.mp4') ? base : base + '.mp4');
+    const sep = base.includes('/') ? '/' : '\\';
+    const name = ext === 'png' ? `截图_${new Date().toISOString().slice(0, 19).replace(/[-:T]/g, '')}.png` : `录屏_${new Date().toISOString().slice(0, 19).replace(/[-:T]/g, '')}.mp4`;
+    return `${base}${sep}${name}`;
   };
 
   const handleScreenshot = async () => {
@@ -198,18 +289,18 @@ export default function ScreenCapture() {
     }
     let path = savePath.trim();
     if (!path) {
-      const p = await open({
-        directory: false,
-        multiple: false,
-        title: '保存截图',
-        defaultPath: `截图_${new Date().toISOString().slice(0, 19).replace(/[-:T]/g, '')}.png`,
-      });
-      if (typeof p !== 'string') return;
-      path = p;
+      const chosen = await open({ directory: true, multiple: false, title: '选择保存目录' });
+      if (typeof chosen !== 'string') return;
+      path = chosen.replace(/[/\\]+$/, '');
+      setSavePath(path);
+      saveCaptureOutputDir(path);
     }
-    if (!path.toLowerCase().endsWith('.png')) path += '.png';
+    path = buildOutputPath(path, 'png');
+    const regionArg = captureMode === 'region' && selectedRegion
+      ? { x: Math.round(selectedRegion.x), y: Math.round(selectedRegion.y), width: Math.round(selectedRegion.width), height: Math.round(selectedRegion.height) }
+      : null;
     try {
-      await invoke('screen_screenshot', { outputPath: path, region: null });
+      await invoke('screen_screenshot', { outputPath: path, region: regionArg });
       setSavePath(path);
       setLastCapturePath(path);
       const dir = path.replace(/[/\\][^/\\]+$/, '');
@@ -230,20 +321,20 @@ export default function ScreenCapture() {
     }
     let path = savePath.trim();
     if (!path) {
-      const p = await open({
-        directory: false,
-        multiple: false,
-        title: '保存录屏',
-        defaultPath: `录屏_${new Date().toISOString().slice(0, 19).replace(/[-:T]/g, '')}.mp4`,
-      });
-      if (typeof p !== 'string') return;
-      path = p;
+      const chosen = await open({ directory: true, multiple: false, title: '选择保存目录' });
+      if (typeof chosen !== 'string') return;
+      path = chosen.replace(/[/\\]+$/, '');
+      setSavePath(path);
+      saveCaptureOutputDir(path);
     }
-    if (!path.toLowerCase().endsWith('.mp4')) path += '.mp4';
+    path = buildOutputPath(path, 'mp4');
+    const regionArg = captureMode === 'region' && selectedRegion
+      ? { x: Math.round(selectedRegion.x), y: Math.round(selectedRegion.y), width: Math.round(selectedRegion.width), height: Math.round(selectedRegion.height) }
+      : null;
     try {
       await invoke('screen_record_start', {
         outputPath: path,
-        region: null,
+        region: regionArg,
         crf: 22,
       });
       setSavePath(path);
@@ -359,6 +450,43 @@ export default function ScreenCapture() {
           </button>
         </div>
 
+        {isTauri && (
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-xs text-[#888]">范围：</span>
+            <button
+              type="button"
+              onClick={() => setCaptureMode('fullscreen')}
+              className={`px-3 py-1.5 rounded-lg text-sm ${captureMode === 'fullscreen' ? 'bg-[#2a2a2a] text-white' : 'text-[#888] hover:text-white'}`}
+            >
+              全屏
+            </button>
+            <button
+              type="button"
+              onClick={() => setCaptureMode('region')}
+              className={`px-3 py-1.5 rounded-lg text-sm flex items-center gap-1.5 ${captureMode === 'region' ? 'bg-[#2a2a2a] text-white' : 'text-[#888] hover:text-white'}`}
+            >
+              <Crop size={14} />
+              区域
+            </button>
+            {captureMode === 'region' && (
+              <>
+                <button
+                  type="button"
+                  onClick={startRegionPicker}
+                  className="px-3 py-1.5 rounded-lg text-sm bg-blue-600/20 text-blue-300 hover:bg-blue-600/30"
+                >
+                  框选区域
+                </button>
+                {selectedRegion && (
+                  <span className="text-xs text-[#666]">
+                    {selectedRegion.width}×{selectedRegion.height}
+                  </span>
+                )}
+              </>
+            )}
+          </div>
+        )}
+
         <div className="space-y-4">
           <div>
             <label className="block text-xs text-[#888] mb-1.5">
@@ -374,7 +502,7 @@ export default function ScreenCapture() {
               />
               <button
                 type="button"
-                onClick={() => choosePath(mode === 'record')}
+                onClick={() => choosePath()}
                 className="px-3 py-2 rounded-lg bg-[#2a2a2a] hover:bg-[#3a3a3a] text-[#ccc] text-sm shrink-0"
               >
                 选择
@@ -401,11 +529,11 @@ export default function ScreenCapture() {
           {mode === 'screenshot' && (
             <button
               onClick={handleScreenshot}
-              disabled={!ffmpegOk}
+              disabled={!ffmpegOk || (captureMode === 'region' && !selectedRegion)}
               className="w-full px-4 py-3 rounded-lg bg-blue-600 hover:bg-blue-700 disabled:bg-[#333] disabled:text-[#555] text-white font-medium flex items-center justify-center gap-2"
             >
               <Camera size={18} />
-              全屏截图
+              {captureMode === 'region' ? (selectedRegion ? '区域截图' : '请先框选区域') : '全屏截图'}
             </button>
           )}
 
@@ -414,11 +542,11 @@ export default function ScreenCapture() {
               {!recording ? (
                 <button
                   onClick={handleRecordStart}
-                  disabled={!ffmpegOk}
+                  disabled={!ffmpegOk || (captureMode === 'region' && !selectedRegion)}
                   className="flex-1 px-4 py-3 rounded-lg bg-red-600 hover:bg-red-700 disabled:bg-[#333] disabled:text-[#555] text-white font-medium flex items-center justify-center gap-2"
                 >
                   <Square size={18} />
-                  开始录屏
+                  {captureMode === 'region' ? (selectedRegion ? '区域录屏' : '请先框选区域') : '开始录屏'}
                 </button>
               ) : (
                 <button
@@ -477,9 +605,35 @@ export default function ScreenCapture() {
         )}
 
         <p className="text-xs text-[#555]">
-          当前仅支持 Windows。录屏使用 FFmpeg gdigrab + H.264（CRF 22），画质高、体积小。区域截图/录屏后续版本提供。
+          当前仅支持 Windows。录屏使用 FFmpeg gdigrab + H.264（CRF 22），画质高、体积小。支持全屏与区域框选。
         </p>
       </div>
+
+      {regionPickerActive && (
+        <div
+          className="fixed inset-0 z-[9999] cursor-crosshair bg-black/40"
+          onMouseDown={onRegionMouseDown}
+          onMouseMove={onRegionMouseMove}
+          onMouseUp={onRegionMouseUp}
+          onMouseLeave={() => { if (regionStartRef.current) onRegionMouseUp(); }}
+          role="presentation"
+        >
+          <div className="absolute left-0 top-0 w-full py-3 text-center text-white/90 text-sm bg-black/30">
+            拖动鼠标框选区域，松开完成 · Esc 取消
+          </div>
+          {regionDragStart && regionDragCurrent && (
+            <div
+              className="absolute border-2 border-blue-400 bg-blue-400/20 pointer-events-none"
+              style={{
+                left: Math.min(regionDragStart.x, regionDragCurrent.x),
+                top: Math.min(regionDragStart.y, regionDragCurrent.y),
+                width: Math.abs(regionDragCurrent.x - regionDragStart.x),
+                height: Math.abs(regionDragCurrent.y - regionDragStart.y),
+              }}
+            />
+          )}
+        </div>
+      )}
 
       {showCaptureSavedPrompt && (
         <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 flex flex-col items-center gap-3 px-5 py-4 rounded-xl bg-[#1a1a1a] border border-[#333] shadow-lg">

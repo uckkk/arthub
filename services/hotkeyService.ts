@@ -14,11 +14,11 @@ const RECORD_HOTKEY_KEY = 'arthub_record_hotkey';
 const CAPTURE_OUTPUT_DIR_KEY = 'arthub_capture_output_dir';
 const LAST_RECORD_PATH_KEY = 'arthub_last_record_path';
 
-// 将显示用按键字符转为 Tauri accelerator 可识别的 KeyCode（避免 AcceleratorParseError）
+// 将显示用按键字符转为 Tauri accelerator 可识别的 KeyCode（Tauri 使用数字键名 1-0，非 Digit1）
 const DISPLAY_KEY_TO_ACCELERATOR: Record<string, string> = {
-  '~': 'Backquote', '`': 'Backquote',
-  '!': 'Digit1', '@': 'Digit2', '#': 'Digit3', '$': 'Digit4', '%': 'Digit5',
-  '^': 'Digit6', '&': 'Digit7', '*': 'Digit8', '(': 'Digit9', ')': 'Digit0',
+  '~': '`', '`': '`',
+  '!': '1', '@': '2', '#': '3', '$': '4', '%': '5',
+  '^': '6', '&': '7', '*': '8', '(': '9', ')': '0',
   '-': 'Minus', '_': 'Minus', '=': 'Equal', '+': 'Equal',
   '[': 'BracketLeft', '{': 'BracketLeft', ']': 'BracketRight', '}': 'BracketRight',
   ';': 'Semicolon', ':': 'Semicolon', "'": 'Quote', '"': 'Quote',
@@ -31,6 +31,9 @@ function toAcceleratorKey(displayKey: string): string {
   if (!k) return k;
   const mapped = DISPLAY_KEY_TO_ACCELERATOR[k];
   if (mapped) return mapped;
+  // Tauri 不识别 Digit1 等，需转为数字键名 1-0
+  const digitMap: Record<string, string> = { Digit1: '1', Digit2: '2', Digit3: '3', Digit4: '4', Digit5: '5', Digit6: '6', Digit7: '7', Digit8: '8', Digit9: '9', Digit0: '0' };
+  if (digitMap[k]) return digitMap[k];
   if (k.length === 1 && /[A-Za-z0-9]/.test(k)) return k.length === 1 && k >= 'a' && k <= 'z' ? k.toUpperCase() : k;
   return k;
 }
