@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Camera, Square, Monitor, Settings, Keyboard, Download, Crop } from 'lucide-react';
 import { invoke } from '@tauri-apps/api/tauri';
 import { open } from '@tauri-apps/api/dialog';
-import { getCurrentWindow } from '@tauri-apps/api/window';
+import { appWindow } from '@tauri-apps/api/window';
 import { useToast } from './Toast';
 import {
   getSavedScreenshotHotkey,
@@ -56,8 +56,7 @@ export default function ScreenCapture() {
   const startRegionPicker = useCallback(async () => {
     if (!isTauri) return;
     try {
-      const win = getCurrentWindow();
-      await win.setFullscreen(true);
+      await appWindow.setFullscreen(true);
       setRegionPickerActive(true);
     } catch (e) {
       showToast('error', '无法进入全屏，请重试');
@@ -69,7 +68,7 @@ export default function ScreenCapture() {
     setRegionDragStart(null);
     setRegionDragCurrent(null);
     if (rect && rect.width > 4 && rect.height > 4) setSelectedRegion(rect);
-    getCurrentWindow().setFullscreen(false).catch(() => {});
+    appWindow.setFullscreen(false).catch(() => {});
   }, []);
 
   const onRegionMouseDown = useCallback((e: React.MouseEvent) => {
