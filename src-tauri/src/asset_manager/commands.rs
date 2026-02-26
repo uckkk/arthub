@@ -1051,6 +1051,14 @@ pub async fn ai_index_embeddings(
     let mut failed = 0u32;
 
     for (i, (asset_id, file_path)) in assets.iter().enumerate() {
+        // 先检查文件是否存在
+        if !std::path::Path::new(file_path).exists() {
+            let conn = state.db.lock().map_err(|e| e.to_string())?;
+            let _ = db::mark_embedding_failed(&conn, *asset_id);
+            failed += 1;
+            continue;
+        }
+        
         let result = {
             let mut lock = ai_state.model.lock().map_err(|e| e.to_string())?;
             let model = lock.as_mut().ok_or("模型未加载")?;
