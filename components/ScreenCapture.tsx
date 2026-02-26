@@ -1,8 +1,20 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { Camera, Square, Monitor, Settings } from 'lucide-react';
+import { Camera, Square, Monitor, Settings, Keyboard } from 'lucide-react';
 import { invoke } from '@tauri-apps/api/tauri';
 import { open } from '@tauri-apps/api/dialog';
 import { useToast } from './Toast';
+import {
+  getSavedScreenshotHotkey,
+  getSavedRecordHotkey,
+  saveScreenshotHotkey,
+  saveRecordHotkey,
+  saveCaptureOutputDir,
+  saveLastRecordPath,
+  getCaptureOutputDir,
+  registerScreenshotHotkey,
+  registerRecordHotkey,
+  validateHotkey,
+} from '../services/hotkeyService';
 
 const isTauri = typeof window !== 'undefined' && !!(window as any).__TAURI__;
 
@@ -15,6 +27,12 @@ function dispatchImportToWhiteboard(filePath: string) {
   }, 200);
 }
 
+const CAPTURE_KEY_MAP: Record<string, string> = {
+  ' ': 'Space', ArrowUp: 'Up', ArrowDown: 'Down', ArrowLeft: 'Left', ArrowRight: 'Right',
+  Escape: 'Esc', Enter: 'Enter', Tab: 'Tab', Backspace: 'Backspace', Delete: 'Delete',
+  Insert: 'Insert', Home: 'Home', End: 'End', PageUp: 'PageUp', PageDown: 'PageDown',
+};
+
 export default function ScreenCapture() {
   const { showToast } = useToast();
   const [mode, setMode] = useState<'screenshot' | 'record'>('screenshot');
@@ -22,6 +40,84 @@ export default function ScreenCapture() {
   const [recording, setRecording] = useState(false);
   const [ffmpegOk, setFfmpegOk] = useState<boolean | null>(null);
   const lastRecordPathRef = useRef('');
+  const [screenshotHotkey, setScreenshotHotkey] = useState('');
+  const [recordHotkey, setRecordHotkey] = useState('');
+  const [savingHotkeys, setSavingHotkeys] = useState(false);
+
+  useEffect(() => {
+    if (!isTauri) return;
+    setScreenshotHotkey(getSavedScreenshotHotkey());
+    setRecordHotkey(getSavedRecordHotkey());
+  }, [isTauri]);
+
+  useEffect(() => {
+    if (!isTauri) return;
+    const onNoDir = (e: Event) => {
+      const type = (e as CustomEvent<{ type: string }>).detail?.type;
+      showToast('info', '请先选择下方保存路径或选择目录，快捷键将保存到该位置');
+    };
+    const onError = (e: Event) => {
+      const d = (e as CustomEvent<{ type: string; error: unknown }>).detail;
+      showToast('error', d?.type === 'screenshot' ? '截图失败' : '录屏失败');
+    };
+    const onRecordStarted = () => showToast('success', '录屏已开始，再次按录屏快捷键停止');
+    window.addEventListener('arthub-capture-no-dir', onNoDir);
+    window.addEventListener('arthub-capture-error', onError);
+    window.addEventListener('arthub-record-started', onRecordStarted);
+    return () => {
+      window.removeEventListener('arthub-capture-no-dir', onNoDir);
+      window.removeEventListener('arthub-capture-error', onError);
+      window.removeEventListener('arthub-record-started', onRecordStarted);
+    };
+  }, [isTauri, showToast]);
+
+  const captureKeyDown = (which: 'screenshot' | 'record', e: React.KeyboardEvent<HTMLInputElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const parts: string[] = [];
+    if (e.ctrlKey) parts.push('Ctrl');
+    if (e.altKey) parts.push('Alt');
+    if (e.shiftKey) parts.push('Shift');
+    if (e.metaKey) parts.push('Meta');
+    let key = e.key;
+    if (CAPTURE_KEY_MAP[key]) key = CAPTURE_KEY_MAP[key];
+    else if (key.startsWith('F') && key.length <= 3) key = key.toUpperCase();
+    else if (key.length === 1 && /[a-zA-Z0-9]/.test(key)) key = key.toUpperCase();
+    if (['Control', 'Alt', 'Shift', 'Meta', 'OS'].includes(key)) return;
+    if (parts.length > 0 && key) {
+      const hotkey = parts.join('+') + '+' + key;
+      if (which === 'screenshot') setScreenshotHotkey(hotkey);
+      else setRecordHotkey(hotkey);
+    }
+  };
+
+  const handleSaveHotkeys = async () => {
+    if (!isTauri) return;
+    setSavingHotkeys(true);
+    try {
+      if (screenshotHotkey.trim()) {
+        const v = validateHotkey(screenshotHotkey);
+        if (!v.valid) { showToast('error', `截图快捷键: ${v.error}`); return; }
+      }
+      if (recordHotkey.trim()) {
+        const v = validateHotkey(recordHotkey);
+        if (!v.valid) { showToast('error', `录屏快捷键: ${v.error}`); return; }
+      }
+      const ok1 = await registerScreenshotHotkey(screenshotHotkey.trim());
+      const ok2 = await registerRecordHotkey(recordHotkey.trim());
+      if (ok1 && ok2) {
+        saveScreenshotHotkey(screenshotHotkey.trim());
+        saveRecordHotkey(recordHotkey.trim());
+        showToast('success', '快捷键已保存');
+      } else {
+        showToast('error', '快捷键被占用或注册失败');
+      }
+    } catch (e: any) {
+      showToast('error', e?.message || '保存失败');
+    } finally {
+      setSavingHotkeys(false);
+    }
+  };
 
   const checkFfmpeg = useCallback(async () => {
     if (!isTauri) return;
@@ -100,6 +196,8 @@ export default function ScreenCapture() {
     try {
       await invoke('screen_screenshot', { outputPath: path, region: null });
       setSavePath(path);
+      const dir = path.replace(/[/\\][^/\\]+$/, '');
+      if (dir) saveCaptureOutputDir(dir);
       showToast('success', '截图已保存');
       dispatchImportToWhiteboard(path);
     } catch (e: any) {
@@ -132,6 +230,9 @@ export default function ScreenCapture() {
       });
       setSavePath(path);
       lastRecordPathRef.current = path;
+      const dir = path.replace(/[/\\][^/\\]+$/, '');
+      if (dir) saveCaptureOutputDir(dir);
+      saveLastRecordPath(path);
       setRecording(true);
       showToast('success', '正在录屏，点击「停止录屏」结束');
     } catch (e: any) {
@@ -258,6 +359,49 @@ export default function ScreenCapture() {
             </div>
           )}
         </div>
+
+        {isTauri && (
+          <div className="space-y-3 pt-2 border-t border-[#2a2a2a]">
+            <div className="flex items-center gap-2 text-sm text-[#a0a0a0]">
+              <Keyboard size={16} />
+              自定义快捷键（按下组合键即可设置）
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs text-[#666] mb-1">截图</label>
+                <input
+                  type="text"
+                  readOnly
+                  value={screenshotHotkey}
+                  placeholder="例如 Ctrl+Shift+S"
+                  onKeyDown={e => captureKeyDown('screenshot', e)}
+                  onKeyUp={e => { e.preventDefault(); e.stopPropagation(); }}
+                  className="w-full px-3 py-2 rounded-lg bg-[#1a1a1a] border border-[#2a2a2a] text-white text-sm placeholder-[#555] focus:outline-none focus:border-blue-500"
+                />
+              </div>
+              <div>
+                <label className="block text-xs text-[#666] mb-1">录屏（开始/停止）</label>
+                <input
+                  type="text"
+                  readOnly
+                  value={recordHotkey}
+                  placeholder="例如 Ctrl+Shift+R"
+                  onKeyDown={e => captureKeyDown('record', e)}
+                  onKeyUp={e => { e.preventDefault(); e.stopPropagation(); }}
+                  className="w-full px-3 py-2 rounded-lg bg-[#1a1a1a] border border-[#2a2a2a] text-white text-sm placeholder-[#555] focus:outline-none focus:border-blue-500"
+                />
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={handleSaveHotkeys}
+              disabled={savingHotkeys}
+              className="px-4 py-2 rounded-lg bg-[#2a2a2a] hover:bg-[#3a3a3a] disabled:opacity-50 text-white text-sm font-medium transition-colors"
+            >
+              {savingHotkeys ? '保存中...' : '保存快捷键'}
+            </button>
+          </div>
+        )}
 
         <p className="text-xs text-[#555]">
           当前仅支持 Windows。录屏使用 FFmpeg gdigrab + H.264（CRF 22），画质高、体积小。区域截图/录屏后续版本提供。

@@ -1,11 +1,17 @@
 // 全局快捷键服务
-// 管理主窗口呼出/隐藏的全局快捷键
+// 管理主窗口呼出/隐藏、截图、录屏的全局快捷键
 
 import { register, unregister, isRegistered as checkIsRegistered } from '@tauri-apps/api/globalShortcut';
 import { appWindow } from '@tauri-apps/api/window';
+import { invoke } from '@tauri-apps/api/tauri';
 
 const HOTKEY_STORAGE_KEY = 'arthub_main_window_hotkey';
 const DEFAULT_HOTKEY = 'Ctrl+Alt+H'; // 默认快捷键
+
+const SCREENSHOT_HOTKEY_KEY = 'arthub_screenshot_hotkey';
+const RECORD_HOTKEY_KEY = 'arthub_record_hotkey';
+const CAPTURE_OUTPUT_DIR_KEY = 'arthub_capture_output_dir';
+const LAST_RECORD_PATH_KEY = 'arthub_last_record_path';
 
 // 重新导出 isRegistered 供外部使用
 export const isRegistered = checkIsRegistered;
@@ -172,4 +178,162 @@ export function validateHotkey(hotkey: string): { valid: boolean; error?: string
   }
 
   return { valid: true };
+}
+
+// ---------- 截图 / 录屏快捷键 ----------
+
+export function getSavedScreenshotHotkey(): string {
+  return localStorage.getItem(SCREENSHOT_HOTKEY_KEY) || '';
+}
+
+export function getSavedRecordHotkey(): string {
+  return localStorage.getItem(RECORD_HOTKEY_KEY) || '';
+}
+
+export function saveScreenshotHotkey(hotkey: string): void {
+  if (hotkey) localStorage.setItem(SCREENSHOT_HOTKEY_KEY, hotkey);
+  else localStorage.removeItem(SCREENSHOT_HOTKEY_KEY);
+}
+
+export function saveRecordHotkey(hotkey: string): void {
+  if (hotkey) localStorage.setItem(RECORD_HOTKEY_KEY, hotkey);
+  else localStorage.removeItem(RECORD_HOTKEY_KEY);
+}
+
+export function getCaptureOutputDir(): string {
+  return localStorage.getItem(CAPTURE_OUTPUT_DIR_KEY) || '';
+}
+
+export function saveCaptureOutputDir(dir: string): void {
+  if (dir) localStorage.setItem(CAPTURE_OUTPUT_DIR_KEY, dir);
+  else localStorage.removeItem(CAPTURE_OUTPUT_DIR_KEY);
+}
+
+export function getLastRecordPath(): string {
+  return localStorage.getItem(LAST_RECORD_PATH_KEY) || '';
+}
+
+export function saveLastRecordPath(path: string): void {
+  if (path) localStorage.setItem(LAST_RECORD_PATH_KEY, path);
+  else localStorage.removeItem(LAST_RECORD_PATH_KEY);
+}
+
+function buildCapturePath(filename: string): string {
+  const dir = getCaptureOutputDir().trim().replace(/[/\\]+$/, '');
+  if (!dir) return '';
+  const sep = dir.includes('/') ? '/' : '\\';
+  return `${dir}${sep}${filename}`;
+}
+
+async function onScreenshotShortcut(): Promise<void> {
+  const path = buildCapturePath(`截图_${new Date().toISOString().slice(0, 19).replace(/[-:T]/g, '')}.png`);
+  if (!path) {
+    window.dispatchEvent(new CustomEvent('arthub-capture-no-dir', { detail: { type: 'screenshot' } }));
+    return;
+  }
+  try {
+    await invoke('screen_screenshot', { outputPath: path, region: null });
+    window.dispatchEvent(new CustomEvent('switchTab', { detail: { tab: 'whiteboard' } }));
+    setTimeout(() => {
+      window.dispatchEvent(new CustomEvent('importFileToWhiteboard', { detail: { filePath: path } }));
+    }, 200);
+    window.dispatchEvent(new CustomEvent('arthub-capture-done', { detail: { type: 'screenshot', path } }));
+  } catch (e) {
+    window.dispatchEvent(new CustomEvent('arthub-capture-error', { detail: { type: 'screenshot', error: e } }));
+  }
+}
+
+async function onRecordShortcut(): Promise<void> {
+  try {
+    const is = await invoke<boolean>('screen_record_is_recording');
+    if (is) {
+      const recordPath = getLastRecordPath();
+      await invoke('screen_record_stop');
+      if (recordPath) {
+        window.dispatchEvent(new CustomEvent('switchTab', { detail: { tab: 'whiteboard' } }));
+        setTimeout(() => {
+          window.dispatchEvent(new CustomEvent('importFileToWhiteboard', { detail: { filePath: recordPath } }));
+        }, 200);
+      }
+      saveLastRecordPath('');
+      window.dispatchEvent(new CustomEvent('arthub-capture-done', { detail: { type: 'record_stop' } }));
+      return;
+    }
+  } catch {
+    // ignore
+  }
+  const path = buildCapturePath(`录屏_${new Date().toISOString().slice(0, 19).replace(/[-:T]/g, '')}.mp4`);
+  if (!path) {
+    window.dispatchEvent(new CustomEvent('arthub-capture-no-dir', { detail: { type: 'record' } }));
+    return;
+  }
+  try {
+    await invoke('screen_record_start', { outputPath: path, region: null, crf: 22 });
+    saveLastRecordPath(path);
+    window.dispatchEvent(new CustomEvent('arthub-record-started', { detail: { path } }));
+    window.dispatchEvent(new CustomEvent('arthub-capture-done', { detail: { type: 'record_start', path } }));
+  } catch (e) {
+    window.dispatchEvent(new CustomEvent('arthub-capture-error', { detail: { type: 'record', error: e } }));
+  }
+}
+
+export async function registerScreenshotHotkey(hotkey: string): Promise<boolean> {
+  if (!hotkey.trim()) return true;
+  try {
+    await unregisterScreenshotHotkey();
+    const existing = await checkIsRegistered(hotkey);
+    if (existing) {
+      try { await unregister(hotkey); } catch { return false; }
+    }
+    await register(hotkey, () => { onScreenshotShortcut(); });
+    saveScreenshotHotkey(hotkey);
+    return true;
+  } catch (e) {
+    console.error('注册截图快捷键失败:', e);
+    return false;
+  }
+}
+
+export async function registerRecordHotkey(hotkey: string): Promise<boolean> {
+  if (!hotkey.trim()) return true;
+  try {
+    await unregisterRecordHotkey();
+    const existing = await checkIsRegistered(hotkey);
+    if (existing) {
+      try { await unregister(hotkey); } catch { return false; }
+    }
+    await register(hotkey, () => { onRecordShortcut(); });
+    saveRecordHotkey(hotkey);
+    return true;
+  } catch (e) {
+    console.error('注册录屏快捷键失败:', e);
+    return false;
+  }
+}
+
+export async function unregisterScreenshotHotkey(): Promise<void> {
+  const h = getSavedScreenshotHotkey();
+  if (h) try { await unregister(h); } catch { /* ignore */ }
+  localStorage.removeItem(SCREENSHOT_HOTKEY_KEY);
+}
+
+export async function unregisterRecordHotkey(): Promise<void> {
+  const h = getSavedRecordHotkey();
+  if (h) try { await unregister(h); } catch { /* ignore */ }
+  localStorage.removeItem(RECORD_HOTKEY_KEY);
+}
+
+let screenCaptureHotkeysInitialized = false;
+
+export async function initScreenCaptureHotkeys(): Promise<void> {
+  if (screenCaptureHotkeysInitialized) return;
+  screenCaptureHotkeysInitialized = true;
+  try {
+    const sh = getSavedScreenshotHotkey();
+    const rh = getSavedRecordHotkey();
+    if (sh) await registerScreenshotHotkey(sh);
+    if (rh) await registerRecordHotkey(rh);
+  } catch (e) {
+    console.error('初始化截图/录屏快捷键失败:', e);
+  }
 }

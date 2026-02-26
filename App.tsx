@@ -7,7 +7,7 @@ import { getStorageConfig, formatSyncTime } from './services/fileStorageService'
 import { getUserInfo, clearUserInfo, UserInfo, verifyUser, rustLogout } from './services/userAuthService';
 import { initAutoSync, setAutoSyncAuthReady } from './utils/autoSync';
 import { preloadAllData } from './services/preloadService';
-import { initHotkey } from './services/hotkeyService';
+import { initHotkey, initScreenCaptureHotkeys } from './services/hotkeyService';
 import { ToastProvider, useToast } from './components/Toast';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { Sidebar, MenuGroup, MenuItem, SkeletonScreen, ContentFadeIn } from './components/ui';
@@ -379,6 +379,9 @@ const AppContent: React.FC = () => {
     if (typeof window !== 'undefined' && (window as any).__TAURI__) {
       initHotkey().catch((error) => {
         console.error('初始化快捷键失败:', error);
+      });
+      initScreenCaptureHotkeys().catch((error) => {
+        console.error('初始化截图/录屏快捷键失败:', error);
       });
     }
   }, []);
