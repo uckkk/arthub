@@ -12,15 +12,7 @@ mod embedded_resources;
 // 嵌入的 DirectML.dll（如果存在）
 // 构建脚本会在构建时自动生成 embedded_directml.rs 文件
 #[cfg(target_os = "windows")]
-#[path = ""]
-mod embedded_dll {
-    // 包含构建时生成的嵌入 DLL 代码
-    include!(concat!(env!("OUT_DIR"), "/embedded_directml.rs"));
-}
-
-// 在 Windows 上使用嵌入的 DLL
-#[cfg(target_os = "windows")]
-use embedded_dll::EMBEDDED_DIRECTML_DLL;
+// embedded_resources 模块已在文件顶部导入
 
 #[cfg(target_os = "windows")]
 use winapi::um::winuser::{
@@ -2379,24 +2371,6 @@ fn check_single_instance() -> Result<(), Box<dyn std::error::Error>> {
     // 非 Windows 系统暂时不检查
     Ok(())
 }
-
-// 嵌入的 DirectML.dll 数据（如果存在）
-#[cfg(target_os = "windows")]
-const EMBEDDED_DIRECTML_DLL: Option<&[u8]> = {
-    // 尝试包含嵌入的 DLL
-    // 如果启用了 embed-directml feature 且 resources/DirectML.dll 存在，它会被编译进二进制
-    #[cfg(feature = "embed-directml")]
-    {
-        // 使用 include_bytes! 宏将 DLL 编译进二进制
-        // 注意：如果文件不存在，编译会失败
-        const DLL_DATA: &[u8] = include_bytes!("../../resources/DirectML.dll");
-        Some(DLL_DATA)
-    }
-    #[cfg(not(feature = "embed-directml"))]
-    {
-        None
-    }
-};
 
 // 提取嵌入的 DirectML.dll（如果存在）
 #[cfg(target_os = "windows")]
