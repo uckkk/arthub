@@ -1229,15 +1229,21 @@ async function doExport(){
           </div>
 
           {/* 命名区域 */}
-          <div className={`ml-auto transition-opacity ${paramDisabled ? 'opacity-40' : ''}`}>
+          <div className="ml-auto">
             <div className="text-xs text-[#888888] mb-1">默认资产名称</div>
-            <div className="text-xs text-white bg-[#2a2a2a] border border-[#3a3a3a] rounded px-2 py-1 mb-1.5">
-              {renderDefaultName(config.portrait.namePrefix, '_mid')}
-            </div>
+            {customMode ? (
+              <input type="text" 
+                value={config.portrait.namePrefix} 
+                onChange={e => setConfig({ ...config, portrait: { ...config.portrait, namePrefix: e.target.value } })}
+                className="w-40 px-2 py-1 bg-[#2a2a2a] border border-[#3a3a3a] rounded text-white text-xs mb-1.5" />
+            ) : (
+              <div className="text-xs text-white bg-[#2a2a2a] border border-[#3a3a3a] rounded px-2 py-1 mb-1.5 opacity-40">
+                {renderDefaultName(config.portrait.namePrefix, '_mid')}
+              </div>
+            )}
             <div className="text-xs text-[#888888] mb-1">自定义命名</div>
             <input type="text" value={customName} onChange={e => setCustomName(e.target.value)}
-              disabled={paramDisabled}
-              placeholder="开启自定义参数后可编辑" className="w-40 px-2 py-1 bg-[#2a2a2a] border border-[#3a3a3a] rounded text-white text-xs disabled:cursor-not-allowed disabled:text-[#555]" />
+              placeholder="输入自定义命名" className="w-40 px-2 py-1 bg-[#2a2a2a] border border-[#3a3a3a] rounded text-white text-xs" />
           </div>
         </div>
 
