@@ -4,6 +4,7 @@
 import { register, unregister, isRegistered as checkIsRegistered } from '@tauri-apps/api/globalShortcut';
 import { appWindow } from '@tauri-apps/api/window';
 import { invoke } from '@tauri-apps/api/tauri';
+import { addPendingImport } from './whiteboardPendingImport';
 
 const HOTKEY_STORAGE_KEY = 'arthub_main_window_hotkey';
 const DEFAULT_HOTKEY = 'Ctrl+Alt+H'; // 默认快捷键
@@ -12,6 +13,37 @@ const SCREENSHOT_HOTKEY_KEY = 'arthub_screenshot_hotkey';
 const RECORD_HOTKEY_KEY = 'arthub_record_hotkey';
 const CAPTURE_OUTPUT_DIR_KEY = 'arthub_capture_output_dir';
 const LAST_RECORD_PATH_KEY = 'arthub_last_record_path';
+
+// 将显示用按键字符转为 Tauri accelerator 可识别的 KeyCode（避免 AcceleratorParseError）
+const DISPLAY_KEY_TO_ACCELERATOR: Record<string, string> = {
+  '~': 'Backquote', '`': 'Backquote',
+  '!': 'Digit1', '@': 'Digit2', '#': 'Digit3', '$': 'Digit4', '%': 'Digit5',
+  '^': 'Digit6', '&': 'Digit7', '*': 'Digit8', '(': 'Digit9', ')': 'Digit0',
+  '-': 'Minus', '_': 'Minus', '=': 'Equal', '+': 'Equal',
+  '[': 'BracketLeft', '{': 'BracketLeft', ']': 'BracketRight', '}': 'BracketRight',
+  ';': 'Semicolon', ':': 'Semicolon', "'": 'Quote', '"': 'Quote',
+  ',': 'Comma', '<': 'Comma', '.': 'Period', '>': 'Period',
+  '/': 'Slash', '?': 'Slash', '\\': 'Backslash', '|': 'Backslash',
+};
+
+function toAcceleratorKey(displayKey: string): string {
+  const k = displayKey.trim();
+  if (!k) return k;
+  const mapped = DISPLAY_KEY_TO_ACCELERATOR[k];
+  if (mapped) return mapped;
+  if (k.length === 1 && /[A-Za-z0-9]/.test(k)) return k.length === 1 && k >= 'a' && k <= 'z' ? k.toUpperCase() : k;
+  return k;
+}
+
+/** 将前端显示的快捷键字符串转为 Tauri register 可用的 accelerator 字符串 */
+function toAcceleratorString(hotkey: string): string {
+  const parts = hotkey.split('+').map(p => p.trim()).filter(Boolean);
+  if (parts.length === 0) return hotkey;
+  const keyPart = parts[parts.length - 1];
+  const keyCode = toAcceleratorKey(keyPart);
+  if (parts.length === 1) return keyCode;
+  return [...parts.slice(0, -1), keyCode].join('+');
+}
 
 // 重新导出 isRegistered 供外部使用
 export const isRegistered = checkIsRegistered;
@@ -233,10 +265,8 @@ async function onScreenshotShortcut(): Promise<void> {
   }
   try {
     await invoke('screen_screenshot', { outputPath: path, region: null });
-    window.dispatchEvent(new CustomEvent('switchTab', { detail: { tab: 'whiteboard' } }));
-    setTimeout(() => {
-      window.dispatchEvent(new CustomEvent('importFileToWhiteboard', { detail: { filePath: path } }));
-    }, 200);
+    addPendingImport(path);
+    window.dispatchEvent(new CustomEvent('arthub-capture-saved-to-canvas', { detail: { type: 'screenshot' as const } }));
     window.dispatchEvent(new CustomEvent('arthub-capture-done', { detail: { type: 'screenshot', path } }));
   } catch (e) {
     window.dispatchEvent(new CustomEvent('arthub-capture-error', { detail: { type: 'screenshot', error: e } }));
@@ -250,10 +280,8 @@ async function onRecordShortcut(): Promise<void> {
       const recordPath = getLastRecordPath();
       await invoke('screen_record_stop');
       if (recordPath) {
-        window.dispatchEvent(new CustomEvent('switchTab', { detail: { tab: 'whiteboard' } }));
-        setTimeout(() => {
-          window.dispatchEvent(new CustomEvent('importFileToWhiteboard', { detail: { filePath: recordPath } }));
-        }, 200);
+        addPendingImport(recordPath);
+        window.dispatchEvent(new CustomEvent('arthub-capture-saved-to-canvas', { detail: { type: 'record' as const } }));
       }
       saveLastRecordPath('');
       window.dispatchEvent(new CustomEvent('arthub-capture-done', { detail: { type: 'record_stop' } }));
@@ -279,13 +307,14 @@ async function onRecordShortcut(): Promise<void> {
 
 export async function registerScreenshotHotkey(hotkey: string): Promise<boolean> {
   if (!hotkey.trim()) return true;
+  const accelerator = toAcceleratorString(hotkey);
   try {
     await unregisterScreenshotHotkey();
-    const existing = await checkIsRegistered(hotkey);
+    const existing = await checkIsRegistered(accelerator);
     if (existing) {
-      try { await unregister(hotkey); } catch { return false; }
+      try { await unregister(accelerator); } catch { return false; }
     }
-    await register(hotkey, () => { onScreenshotShortcut(); });
+    await register(accelerator, () => { onScreenshotShortcut(); });
     saveScreenshotHotkey(hotkey);
     return true;
   } catch (e) {
@@ -296,13 +325,14 @@ export async function registerScreenshotHotkey(hotkey: string): Promise<boolean>
 
 export async function registerRecordHotkey(hotkey: string): Promise<boolean> {
   if (!hotkey.trim()) return true;
+  const accelerator = toAcceleratorString(hotkey);
   try {
     await unregisterRecordHotkey();
-    const existing = await checkIsRegistered(hotkey);
+    const existing = await checkIsRegistered(accelerator);
     if (existing) {
-      try { await unregister(hotkey); } catch { return false; }
+      try { await unregister(accelerator); } catch { return false; }
     }
-    await register(hotkey, () => { onRecordShortcut(); });
+    await register(accelerator, () => { onRecordShortcut(); });
     saveRecordHotkey(hotkey);
     return true;
   } catch (e) {
@@ -313,13 +343,13 @@ export async function registerRecordHotkey(hotkey: string): Promise<boolean> {
 
 export async function unregisterScreenshotHotkey(): Promise<void> {
   const h = getSavedScreenshotHotkey();
-  if (h) try { await unregister(h); } catch { /* ignore */ }
+  if (h) try { await unregister(toAcceleratorString(h)); } catch { /* ignore */ }
   localStorage.removeItem(SCREENSHOT_HOTKEY_KEY);
 }
 
 export async function unregisterRecordHotkey(): Promise<void> {
   const h = getSavedRecordHotkey();
-  if (h) try { await unregister(h); } catch { /* ignore */ }
+  if (h) try { await unregister(toAcceleratorString(h)); } catch { /* ignore */ }
   localStorage.removeItem(RECORD_HOTKEY_KEY);
 }
 

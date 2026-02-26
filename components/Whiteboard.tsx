@@ -72,9 +72,23 @@ import { getSavedStoragePath, openSettingsAndHighlightPath } from '../services/f
 import { Edit2, X, Plus, Folder, Save, Download, Share2, Sun, Moon } from 'lucide-react';
 import { useToast } from './Toast';
 import { invoke } from '@tauri-apps/api/tauri';
+import { getPendingImports, clearPendingImports, addPendingImport } from '../services/whiteboardPendingImport';
 
 // 主题存储 key
 const THEME_STORAGE_KEY = 'arthub_whiteboard_theme';
+
+const IMPORT_GAP = 24;
+function getNextPlacePosition(editor: Editor, w: number, h: number): { x: number; y: number } {
+  const ids = editor.getCurrentPageShapeIds();
+  let maxX = 0;
+  ids.forEach((id) => {
+    const s = editor.getShape(id);
+    if (!s || (s.type !== 'image' && s.type !== 'video')) return;
+    const right = s.x + (Number((s.props as any)?.w) || 0);
+    maxX = Math.max(maxX, right);
+  });
+  return { x: maxX + IMPORT_GAP, y: 0 };
+}
 
 const Whiteboard: React.FC = () => {
   const { showToast } = useToast();
@@ -189,17 +203,22 @@ const Whiteboard: React.FC = () => {
     }
   }, [currentProject, showToast]);
 
-  // 监听「截图/录屏」导入画板：将本地文件加入当前项目并添加到画布
+  // 监听「截图/录屏」导入画板：单路径时入队并触发处理（不跳转）；处理时整齐排列不叠加
   useEffect(() => {
-    const handler = async (e: Event) => {
+    const handler = (e: Event) => {
       const filePath = (e as CustomEvent<{ filePath: string }>).detail?.filePath;
       if (!filePath || typeof filePath !== 'string') return;
+      addPendingImport(filePath);
+    };
+    window.addEventListener('importFileToWhiteboard', handler);
+    return () => window.removeEventListener('importFileToWhiteboard', handler);
+  }, []);
+
+  // 处理待导入队列：从 sessionStorage 取列表，逐个加入画布并整齐排列
+  useEffect(() => {
+    const processOne = async (filePath: string) => {
       const project = getCurrentProject();
-      if (!project) {
-        showToast('info', '请先创建或选择画板项目后再使用截图/录屏导入');
-        return;
-      }
-      if (!editorRef.current) return;
+      if (!project || !editorRef.current) return;
       const editor = editorRef.current;
       const imageTypes = ['image/png', 'image/jpeg', 'image/jpg', 'image/gif', 'image/webp'];
       const videoTypes = ['video/mp4', 'video/webm', 'video/ogg'];
@@ -230,11 +249,12 @@ const Whiteboard: React.FC = () => {
                 props: { w: image.width, h: image.height, name: fileName, src: fileUrl, mimeType, isAnimated: false },
                 meta: {},
               }]);
+              const pos = getNextPlacePosition(editor, image.width, image.height);
               editor.createShape({
                 id: createShapeId(),
                 type: 'image',
-                x: Math.random() * 400,
-                y: Math.random() * 400,
+                x: pos.x,
+                y: pos.y,
                 props: { w: image.width, h: image.height, assetId: imageAssetId },
               });
               showToast('success', `已导入到画板: ${fileName}`);
@@ -265,16 +285,15 @@ const Whiteboard: React.FC = () => {
                 },
                 meta: {},
               }]);
+              const vw = video.videoWidth || 640;
+              const vh = video.videoHeight || 360;
+              const pos = getNextPlacePosition(editor, vw, vh);
               editor.createShape({
                 id: createShapeId(),
                 type: 'video',
-                x: Math.random() * 400,
-                y: Math.random() * 400,
-                props: {
-                  w: video.videoWidth || 640,
-                  h: video.videoHeight || 360,
-                  assetId: videoAssetId,
-                },
+                x: pos.x,
+                y: pos.y,
+                props: { w: vw, h: vh, assetId: videoAssetId },
               });
               showToast('success', `已导入到画板: ${fileName}`);
             } catch (err) {
@@ -289,8 +308,20 @@ const Whiteboard: React.FC = () => {
         showToast('error', `导入到画板失败: ${err?.message || err}`);
       }
     };
-    window.addEventListener('importFileToWhiteboard', handler);
-    return () => window.removeEventListener('importFileToWhiteboard', handler);
+    const runQueue = async () => {
+      const paths = getPendingImports();
+      if (paths.length === 0) return;
+      if (!getCurrentProject() || !editorRef.current) {
+        showToast('info', '请先创建或选择画板项目，待导入文件已入队');
+        return;
+      }
+      for (const p of paths) await processOne(p);
+      clearPendingImports();
+    };
+    const onProcess = () => { runQueue(); };
+    window.addEventListener('arthub-process-pending-imports', onProcess);
+    runQueue();
+    return () => window.removeEventListener('arthub-process-pending-imports', onProcess);
   }, [showToast]);
 
   // 切换项目（不卸载 Tldraw，手动加载数据，避免 tldraw 内部 dispose 时 "h is not a function" 错误）

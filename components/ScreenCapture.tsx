@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { Camera, Square, Monitor, Settings, Keyboard } from 'lucide-react';
+import { Camera, Square, Monitor, Settings, Keyboard, Download } from 'lucide-react';
 import { invoke } from '@tauri-apps/api/tauri';
 import { open } from '@tauri-apps/api/dialog';
 import { useToast } from './Toast';
@@ -15,16 +15,14 @@ import {
   registerRecordHotkey,
   validateHotkey,
 } from '../services/hotkeyService';
+import { addPendingImport } from '../services/whiteboardPendingImport';
 
 const isTauri = typeof window !== 'undefined' && !!(window as any).__TAURI__;
 
-// 截图/录屏完成后默认导入当前无限画板并切到画板
+// 截图/录屏完成后默认导入当前无限画板（不跳转，后台入队由画布处理）
 function dispatchImportToWhiteboard(filePath: string) {
   if (!filePath || !isTauri) return;
-  window.dispatchEvent(new CustomEvent('switchTab', { detail: { tab: 'whiteboard' } }));
-  setTimeout(() => {
-    window.dispatchEvent(new CustomEvent('importFileToWhiteboard', { detail: { filePath } }));
-  }, 200);
+  addPendingImport(filePath);
 }
 
 const CAPTURE_KEY_MAP: Record<string, string> = {
@@ -43,6 +41,9 @@ export default function ScreenCapture() {
   const [screenshotHotkey, setScreenshotHotkey] = useState('');
   const [recordHotkey, setRecordHotkey] = useState('');
   const [savingHotkeys, setSavingHotkeys] = useState(false);
+  const [lastCapturePath, setLastCapturePath] = useState('');
+  const [showCaptureSavedPrompt, setShowCaptureSavedPrompt] = useState(false);
+  const [captureSavedType, setCaptureSavedType] = useState<'screenshot' | 'record' | null>(null);
 
   useEffect(() => {
     if (!isTauri) return;
@@ -61,13 +62,22 @@ export default function ScreenCapture() {
       showToast('error', d?.type === 'screenshot' ? '截图失败' : '录屏失败');
     };
     const onRecordStarted = () => showToast('success', '录屏已开始，再次按录屏快捷键停止');
+    const onCaptureSavedToCanvas = (e: Event) => {
+      const t = (e as CustomEvent<{ type: 'screenshot' | 'record' }>).detail?.type;
+      if (t) {
+        setCaptureSavedType(t);
+        setShowCaptureSavedPrompt(true);
+      }
+    };
     window.addEventListener('arthub-capture-no-dir', onNoDir);
     window.addEventListener('arthub-capture-error', onError);
     window.addEventListener('arthub-record-started', onRecordStarted);
+    window.addEventListener('arthub-capture-saved-to-canvas', onCaptureSavedToCanvas);
     return () => {
       window.removeEventListener('arthub-capture-no-dir', onNoDir);
       window.removeEventListener('arthub-capture-error', onError);
       window.removeEventListener('arthub-record-started', onRecordStarted);
+      window.removeEventListener('arthub-capture-saved-to-canvas', onCaptureSavedToCanvas);
     };
   }, [isTauri, showToast]);
 
@@ -144,9 +154,14 @@ export default function ScreenCapture() {
         const is = await invoke<boolean>('screen_record_is_recording');
         if (!is) {
           setRecording(false);
-          showToast('success', '录屏已停止，文件已保存');
           const path = lastRecordPathRef.current;
-          if (path) dispatchImportToWhiteboard(path);
+          if (path) {
+            setLastCapturePath(path);
+            dispatchImportToWhiteboard(path);
+            setCaptureSavedType('record');
+            setShowCaptureSavedPrompt(true);
+          }
+          showToast('success', '录屏已停止，文件已保存');
         }
       } catch {
         setRecording(false);
@@ -196,10 +211,13 @@ export default function ScreenCapture() {
     try {
       await invoke('screen_screenshot', { outputPath: path, region: null });
       setSavePath(path);
+      setLastCapturePath(path);
       const dir = path.replace(/[/\\][^/\\]+$/, '');
       if (dir) saveCaptureOutputDir(dir);
       showToast('success', '截图已保存');
       dispatchImportToWhiteboard(path);
+      setCaptureSavedType('screenshot');
+      setShowCaptureSavedPrompt(true);
     } catch (e: any) {
       showToast('error', e?.message || '截图失败');
     }
@@ -250,12 +268,47 @@ export default function ScreenCapture() {
     }
   };
 
-  const openFfmpegSettings = () => {
-    window.dispatchEvent(new CustomEvent('openSettings'));
+  const [ffmpegInstalling, setFfmpegInstalling] = useState(false);
+  const handleInstallFfmpeg = async () => {
+    if (!isTauri || ffmpegInstalling) return;
+    setFfmpegInstalling(true);
+    try {
+      await invoke('ffmpeg_download');
+      await checkFfmpeg();
+      showToast('success', 'FFmpeg 安装完成，已全局生效');
+    } catch (e: any) {
+      showToast('error', e?.message || e?.toString() || 'FFmpeg 安装失败');
+    } finally {
+      setFfmpegInstalling(false);
+    }
+  };
+
+  const handleDownloadTo = async () => {
+    if (!isTauri || !lastCapturePath) return;
+    try {
+      const fileName = lastCapturePath.replace(/^.*[/\\]/, '');
+      const target = await open({
+        directory: false,
+        multiple: false,
+        title: '选择保存位置（可指定文件夹和文件名）',
+        defaultPath: fileName,
+      });
+      if (typeof target !== 'string') return;
+      const content = await invoke<number[]>('read_binary_file_with_path', { filePath: lastCapturePath });
+      await invoke('write_binary_file_with_path', { filePath: target, content: Array.from(content) });
+      showToast('success', '已保存到选择的位置');
+    } catch (e: any) {
+      showToast('error', e?.message || '保存失败');
+    }
+  };
+
+  const goToWhiteboard = () => {
+    setShowCaptureSavedPrompt(false);
+    window.dispatchEvent(new CustomEvent('switchTab', { detail: { tab: 'whiteboard' } }));
   };
 
   return (
-    <div className="h-full flex flex-col bg-[#0a0a0a] text-white p-6 overflow-auto">
+    <div className="h-full flex flex-col bg-[#0a0a0a] text-white p-6 overflow-auto relative">
       <div className="max-w-xl mx-auto w-full space-y-6">
         <h2 className="text-lg font-semibold flex items-center gap-2">
           <Camera size={20} className="text-blue-400" />
@@ -270,13 +323,17 @@ export default function ScreenCapture() {
 
         {isTauri && ffmpegOk === false && (
           <div className="p-4 rounded-lg bg-amber-500/10 border border-amber-500/20 text-amber-300 text-sm flex items-center justify-between gap-3">
-            <span>未检测到 FFmpeg，录屏与截图需要先安装（可在「资源管理」- FFmpeg 设置 中安装）。</span>
+            <span>未检测到 FFmpeg，录屏与截图需要先安装（安装后全局生效）。</span>
             <button
-              onClick={openFfmpegSettings}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-amber-500/20 hover:bg-amber-500/30 text-amber-200 text-sm font-medium shrink-0"
+              onClick={handleInstallFfmpeg}
+              disabled={ffmpegInstalling}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-amber-500/20 hover:bg-amber-500/30 text-amber-200 text-sm font-medium shrink-0 disabled:opacity-60"
             >
-              <Settings size={14} />
-              去设置
+              {ffmpegInstalling ? (
+                <>安装中...</>
+              ) : (
+                <>立即安装</>
+              )}
             </button>
           </div>
         )}
@@ -305,14 +362,14 @@ export default function ScreenCapture() {
         <div className="space-y-4">
           <div>
             <label className="block text-xs text-[#888] mb-1.5">
-              {mode === 'screenshot' ? '截图保存路径' : '录屏保存路径'}
+              保存路径（截图与录屏共用）
             </label>
             <div className="flex gap-2">
               <input
                 type="text"
                 value={savePath}
                 onChange={e => setSavePath(e.target.value)}
-                placeholder={mode === 'screenshot' ? '选择或输入路径，如 C:\\Users\\xxx\\截图.png' : '选择或输入路径，如 C:\\Users\\xxx\\录屏.mp4'}
+                placeholder="选择或输入路径，如 C:\Users\xxx 或带文件名"
                 className="flex-1 px-3 py-2 rounded-lg bg-[#1a1a1a] border border-[#2a2a2a] text-white text-sm placeholder-[#555] focus:outline-none focus:border-blue-500"
               />
               <button
@@ -324,6 +381,22 @@ export default function ScreenCapture() {
               </button>
             </div>
           </div>
+
+          {isTauri && lastCapturePath && (
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="text-xs text-[#888] truncate max-w-[200px]" title={lastCapturePath}>
+                最近: {lastCapturePath.replace(/^.*[/\\]/, '')}
+              </span>
+              <button
+                type="button"
+                onClick={handleDownloadTo}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#2a2a2a] hover:bg-[#3a3a3a] text-[#ccc] text-sm"
+              >
+                <Download size={14} />
+                下载到...
+              </button>
+            </div>
+          )}
 
           {mode === 'screenshot' && (
             <button
@@ -407,6 +480,30 @@ export default function ScreenCapture() {
           当前仅支持 Windows。录屏使用 FFmpeg gdigrab + H.264（CRF 22），画质高、体积小。区域截图/录屏后续版本提供。
         </p>
       </div>
+
+      {showCaptureSavedPrompt && (
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 flex flex-col items-center gap-3 px-5 py-4 rounded-xl bg-[#1a1a1a] border border-[#333] shadow-lg">
+          <p className="text-sm text-[#e0e0e0]">
+            {captureSavedType === 'record' ? '当前视频' : '当前截图'}已保存至画布
+          </p>
+          <div className="flex gap-2">
+            <button
+              type="button"
+              onClick={goToWhiteboard}
+              className="px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium"
+            >
+              立即前往
+            </button>
+            <button
+              type="button"
+              onClick={() => setShowCaptureSavedPrompt(false)}
+              className="px-4 py-2 rounded-lg bg-[#333] hover:bg-[#444] text-[#ccc] text-sm"
+            >
+              稍后处理
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
