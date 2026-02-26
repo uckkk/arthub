@@ -70,28 +70,35 @@ class ConsoleService {
       this.originalConsole.warn(...args);
     };
 
-    // 拦截 console.log（普通日志）- 记录调试信息
+    // 拦截 console.log（普通日志）- 记录调试信息和重要操作
     console.log = (...args: any[]) => {
-      // 记录包含 [PathManager] 等调试标记的日志
       const firstArg = args[0];
+      // 记录包含调试标记的日志
       if (typeof firstArg === 'string' && 
           (firstArg.includes('[PathManager]') ||
            firstArg.includes('[调试]') ||
-           firstArg.includes('[DEBUG]'))) {
+           firstArg.includes('[DEBUG]') ||
+           firstArg.includes('[AI Index]') ||
+           firstArg.includes('[AI 索引]') ||
+           firstArg.includes('[Tauri]'))) {
         this.addLog('info', args);
       }
       this.originalLog(...args);
     };
 
-    // 拦截 console.info（信息日志）- 记录重要操作
+    // 拦截 console.info（信息日志）- 记录重要操作和状态变化
     console.info = (...args: any[]) => {
-      // 只记录包含 "error"、"fail"、"异常" 等关键词的 info
       const firstArg = args[0];
+      // 记录包含关键词的 info，或所有包含标记的 info
       if (typeof firstArg === 'string' && 
           (firstArg.toLowerCase().includes('error') || 
            firstArg.toLowerCase().includes('fail') || 
            firstArg.includes('异常') ||
-           firstArg.includes('失败'))) {
+           firstArg.includes('失败') ||
+           firstArg.includes('[AI') ||
+           firstArg.includes('[索引]') ||
+           firstArg.includes('[性能]') ||
+           firstArg.includes('[内存]'))) {
         this.addLog('info', args);
       }
       this.originalConsole.info(...args);
@@ -123,13 +130,21 @@ class ConsoleService {
         reason: reason,
         stack: reason?.stack,
         message: reason?.message || String(reason),
+        name: reason?.name,
+        code: reason?.code,
       };
       this.addLog('error', [
         `[未处理的 Promise 拒绝]`,
-        errorDetails.message,
+        `错误类型: ${errorDetails.name || 'Unknown'}`,
+        `错误消息: ${errorDetails.message}`,
+        errorDetails.code ? `错误代码: ${errorDetails.code}` : '',
+        errorDetails.stack ? `堆栈:\n${errorDetails.stack}` : '',
         errorDetails,
       ]);
     });
+    
+    // 添加崩溃检测（内存泄漏、性能问题）
+    this.startCrashDetection();
 
     // 拦截资源加载错误（忽略 Tauri asset:// 协议的图片加载失败，这些由组件自行处理）
     window.addEventListener('error', (event) => {
@@ -155,6 +170,9 @@ class ConsoleService {
 
     // 拦截 XMLHttpRequest 错误
     this.interceptXHR();
+
+    // 拦截 Tauri invoke 调用（如果可用）
+    this.interceptTauriInvoke();
 
     // 启动布局问题检测（仅在开发模式或启用时）
     if (process.env.NODE_ENV === 'development' || this.shouldDetectLayoutIssues()) {
@@ -373,6 +391,311 @@ class ConsoleService {
     return false;
   }
 
+  // 拦截 Tauri invoke 调用
+  private interceptTauriInvoke() {
+    try {
+      // 动态导入 Tauri API
+      import('@tauri-apps/api/tauri').then((tauriModule) => {
+        const originalInvoke = tauriModule.invoke;
+        const service = this;
+        
+        // 重写 invoke 方法 - 使用 Object.defineProperty 确保覆盖
+        Object.defineProperty(tauriModule, 'invoke', {
+          value: async function(command: string, args?: any) {
+            const startTime = Date.now();
+            const requestId = Math.random().toString(36).substr(2, 9);
+            const memoryBefore = service.getMemoryUsage();
+            
+            // 记录调用开始（仅对重要命令）
+            const importantCommands = ['ai_index_embeddings', 'ai_search', 'asset_scan_folder', 'asset_query', 'ai_embedding_stats'];
+            if (importantCommands.includes(command)) {
+              const memory = service.getMemoryUsage();
+              service.addLog('info', [
+                `[Tauri] 调用命令: ${command}`,
+                args ? `参数: ${JSON.stringify(args).substring(0, 200)}` : '无参数',
+                `请求ID: ${requestId}`,
+                memory ? `内存使用: ${Math.round(memory.usedJSHeapSize / 1024 / 1024)}MB` : ''
+              ]);
+            }
+            
+            try {
+              const result = await originalInvoke.call(this, command, args);
+              const duration = Date.now() - startTime;
+              const memoryAfter = service.getMemoryUsage();
+              const memoryDelta = memoryBefore && memoryAfter 
+                ? memoryAfter.usedJSHeapSize - memoryBefore.usedJSHeapSize 
+                : null;
+              
+              // 记录慢调用（>1秒）
+              if (duration > 1000) {
+                service.addLog('warn', [
+                  `[Tauri] 命令执行较慢: ${command}`,
+                  `耗时: ${duration}ms`,
+                  `请求ID: ${requestId}`,
+                  `结果类型: ${typeof result}`,
+                  memoryDelta ? `内存变化: ${memoryDelta > 0 ? '+' : ''}${Math.round(memoryDelta / 1024 / 1024)}MB` : ''
+                ]);
+              }
+              
+              // 记录性能瓶颈（>5秒）
+              if (duration > 5000) {
+                service.addLog('warn', [
+                  `[性能瓶颈] Tauri 命令执行超时: ${command}`,
+                  `耗时: ${duration}ms (${Math.round(duration / 1000)}秒)`,
+                  `请求ID: ${requestId}`,
+                  `建议: 检查后端处理逻辑或数据量`,
+                  memoryDelta ? `内存变化: ${memoryDelta > 0 ? '+' : ''}${Math.round(memoryDelta / 1024 / 1024)}MB` : ''
+                ]);
+              }
+              
+              // 记录错误结果
+              if (result && typeof result === 'object' && 'error' in result) {
+                service.addLog('error', [
+                  `[Tauri] 命令返回错误: ${command}`,
+                  `错误: ${JSON.stringify(result.error)}`,
+                  `耗时: ${duration}ms`,
+                  `请求ID: ${requestId}`,
+                  { result, command, args }
+                ]);
+              }
+              
+              return result;
+            } catch (error: any) {
+              const duration = Date.now() - startTime;
+              const errorMessage = error?.message || String(error);
+              const errorCode = error?.code;
+              const errorStack = error?.stack;
+              const errorName = error?.name;
+              const memoryAfter = service.getMemoryUsage();
+              const memoryDelta = memoryBefore && memoryAfter 
+                ? memoryAfter.usedJSHeapSize - memoryBefore.usedJSHeapSize 
+                : null;
+              
+              // 记录所有 invoke 错误（详细）- 这是关键的错误记录点
+              service.addLog('error', [
+                `[Tauri] 命令调用失败: ${command}`,
+                `错误类型: ${errorName || 'Unknown'}`,
+                `错误消息: ${errorMessage}`,
+                errorCode ? `错误代码: ${errorCode}` : '',
+                `耗时: ${duration}ms`,
+                `请求ID: ${requestId}`,
+                args ? `参数: ${JSON.stringify(args).substring(0, 200)}` : '',
+                memoryDelta ? `内存变化: ${memoryDelta > 0 ? '+' : ''}${Math.round(memoryDelta / 1024 / 1024)}MB` : '',
+                errorStack ? `堆栈:\n${errorStack}` : '',
+                { 
+                  error, 
+                  stack: errorStack, 
+                  command, 
+                  args, 
+                  duration, 
+                  memoryDelta,
+                  timestamp: new Date().toISOString(),
+                  userAgent: navigator.userAgent
+                }
+              ]);
+              
+              throw error;
+            }
+          },
+          writable: true,
+          configurable: true
+        });
+      }).catch((importError) => {
+        // Tauri API 不可用，记录警告
+        this.addLog('warn', [
+          '[日志服务] Tauri API 不可用，无法拦截 invoke 调用',
+          `错误: ${importError?.message || String(importError)}`
+        ]);
+      });
+    } catch (e) {
+      // 拦截失败，记录错误
+      this.addLog('error', [
+        '[日志服务] 拦截 Tauri invoke 失败',
+        `错误: ${e instanceof Error ? e.message : String(e)}`,
+        `堆栈: ${e instanceof Error ? e.stack : ''}`
+      ]);
+    }
+  }
+  
+  // 启动崩溃检测
+  private startCrashDetection() {
+    // 内存监控
+    this.startMemoryMonitoring();
+    
+    // 性能监控
+    this.startPerformanceMonitoring();
+    
+    // 页面可见性变化检测（可能表示应用挂起）
+    document.addEventListener('visibilitychange', () => {
+      if (document.hidden) {
+        // 页面隐藏，记录状态
+        const memory = this.getMemoryUsage();
+        if (memory) {
+          this.addLog('info', [
+            `[应用状态] 页面隐藏`,
+            `内存使用: ${Math.round(memory.usedJSHeapSize / 1024 / 1024)}MB / ${Math.round(memory.jsHeapSizeLimit / 1024 / 1024)}MB`,
+            `使用率: ${Math.round((memory.usedJSHeapSize / memory.jsHeapSizeLimit) * 100)}%`
+          ]);
+        }
+      } else {
+        // 页面重新可见，检查是否有异常
+        const memory = this.getMemoryUsage();
+        if (memory) {
+          const usagePercent = (memory.usedJSHeapSize / memory.jsHeapSizeLimit) * 100;
+          if (usagePercent > 90) {
+            this.addLog('warn', [
+              `[应用状态] 页面重新可见，但内存使用率很高`,
+              `内存使用: ${Math.round(memory.usedJSHeapSize / 1024 / 1024)}MB / ${Math.round(memory.jsHeapSizeLimit / 1024 / 1024)}MB`,
+              `使用率: ${Math.round(usagePercent)}%`,
+              `建议: 检查是否有内存泄漏`
+            ]);
+          }
+        }
+      }
+    });
+    
+    // 页面卸载前记录状态
+    window.addEventListener('beforeunload', () => {
+      const memory = this.getMemoryUsage();
+      if (memory) {
+        this.addLog('info', [
+          `[应用状态] 页面即将卸载`,
+          `内存使用: ${Math.round(memory.usedJSHeapSize / 1024 / 1024)}MB / ${Math.round(memory.jsHeapSizeLimit / 1024 / 1024)}MB`,
+          `日志总数: ${this.logs.length}`
+        ]);
+      }
+    });
+    
+    // 检测页面冻结（长时间无响应）
+    this.detectPageFreeze();
+  }
+  
+  // 检测页面冻结
+  private detectPageFreeze() {
+    let lastHeartbeat = Date.now();
+    const heartbeatInterval = 5000; // 5秒心跳
+    
+    // 定期发送心跳
+    setInterval(() => {
+      const now = Date.now();
+      const timeSinceLastHeartbeat = now - lastHeartbeat;
+      
+      // 如果超过10秒没有心跳，可能页面冻结了
+      if (timeSinceLastHeartbeat > 10000) {
+        const memory = this.getMemoryUsage();
+        this.addLog('error', [
+          `[崩溃检测] 检测到可能的页面冻结`,
+          `无响应时间: ${Math.round(timeSinceLastHeartbeat / 1000)}秒`,
+          memory ? `内存使用: ${Math.round(memory.usedJSHeapSize / 1024 / 1024)}MB / ${Math.round(memory.jsHeapSizeLimit / 1024 / 1024)}MB` : '',
+          `建议: 检查是否有长时间运行的同步任务或内存泄漏`
+        ]);
+      }
+      
+      lastHeartbeat = now;
+    }, heartbeatInterval);
+    
+    // 监听用户交互，更新心跳
+    ['mousedown', 'keydown', 'scroll', 'touchstart'].forEach(eventType => {
+      document.addEventListener(eventType, () => {
+        lastHeartbeat = Date.now();
+      }, { passive: true });
+    });
+  }
+  
+  // 内存监控
+  private startMemoryMonitoring() {
+    setInterval(() => {
+      const memory = this.getMemoryUsage();
+      if (memory) {
+        const usedMB = memory.usedJSHeapSize / 1024 / 1024;
+        const limitMB = memory.jsHeapSizeLimit / 1024 / 1024;
+        const usagePercent = (memory.usedJSHeapSize / memory.jsHeapSizeLimit) * 100;
+        
+        // 内存使用超过 80% 时警告
+        if (usagePercent > 80) {
+          this.addLog('warn', [
+            `[内存警告] 内存使用率过高`,
+            `使用: ${Math.round(usedMB)}MB / ${Math.round(limitMB)}MB`,
+            `使用率: ${Math.round(usagePercent)}%`,
+            `建议: 检查内存泄漏或关闭不必要的标签页`
+          ]);
+        }
+        
+        // 内存使用超过 95% 时严重警告
+        if (usagePercent > 95) {
+          this.addLog('error', [
+            `[内存严重警告] 内存即将耗尽`,
+            `使用: ${Math.round(usedMB)}MB / ${Math.round(limitMB)}MB`,
+            `使用率: ${Math.round(usagePercent)}%`,
+            `风险: 应用可能崩溃，建议立即保存工作并重启`
+          ]);
+        }
+      }
+    }, 30000); // 每30秒检查一次
+  }
+  
+  // 性能监控
+  private startPerformanceMonitoring() {
+    // 监控长任务（可能阻塞 UI）
+    if ('PerformanceObserver' in window) {
+      try {
+        const observer = new PerformanceObserver((list) => {
+          for (const entry of list.getEntries()) {
+            // 长任务超过 50ms 可能影响用户体验
+            if (entry.duration > 50) {
+              this.addLog('warn', [
+                `[性能瓶颈] 检测到长任务`,
+                `耗时: ${Math.round(entry.duration)}ms`,
+                `名称: ${entry.name || 'Unknown'}`,
+                `建议: 优化代码或使用 Web Worker`
+              ]);
+            }
+          }
+        });
+        observer.observe({ entryTypes: ['longtask'] });
+      } catch (e) {
+        // 浏览器不支持 longtask，忽略
+      }
+    }
+    
+    // 监控页面加载性能
+    window.addEventListener('load', () => {
+      setTimeout(() => {
+        const perfData = performance.getEntriesByType('navigation')[0] as PerformanceNavigationTiming;
+        if (perfData) {
+          const loadTime = perfData.loadEventEnd - perfData.fetchStart;
+          const domContentLoaded = perfData.domContentLoadedEventEnd - perfData.fetchStart;
+          
+          if (loadTime > 3000) {
+            this.addLog('warn', [
+              `[性能] 页面加载较慢`,
+              `总耗时: ${Math.round(loadTime)}ms`,
+              `DOM 就绪: ${Math.round(domContentLoaded)}ms`,
+              `建议: 检查资源加载速度或代码优化`
+            ]);
+          }
+        }
+      }, 1000);
+    });
+  }
+  
+  // 获取内存使用情况（如果可用）
+  private getMemoryUsage(): { usedJSHeapSize: number; totalJSHeapSize: number; jsHeapSizeLimit: number } | null {
+    try {
+      if ('memory' in performance) {
+        const memory = (performance as any).memory;
+        return {
+          usedJSHeapSize: memory.usedJSHeapSize,
+          totalJSHeapSize: memory.totalJSHeapSize,
+          jsHeapSizeLimit: memory.jsHeapSizeLimit,
+        };
+      }
+    } catch (e) {
+      // 忽略错误
+    }
+    return null;
+  }
+
   // 拦截 XMLHttpRequest
   private interceptXHR() {
     const service = this; // 保存服务实例的引用
@@ -419,7 +742,8 @@ class ConsoleService {
     };
   }
 
-  private addLog(type: LogEntry['type'], args: any[], stackTrace?: string) {
+  // 公开的日志添加方法（供外部调用）
+  addLog(type: LogEntry['type'], args: any[], stackTrace?: string) {
     // 将参数转换为消息字符串
     let message = '';
     const logArgs: any[] = [];

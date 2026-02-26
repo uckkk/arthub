@@ -8,12 +8,13 @@ import {
   Lock, Unlock, History, Shield, Users, AlertTriangle, Clock,
   Settings, Download, Video, Music, List, Shuffle, Type, Columns, RotateCcw
 } from 'lucide-react';
-import { invoke } from '@tauri-apps/api/tauri';
+import { invoke } from '../services/tauriInvokeInterceptor';
 import { convertFileSrc } from '@tauri-apps/api/tauri';
 import { listen } from '@tauri-apps/api/event';
 import { open } from '@tauri-apps/api/dialog';
 import { getSavedStoragePath } from '../services/fileStorageService';
 import { useToast } from './Toast';
+import { consoleService } from '../services/consoleService';
 import AssetComparePanel from './AssetComparePanel';
 import { SkeletonImage, Skeleton, SkeletonMasonryGrid, SkeletonDetailPanel, SkeletonPreview, SkeletonText, SkeletonList } from './ui/Skeleton';
 
@@ -3083,10 +3084,30 @@ export default function AssetManager() {
 
   const aiIndexingRef = useRef(false);
   const handleAiIndex = useCallback(async () => {
-    if (aiIndexingRef.current) return;
+    if (aiIndexingRef.current) {
+      consoleService.addLog('warn', ['[AI 索引] 索引任务已在进行中，忽略重复调用']);
+      return;
+    }
     aiIndexingRef.current = true;
     setAiIndexing(true);
+    const startTime = Date.now();
+    let batchCount = 0;
+    let totalProcessed = 0;
+    let totalFailed = 0;
+    
+    // 记录开始时的内存状态
+    const memoryBefore = (performance as any).memory ? {
+      used: Math.round((performance as any).memory.usedJSHeapSize / 1024 / 1024),
+      total: Math.round((performance as any).memory.totalJSHeapSize / 1024 / 1024),
+      limit: Math.round((performance as any).memory.jsHeapSizeLimit / 1024 / 1024)
+    } : null;
+    
     try {
+      consoleService.addLog('info', [
+        '[AI 索引] 开始索引任务',
+        memoryBefore ? `初始内存: ${memoryBefore.used}MB / ${memoryBefore.limit}MB` : ''
+      ]);
+      
       let hasMore = true;
       let consecutiveEmptyBatches = 0;
       let consecutiveAllFailedBatches = 0;
@@ -3095,57 +3116,235 @@ export default function AssetManager() {
       let lastTotalIndexed = 0;
       
       while (hasMore) {
-        const result = await invoke<{ batch_indexed: number; batch_failed: number; total_indexed: number; total_images: number }>('ai_index_embeddings');
-        console.log('[AI Index] Batch result:', result);
-        setAiStats({ indexed: result.total_indexed, total: result.total_images, progress: result.total_images > 0 ? result.total_indexed / result.total_images : 0 });
-        const batchProcessed = result.batch_indexed + result.batch_failed;
+        const batchStartTime = Date.now();
+        batchCount++;
         
-        // 检查是否有进展（total_indexed 是否增加）
-        const madeProgress = result.total_indexed > lastTotalIndexed;
-        lastTotalIndexed = result.total_indexed;
-        
-        if (batchProcessed === 0) {
-          // 空批次：没有资产需要处理
-          consecutiveEmptyBatches++;
-          consecutiveAllFailedBatches = 0; // 重置全部失败计数器
-          if (consecutiveEmptyBatches >= maxEmptyBatches) {
-            console.log('[AI Index] Stopping: too many empty batches');
+        try {
+          // 记录调用前的状态
+          const memoryBeforeCall = (performance as any).memory ? {
+            used: Math.round((performance as any).memory.usedJSHeapSize / 1024 / 1024)
+          } : null;
+          
+          const result = await invoke<{ batch_indexed: number; batch_failed: number; total_indexed: number; total_images: number }>('ai_index_embeddings');
+          const batchDuration = Date.now() - batchStartTime;
+          
+          // 记录调用后的内存状态
+          const memoryAfterCall = (performance as any).memory ? {
+            used: Math.round((performance as any).memory.usedJSHeapSize / 1024 / 1024)
+          } : null;
+          const memoryDelta = memoryBeforeCall && memoryAfterCall 
+            ? memoryAfterCall.used - memoryBeforeCall.used 
+            : null;
+          
+          // 记录批次结果（详细日志）
+          consoleService.addLog('info', [
+            `[AI 索引] 批次 ${batchCount} 完成`,
+            `成功: ${result.batch_indexed}, 失败: ${result.batch_failed}`,
+            `总进度: ${result.total_indexed}/${result.total_images}`,
+            `耗时: ${batchDuration}ms`,
+            `平均速度: ${result.batch_indexed > 0 ? Math.round(batchDuration / result.batch_indexed) : 0}ms/项`,
+            memoryDelta !== null ? `内存变化: ${memoryDelta > 0 ? '+' : ''}${memoryDelta}MB` : ''
+          ]);
+          
+          console.log('[AI Index] Batch result:', result);
+          totalProcessed += result.batch_indexed;
+          totalFailed += result.batch_failed;
+          
+          setAiStats({ indexed: result.total_indexed, total: result.total_images, progress: result.total_images > 0 ? result.total_indexed / result.total_images : 0 });
+          const batchProcessed = result.batch_indexed + result.batch_failed;
+          
+          // 记录批次性能信息
+          if (batchDuration > 5000) {
+            consoleService.addLog('warn', [
+              `[AI 索引] 批次 ${batchCount} 处理较慢`,
+              `耗时: ${batchDuration}ms`,
+              `成功: ${result.batch_indexed}, 失败: ${result.batch_failed}`,
+              `建议: 检查文件大小或模型加载状态`
+            ]);
+          }
+          
+          // 检查是否有进展（total_indexed 是否增加）
+          const madeProgress = result.total_indexed > lastTotalIndexed;
+          lastTotalIndexed = result.total_indexed;
+          
+          if (batchProcessed === 0) {
+            // 空批次：没有资产需要处理
+            consecutiveEmptyBatches++;
+            consecutiveAllFailedBatches = 0; // 重置全部失败计数器
+            if (consecutiveEmptyBatches >= maxEmptyBatches) {
+              consoleService.addLog('info', [
+                `[AI 索引] 停止: 连续 ${consecutiveEmptyBatches} 批为空`,
+                `总批次数: ${batchCount}, 总耗时: ${Date.now() - startTime}ms`
+              ]);
+              hasMore = false;
+              break;
+            }
+          } else if (!madeProgress) {
+            // 处理了资产但没有进展（全部失败或失败后重试仍然失败）
+            consecutiveAllFailedBatches++;
+            consecutiveEmptyBatches = 0; // 重置空批次计数器
+            
+            consoleService.addLog('warn', [
+              `[AI 索引] 批次 ${batchCount} 无进展`,
+              `成功: ${result.batch_indexed}, 失败: ${result.batch_failed}`,
+              `连续无进展批次: ${consecutiveAllFailedBatches}/${maxAllFailedBatches}`,
+              `耗时: ${batchDuration}ms`
+            ]);
+            
+            if (consecutiveAllFailedBatches >= maxAllFailedBatches) {
+              consoleService.addLog('error', [
+                `[AI 索引] 停止: 连续 ${maxAllFailedBatches} 批无进展`,
+                `可能原因: 文件损坏、模型加载失败、内存不足`,
+                `总批次数: ${batchCount}, 总成功: ${totalProcessed}, 总失败: ${totalFailed}`,
+                `总耗时: ${Date.now() - startTime}ms`
+              ]);
+              showToast(`警告: 连续 ${maxAllFailedBatches} 批资产索引无进展，可能文件有问题或已全部处理完成`, 'warning');
+              hasMore = false;
+              break;
+            }
+          } else {
+            // 有成功的索引，重置所有计数器
+            consecutiveEmptyBatches = 0;
+            consecutiveAllFailedBatches = 0;
+            
+            // 记录成功批次（每10批记录一次，避免日志过多）
+            if (batchCount % 10 === 0) {
+              consoleService.addLog('info', [
+                `[AI 索引] 进度更新`,
+                `批次: ${batchCount}, 已索引: ${result.total_indexed}/${result.total_images}`,
+                `本批成功: ${result.batch_indexed}, 失败: ${result.batch_failed}`,
+                `平均耗时: ${Math.round((Date.now() - startTime) / batchCount)}ms/批`
+              ]);
+            }
+          }
+          
+          // 如果已经全部索引完成，停止
+          if (result.total_indexed >= result.total_images) {
+            const totalDuration = Date.now() - startTime;
+            consoleService.addLog('info', [
+              `[AI 索引] 完成`,
+              `总批次数: ${batchCount}`,
+              `总成功: ${totalProcessed}, 总失败: ${totalFailed}`,
+              `总耗时: ${totalDuration}ms (${Math.round(totalDuration / 1000)}秒)`,
+              `平均速度: ${batchCount > 0 ? Math.round(totalDuration / batchCount) : 0}ms/批`
+            ]);
             hasMore = false;
             break;
           }
-        } else if (!madeProgress) {
-          // 处理了资产但没有进展（全部失败或失败后重试仍然失败）
+          
+          // 如果本批处理了资产，且还有未索引的，继续
+          hasMore = batchProcessed > 0 && result.total_indexed < result.total_images;
+        } catch (batchError: any) {
+          const batchDuration = Date.now() - batchStartTime;
+          const errorMessage = batchError?.message || String(batchError);
+          const errorStack = batchError?.stack;
+          const errorCode = batchError?.code;
+          const errorName = batchError?.name;
+          
+          // 详细记录错误信息
+          consoleService.addLog('error', [
+            `[AI 索引] 批次 ${batchCount} 调用失败`,
+            `错误类型: ${errorName || 'Unknown'}`,
+            `错误消息: ${errorMessage}`,
+            errorCode ? `错误代码: ${errorCode}` : '',
+            `耗时: ${batchDuration}ms`,
+            `连续失败批次: ${consecutiveAllFailedBatches + 1}/${maxAllFailedBatches}`,
+            `总成功: ${totalProcessed}, 总失败: ${totalFailed}`,
+            errorStack ? `堆栈:\n${errorStack}` : '',
+            { 
+              error: batchError, 
+              stack: errorStack,
+              batchCount,
+              totalProcessed,
+              totalFailed,
+              duration: batchDuration
+            }
+          ]);
+          
           consecutiveAllFailedBatches++;
-          consecutiveEmptyBatches = 0; // 重置空批次计数器
-          console.log(`[AI Index] No progress: batch_indexed=${result.batch_indexed}, batch_failed=${result.batch_failed}, consecutive_all_failed=${consecutiveAllFailedBatches}`);
           if (consecutiveAllFailedBatches >= maxAllFailedBatches) {
-            console.log('[AI Index] Stopping: too many batches with no progress');
-            showToast(`警告: 连续 ${maxAllFailedBatches} 批资产索引无进展，可能文件有问题或已全部处理完成`, 'warning');
-            hasMore = false;
-            break;
+            consoleService.addLog('error', [
+              `[AI 索引] 达到最大连续失败次数，停止索引`,
+              `连续失败: ${consecutiveAllFailedBatches} 批`,
+              `总批次数: ${batchCount}`,
+              `总成功: ${totalProcessed}, 总失败: ${totalFailed}`,
+              `总耗时: ${Date.now() - startTime}ms`
+            ]);
+            throw batchError; // 重新抛出，让外层 catch 处理
           }
-        } else {
-          // 有成功的索引，重置所有计数器
-          consecutiveEmptyBatches = 0;
-          consecutiveAllFailedBatches = 0;
+          
+          // 短暂延迟后重试
+          await new Promise(resolve => setTimeout(resolve, 1000));
         }
-        
-        // 如果已经全部索引完成，停止
-        if (result.total_indexed >= result.total_images) {
-          console.log('[AI Index] Completed: all assets indexed');
-          hasMore = false;
-          break;
-        }
-        
-        // 如果本批处理了资产，且还有未索引的，继续
-        hasMore = batchProcessed > 0 && result.total_indexed < result.total_images;
       }
-    } catch (e) { 
-      console.error('AI indexing failed', e);
-      showToast('AI 索引失败: ' + (e as Error).message, 'error');
+    } catch (e: any) {
+      const totalDuration = Date.now() - startTime;
+      const errorMessage = e?.message || String(e);
+      const errorStack = e?.stack;
+      const errorCode = e?.code;
+      const errorName = e?.name;
+      
+      // 记录结束时的内存状态
+      const memoryAfter = (performance as any).memory ? {
+        used: Math.round((performance as any).memory.usedJSHeapSize / 1024 / 1024),
+        total: Math.round((performance as any).memory.totalJSHeapSize / 1024 / 1024),
+        limit: Math.round((performance as any).memory.jsHeapSizeLimit / 1024 / 1024)
+      } : null;
+      const memoryTotalDelta = memoryBefore && memoryAfter 
+        ? memoryAfter.used - memoryBefore.used 
+        : null;
+      
+      // 详细记录错误信息（这是关键的错误记录点）
+      consoleService.addLog('error', [
+        `[AI 索引] 任务失败`,
+        `错误类型: ${errorName || 'Unknown'}`,
+        `错误消息: ${errorMessage}`,
+        errorCode ? `错误代码: ${errorCode}` : '',
+        `已处理批次: ${batchCount}`,
+        `总成功: ${totalProcessed}, 总失败: ${totalFailed}`,
+        `总耗时: ${totalDuration}ms (${Math.round(totalDuration / 1000)}秒)`,
+        `平均速度: ${batchCount > 0 ? Math.round(totalDuration / batchCount) : 0}ms/批`,
+        memoryAfter ? `最终内存: ${memoryAfter.used}MB / ${memoryAfter.limit}MB` : '',
+        memoryTotalDelta !== null ? `内存总变化: ${memoryTotalDelta > 0 ? '+' : ''}${memoryTotalDelta}MB` : '',
+        errorStack ? `堆栈:\n${errorStack}` : '',
+        { 
+          error: e, 
+          stack: errorStack,
+          context: { 
+            batchCount, 
+            totalProcessed, 
+            totalFailed,
+            startTime,
+            totalDuration,
+            errorName,
+            errorCode,
+            memoryBefore,
+            memoryAfter,
+            memoryTotalDelta
+          } 
+        }
+      ]);
+      
+      console.error('[AI Index] Task failed:', e);
+      showToast(`AI 索引失败: ${errorMessage}`, 'error');
+    } finally {
+      const finalDuration = Date.now() - startTime;
+      const finalMemory = (performance as any).memory ? {
+        used: Math.round((performance as any).memory.usedJSHeapSize / 1024 / 1024),
+        limit: Math.round((performance as any).memory.jsHeapSizeLimit / 1024 / 1024)
+      } : null;
+      
+      consoleService.addLog('info', [
+        `[AI 索引] 任务结束`,
+        `总批次数: ${batchCount}`,
+        `总成功: ${totalProcessed}, 总失败: ${totalFailed}`,
+        `总耗时: ${finalDuration}ms (${Math.round(finalDuration / 1000)}秒)`,
+        finalMemory ? `最终内存: ${finalMemory.used}MB / ${finalMemory.limit}MB` : ''
+      ]);
+      
+      aiIndexingRef.current = false;
+      setAiIndexing(false);
     }
-    aiIndexingRef.current = false;
-    setAiIndexing(false);
   }, [showToast]);
 
   const handleAiSearch = useCallback(async (query: string) => {
