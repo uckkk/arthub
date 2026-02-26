@@ -42,6 +42,27 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ isOpen, onClose, triggerR
   
   const [statusMsg, setStatusMsg] = useState<{type: 'success' | 'error' | 'info', text: string} | null>(null);
   const [isTesting, setIsTesting] = useState(false);
+  const [highlightStoragePath, setHighlightStoragePath] = useState(false);
+  const pathSectionRef = useRef<HTMLDivElement>(null);
+
+  // 打开设置时若带有「高亮路径」意图，则切到本地存储并高亮路径区域
+  useEffect(() => {
+    if (!isOpen) return;
+    try {
+      if (sessionStorage.getItem('arthub_open_settings_highlight_path') === '1') {
+        sessionStorage.removeItem('arthub_open_settings_highlight_path');
+        setActiveGroup('storage');
+        setHighlightStoragePath(true);
+      }
+    } catch (_) {}
+  }, [isOpen]);
+
+  useEffect(() => {
+    if (!highlightStoragePath || activeGroup !== 'storage') return;
+    pathSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    const t = setTimeout(() => setHighlightStoragePath(false), 4000);
+    return () => clearTimeout(t);
+  }, [highlightStoragePath, activeGroup]);
 
   // 静默加载设置数据（即使面板未打开也加载）
   useEffect(() => {
@@ -510,7 +531,15 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ isOpen, onClose, triggerR
               )}
 
               {isTauriEnvironment() && (
-                <div className="space-y-4">
+                <div
+                  ref={pathSectionRef}
+                  className={`space-y-4 transition-all duration-300 rounded-lg p-2 -m-2 ${
+                    highlightStoragePath ? 'ring-2 ring-blue-400 ring-offset-2 ring-offset-[#151515] animate-pulse' : ''
+                  }`}
+                >
+                  {highlightStoragePath && (
+                    <p className="text-xs text-blue-400 font-medium">请在此处选择存储路径（或先开启「启用文件存储」）</p>
+                  )}
                   {/* 启用开关 */}
                   <div className="flex items-center justify-between">
                     <label className="text-sm font-medium text-[#a0a0a0]">启用文件存储</label>

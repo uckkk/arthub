@@ -68,7 +68,7 @@ import {
   loadCanvasData,
   WhiteboardProject
 } from '../services/whiteboardProjectService';
-import { getSavedStoragePath } from '../services/fileStorageService';
+import { getSavedStoragePath, openSettingsAndHighlightPath } from '../services/fileStorageService';
 import { Edit2, X, Plus, Folder, Save, Download, Share2, Sun, Moon } from 'lucide-react';
 import { useToast } from './Toast';
 
@@ -170,12 +170,15 @@ const Whiteboard: React.FC = () => {
     }
   };
 
-  // 手动保存当前画布
+  // 手动保存当前画布（未关联本地目录时提示并跳转设置）
   const handleSaveCanvas = useCallback(async () => {
-    if (!currentProject || !editorRef.current) {
+    if (!currentProject || !editorRef.current) return;
+    const path = await getSavedStoragePath();
+    if (!path) {
+      showToast('info', '请先关联本地目录以保存画布');
+      openSettingsAndHighlightPath();
       return;
     }
-
     try {
       const snapshot = editorRef.current.getSnapshot();
       await saveCanvasData(currentProject.id, snapshot);
@@ -641,24 +644,32 @@ const Whiteboard: React.FC = () => {
     e.target.value = '';
   }, [showToast]);
 
-  if (!storagePath) {
-    return (
-      <div className="h-full flex items-center justify-center bg-[#0a0a0a]">
-        <div className="text-center">
-          <p className="text-white text-lg mb-4">请先在设置中选择存储路径</p>
-          <p className="text-[#666666] text-sm">画布项目将保存在存储路径下的 whiteboard 目录中</p>
-        </div>
-      </div>
-    );
-  }
-
   if (!currentProject) {
     return (
       <div className="h-full flex items-center justify-center bg-[#0a0a0a]">
-        <div className="text-center">
+        <div className="text-center max-w-sm">
           <p className="text-white text-lg mb-4">创建第一个画布项目</p>
+          {!storagePath && (
+            <p className="text-[#888] text-sm mb-3">
+              保存项目前需在设置中选择存储路径。
+              <button
+                type="button"
+                onClick={openSettingsAndHighlightPath}
+                className="ml-1.5 text-blue-400 hover:text-blue-300 underline"
+              >
+                去设置
+              </button>
+            </p>
+          )}
           <button
-            onClick={handleCreateProject}
+            onClick={async () => {
+              if (!storagePath) {
+                showToast('info', '请先关联本地目录以保存画布项目');
+                openSettingsAndHighlightPath();
+                return;
+              }
+              await handleCreateProject();
+            }}
             className="px-6 py-3 rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-medium transition-colors flex items-center gap-2 mx-auto"
           >
             <Plus size={20} />

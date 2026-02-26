@@ -576,3 +576,11 @@ export function formatSyncTime(timestamp: number | null): string {
   const mins = date.getMinutes().toString().padStart(2, '0');
   return `${hours}:${mins} 同步`;
 }
+
+/** 打开设置面板并高亮「本地存储」下的路径选择区域，用于引导用户关联本地目录 */
+export function openSettingsAndHighlightPath(): void {
+  try {
+    sessionStorage.setItem('arthub_open_settings_highlight_path', '1');
+  } catch (_) {}
+  window.dispatchEvent(new CustomEvent('openSettings'));
+}
