@@ -985,10 +985,28 @@ pub fn mark_embedding_failed(conn: &Connection, asset_id: i64) -> Result<(), Str
 
 pub fn get_asset_ids_without_embedding(conn: &Connection, limit: u32) -> Result<Vec<(i64, String)>, String> {
     let mut stmt = conn.prepare(
-        "SELECT a.id, a.file_path FROM assets a
+        "SELECT DISTINCT a.id, a.file_path FROM assets a
          LEFT JOIN asset_embeddings ae ON a.id = ae.asset_id
          WHERE (ae.asset_id IS NULL OR ae.model_version = 'failed')
          AND a.file_ext IN ('png','jpg','jpeg','gif','bmp','webp','tiff','tif','svg','ico','psd','tga')
+         ORDER BY CASE WHEN ae.asset_id IS NULL THEN 0 ELSE 1 END, a.id
+         LIMIT ?1"
+    ).map_err(|e| e.to_string())?;
+    let rows = stmt.query_map(params![limit], |row| {
+        Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?))
+    }).map_err(|e| e.to_string())?
+      .filter_map(|r| r.ok())
+      .collect();
+    Ok(rows)
+}
+
+pub fn get_asset_ids_without_embedding_new_only(conn: &Connection, limit: u32) -> Result<Vec<(i64, String)>, String> {
+    let mut stmt = conn.prepare(
+        "SELECT DISTINCT a.id, a.file_path FROM assets a
+         LEFT JOIN asset_embeddings ae ON a.id = ae.asset_id
+         WHERE ae.asset_id IS NULL
+         AND a.file_ext IN ('png','jpg','jpeg','gif','bmp','webp','tiff','tif','svg','ico','psd','tga')
+         ORDER BY a.id
          LIMIT ?1"
     ).map_err(|e| e.to_string())?;
     let rows = stmt.query_map(params![limit], |row| {

@@ -3089,26 +3089,50 @@ export default function AssetManager() {
     try {
       let hasMore = true;
       let consecutiveEmptyBatches = 0;
+      let consecutiveAllFailedBatches = 0;
       const maxEmptyBatches = 3; // 如果连续3批都是空的，停止
+      const maxAllFailedBatches = 5; // 如果连续5批全部失败，停止（可能是文件问题）
+      let lastTotalIndexed = 0;
       
       while (hasMore) {
         const result = await invoke<{ batch_indexed: number; batch_failed: number; total_indexed: number; total_images: number }>('ai_index_embeddings');
+        console.log('[AI Index] Batch result:', result);
         setAiStats({ indexed: result.total_indexed, total: result.total_images, progress: result.total_images > 0 ? result.total_indexed / result.total_images : 0 });
         const batchProcessed = result.batch_indexed + result.batch_failed;
         
+        // 检查是否有进展（total_indexed 是否增加）
+        const madeProgress = result.total_indexed > lastTotalIndexed;
+        lastTotalIndexed = result.total_indexed;
+        
         if (batchProcessed === 0) {
+          // 空批次：没有资产需要处理
           consecutiveEmptyBatches++;
-          // 如果连续多批都是空的，说明没有更多资产需要处理
+          consecutiveAllFailedBatches = 0; // 重置全部失败计数器
           if (consecutiveEmptyBatches >= maxEmptyBatches) {
+            console.log('[AI Index] Stopping: too many empty batches');
+            hasMore = false;
+            break;
+          }
+        } else if (!madeProgress) {
+          // 处理了资产但没有进展（全部失败或失败后重试仍然失败）
+          consecutiveAllFailedBatches++;
+          consecutiveEmptyBatches = 0; // 重置空批次计数器
+          console.log(`[AI Index] No progress: batch_indexed=${result.batch_indexed}, batch_failed=${result.batch_failed}, consecutive_all_failed=${consecutiveAllFailedBatches}`);
+          if (consecutiveAllFailedBatches >= maxAllFailedBatches) {
+            console.log('[AI Index] Stopping: too many batches with no progress');
+            showToast(`警告: 连续 ${maxAllFailedBatches} 批资产索引无进展，可能文件有问题或已全部处理完成`, 'warning');
             hasMore = false;
             break;
           }
         } else {
-          consecutiveEmptyBatches = 0; // 重置计数器
+          // 有成功的索引，重置所有计数器
+          consecutiveEmptyBatches = 0;
+          consecutiveAllFailedBatches = 0;
         }
         
         // 如果已经全部索引完成，停止
         if (result.total_indexed >= result.total_images) {
+          console.log('[AI Index] Completed: all assets indexed');
           hasMore = false;
           break;
         }
