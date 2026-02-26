@@ -110,6 +110,14 @@ const CPSAutomation: React.FC = () => {
   const [shareCopied, setShareCopied] = useState(false);
   const templateDropdownRef = useRef<HTMLDivElement>(null);
 
+  // 导出目录设置（绝对路径，仅主应用使用，独立页无此功能）
+  const [exportDirectory, setExportDirectory] = useState<string>(() => {
+    try { return localStorage.getItem('arthub_cps_export_dir') || ''; } catch { return ''; }
+  });
+  useEffect(() => {
+    try { localStorage.setItem('arthub_cps_export_dir', exportDirectory); } catch (_) {}
+  }, [exportDirectory]);
+
   // 保存模板到localStorage
   useEffect(() => {
     localStorage.setItem('arthub_cps_templates', JSON.stringify(templates));
@@ -647,23 +655,16 @@ const CPSAutomation: React.FC = () => {
 
   const handleReset = () => { setConfig(DEFAULT_CONFIG); setCustomName(''); showToast('success', '已恢复默认设置'); };
 
-  // 从4位数字中提取后3位，并去除前导0
+  // 自定义命名：输入为多位数字，取后3位并去除前导0作为实际命名值
+  // 示例：1008 → 后3位 008 → 去前导0 → 8；1012 → 012 → 12；1108 → 108 → 108
   const extractNameFromInput = (input: string): string => {
     if (!input) return '';
-    
-    // 只保留数字部分
     const digits = input.replace(/\D/g, '');
-    
-    // 如果不足4位，返回原值（去除前导0）
-    if (digits.length < 4) {
-      return digits.replace(/^0+/, '') || '0';
-    }
-    
-    // 取后3位
-    const lastThree = digits.slice(-3);
-    
-    // 去除前导0
-    return lastThree.replace(/^0+/, '') || '0';
+    if (!digits) return '';
+    // 不足4位时按原数字（去前导0）处理；≥4位时取后3位再去前导0
+    const lastThree = digits.length >= 4 ? digits.slice(-3) : digits;
+    const value = lastThree.replace(/^0+/, '');
+    return value || '0';
   };
 
   const generateFileName = (prefix: string, suffix?: string): string => {
@@ -727,21 +728,36 @@ const CPSAutomation: React.FC = () => {
       }
 
       if (isTauri) {
-        // Tauri 环境：选择目录后保存到本地文件系统
-        const selectedDir = await open({ directory: true, multiple: false, title: '选择导出目录' });
-        if (!selectedDir || typeof selectedDir !== 'string') return;
-        const sep = (selectedDir as string).includes('/') ? '/' : '\\';
-        for (const img of images) {
-          const buf = await img.blob.arrayBuffer();
-          const filePath = `${selectedDir}${sep}${img.name}`;
-          await invoke('write_binary_file_with_path', {
-            filePath: filePath,
-            content: Array.from(new Uint8Array(buf)),
-          });
+        // Tauri 环境：优先使用自定义导出目录，否则弹出选择目录
+        let selectedDir: string | null = exportDirectory.trim() || null;
+        if (!selectedDir) {
+          const chosen = await open({ directory: true, multiple: false, title: '选择导出目录' });
+          selectedDir = chosen && typeof chosen === 'string' ? chosen : null;
         }
-        showToast('success', `已导出 ${images.length} 张图片`);
-        // 导出完成后自动打开目标文件夹
-        try { await invoke('open_folder', { path: selectedDir }); } catch (_) { /* 静默 */ }
+        if (!selectedDir) return;
+        const dir = selectedDir.replace(/[/\\]+$/, '');
+        const sep = dir.includes('/') ? '/' : '\\';
+        try {
+          for (const img of images) {
+            const buf = await img.blob.arrayBuffer();
+            const filePath = `${dir}${sep}${img.name}`;
+            await invoke('write_binary_file_with_path', {
+              filePath,
+              content: Array.from(new Uint8Array(buf)),
+            });
+          }
+          showToast('success', `已导出 ${images.length} 张图片`);
+          try { await invoke('open_folder', { path: dir }); } catch (_) { /* 静默 */ }
+        } catch (err: any) {
+          const msg = err?.message || String(err);
+          const isPermission = /permission|denied|access|eacces|eperm|权限|拒绝|无法写入|read-only/i.test(msg);
+          if (isPermission) {
+            showToast('error', '缺少目录写入权限请联系管理员');
+          } else {
+            showToast('error', '导出失败：' + msg);
+          }
+          return;
+        }
       } else {
         // 浏览器环境：逐张下载 PNG
         for (let i = 0; i < images.length; i++) {
@@ -814,10 +830,10 @@ canvas{display:none}
   <input type="file" id="fileInput" accept="image/*" style="display:none">
   <div class="ctrl-row">
     <label>命名</label>
-    <input id="customName" placeholder="必须填产品给的命名序列号（4位数字）" maxlength="4">
+    <input id="customName" placeholder="输入4位数字，取后3位并去前导0作为命名（如1008→8）" maxlength="4">
     <button class="btn btn-primary" id="exportBtn" disabled onclick="doExport()">生成并下载</button>
   </div>
-  <div class="input-hint" id="inputHint">只允许输入2位数字</div>
+  <div class="input-hint" id="inputHint">请输入数字，4位时取后3位并去前导0</div>
   <div class="status" id="status"></div>
 </div>
 <canvas id="cvs"></canvas>
@@ -830,8 +846,8 @@ function triggerUpload(type){currentType=type;document.getElementById('fileInput
   var inp=document.getElementById('customName'),hint=document.getElementById('inputHint');
   inp.addEventListener('input',function(){
     var v=inp.value.replace(/[^0-9]/g,'');
-    if(v.length>2) v=v.slice(0,2);
-    if(inp.value!==v||inp.value.length>2){
+    if(v.length>4) v=v.slice(0,4);
+    if(inp.value!==v||inp.value.length>4){
       inp.value=v;
       inp.classList.remove('shake');void inp.offsetWidth;inp.classList.add('shake');
       hint.classList.add('show');
@@ -842,6 +858,15 @@ function triggerUpload(type){currentType=type;document.getElementById('fileInput
   });
   inp.addEventListener('animationend',function(){inp.classList.remove('shake')});
 })();
+// 与主应用一致：取后3位并去前导0。例 1008→8，1012→12，1108→108
+function extractNameFromInput(val){
+  if(!val) return '';
+  var digits=val.replace(/\\D/g,'');
+  if(!digits) return '';
+  var lastThree=digits.length>=4?digits.slice(-3):digits;
+  var value=lastThree.replace(/^0+/,'');
+  return value||'0';
+}
 // 无损 PNG 压缩（UPNG 多滤波策略，0 = 不量化）
 function canvasToPNG(canvas){
   var ctx=canvas.getContext('2d');
@@ -878,8 +903,8 @@ document.getElementById('fileInput').onchange=function(e){
 document.addEventListener('dragover',function(e){e.preventDefault()});
 document.addEventListener('drop',function(e){e.preventDefault()});
 function checkReady(){
-  var v=document.getElementById('customName').value;
-  var ok=files.portrait&&files.popup&&files.appIcon&&/^\\d{1,2}$/.test(v);
+  var v=document.getElementById('customName').value.replace(/\\D/g,'');
+  var ok=files.portrait&&files.popup&&files.appIcon&&v.length>=1&&v.length<=4;
   document.getElementById('exportBtn').disabled=!ok;
 }
 function loadImg(file){return new Promise((r,j)=>{const i=new Image();i.onload=()=>r(i);i.onerror=j;i.src=URL.createObjectURL(file)})}
@@ -910,7 +935,7 @@ function drawPortrait(ctx,img,outW,outH,size,type){
   ctx.save();drawRoundedRect(ctx,m.left,m.top,size.width,size.height,CFG.portrait.borderRadius,CFG.portrait.smoothBorderRadius);ctx.clip();
   ctx.drawImage(img,p.sx,p.sy,p.sw,p.sh,m.left+p.dx,m.top+p.dy,p.dw,p.dh);ctx.restore();
 }
-function genName(prefix,suffix){const n=document.getElementById('customName').value||'';let fn=prefix.replace('@',n);if(suffix)fn+='_'+suffix;return fn+'.png'}
+function genName(prefix,suffix){const raw=document.getElementById('customName').value||'';const n=extractNameFromInput(raw);let fn=prefix.replace('@',n);if(suffix)fn+='_'+suffix;return fn+'.png'}
 async function doExport(){
   const st=document.getElementById('status');st.textContent='正在生成图片...';
   document.getElementById('exportBtn').disabled=true;
@@ -1416,6 +1441,32 @@ async function doExport(){
           )}
         </div>
       </div>
+
+      {/* ====== 导出目录设置（仅主应用，独立页无此功能） ====== */}
+      {isTauri && (
+        <div className="mb-4 p-4 rounded-lg bg-[#1a1a1a] border border-[#2a2a2a]">
+          <div className="text-xs text-[#888888] mb-2">导出目录（可选，绝对路径。留空则每次导出时选择目录）</div>
+          <div className="flex gap-2 items-center flex-wrap">
+            <input
+              type="text"
+              value={exportDirectory}
+              onChange={e => setExportDirectory(e.target.value)}
+              placeholder="例如 D:\export 或 /Users/name/export"
+              className="flex-1 min-w-[200px] px-3 py-2 rounded-lg bg-[#0f0f0f] border border-[#2a2a2a] text-white text-sm placeholder-[#555] focus:outline-none focus:border-blue-500"
+            />
+            <button
+              type="button"
+              onClick={async () => {
+                const chosen = await open({ directory: true, multiple: false, title: '选择导出目录' });
+                if (chosen && typeof chosen === 'string') setExportDirectory(chosen);
+              }}
+              className="px-3 py-2 rounded-lg bg-[#2a2a2a] hover:bg-[#3a3a3a] text-white text-sm transition-colors shrink-0"
+            >
+              选择目录
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* ====== 打包导出 ====== */}
       <div className="flex justify-end mb-4">
