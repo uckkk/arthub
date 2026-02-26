@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { X, Copy, Trash2, Download } from 'lucide-react';
+import { X, Copy, Trash2, Download, TestTube } from 'lucide-react';
+import { consoleService } from '../services/consoleService';
 
 export interface LogEntry {
   id: string;
@@ -19,6 +20,7 @@ interface ConsoleProps {
 const Console: React.FC<ConsoleProps> = ({ isOpen, onClose, logs, onClear }) => {
   const logContainerRef = useRef<HTMLDivElement>(null);
   const [autoScroll, setAutoScroll] = useState(true);
+  const [filterType, setFilterType] = useState<LogEntry['type'] | 'all'>('all');
 
   // 自动滚动到底部
   useEffect(() => {
@@ -34,6 +36,21 @@ const Console: React.FC<ConsoleProps> = ({ isOpen, onClose, logs, onClear }) => 
       const isAtBottom = scrollHeight - scrollTop - clientHeight < 50;
       setAutoScroll(isAtBottom);
     }
+  };
+
+  // 过滤日志
+  const filteredLogs = filterType === 'all' 
+    ? logs 
+    : logs.filter(log => log.type === filterType);
+
+  // 统计各类型日志数量
+  const logStats = {
+    all: logs.length,
+    error: logs.filter(l => l.type === 'error').length,
+    warn: logs.filter(l => l.type === 'warn').length,
+    info: logs.filter(l => l.type === 'info').length,
+    debug: logs.filter(l => l.type === 'debug').length,
+    log: logs.filter(l => l.type === 'log').length,
   };
 
   // 格式化日志消息
@@ -54,22 +71,7 @@ const Console: React.FC<ConsoleProps> = ({ isOpen, onClose, logs, onClear }) => 
       debug: 'DEBUG',
     }[entry.type];
 
-    let message = entry.message;
-    if (entry.args && entry.args.length > 0) {
-      try {
-        const argsStr = entry.args.map(arg => {
-          if (typeof arg === 'object') {
-            return JSON.stringify(arg, null, 2);
-          }
-          return String(arg);
-        }).join(' ');
-        message += ' ' + argsStr;
-      } catch (e) {
-        message += ' [无法序列化参数]';
-      }
-    }
-
-    return `[${time}] [${typeLabel}] ${message}`;
+    return `[${time}] [${typeLabel}] ${entry.message}`;
   };
 
   // 复制所有日志
@@ -104,6 +106,26 @@ const Console: React.FC<ConsoleProps> = ({ isOpen, onClose, logs, onClear }) => 
     URL.revokeObjectURL(url);
   };
 
+  // 测试日志系统
+  const testLogSystem = () => {
+    consoleService.addLog('info', ['[测试] 这是一条信息日志', '日志系统正常工作']);
+    consoleService.addLog('warn', ['[测试] 这是一条警告日志', '用于测试警告显示']);
+    consoleService.addLog('error', ['[测试] 这是一条错误日志', '用于测试错误显示']);
+    consoleService.addLog('debug', ['[测试] 这是一条调试日志', '用于测试调试显示']);
+    
+    // 测试错误对象
+    try {
+      throw new Error('测试错误对象');
+    } catch (e: any) {
+      consoleService.addLog('error', [
+        '[测试] 捕获的错误对象',
+        `错误消息: ${e.message}`,
+        `错误堆栈: ${e.stack}`,
+        { error: e }
+      ]);
+    }
+  };
+
   // 获取日志类型对应的样式
   const getLogStyle = (type: LogEntry['type']) => {
     switch (type) {
@@ -134,15 +156,77 @@ const Console: React.FC<ConsoleProps> = ({ isOpen, onClose, logs, onClear }) => 
         {/* 标题栏 */}
         <div className="flex items-center justify-between px-5 py-4 border-b border-[#2a2a2a] shrink-0">
           <div className="flex items-center gap-3">
-            <h3 className="text-lg font-semibold text-white">错误日志控制台</h3>
-            <span className="
-              px-2 py-0.5 rounded text-xs font-medium
-              bg-[#1a1a1a] text-[#666666]
-            ">
-              {logs.length} 条错误
-            </span>
+            <h3 className="text-lg font-semibold text-white">日志控制台</h3>
+            <div className="flex items-center gap-2">
+              <span className="px-2 py-0.5 rounded text-xs font-medium bg-[#1a1a1a] text-[#666666]">
+                总计: {logStats.all}
+              </span>
+              {logStats.error > 0 && (
+                <span className="px-2 py-0.5 rounded text-xs font-medium bg-red-500/20 text-red-400 border border-red-500/30">
+                  错误: {logStats.error}
+                </span>
+              )}
+              {logStats.warn > 0 && (
+                <span className="px-2 py-0.5 rounded text-xs font-medium bg-yellow-500/20 text-yellow-400 border border-yellow-500/30">
+                  警告: {logStats.warn}
+                </span>
+              )}
+            </div>
           </div>
           <div className="flex items-center gap-2">
+            {/* 日志类型过滤 */}
+            <div className="flex items-center gap-1 px-2 py-1 rounded-lg bg-[#1a1a1a] border border-[#2a2a2a]">
+              <button
+                onClick={() => setFilterType('all')}
+                className={`px-2 py-0.5 rounded text-xs transition-colors ${
+                  filterType === 'all' 
+                    ? 'bg-[#2563eb] text-white' 
+                    : 'text-[#666666] hover:text-white'
+                }`}
+                title="显示所有日志"
+              >
+                全部
+              </button>
+              {logStats.error > 0 && (
+                <button
+                  onClick={() => setFilterType('error')}
+                  className={`px-2 py-0.5 rounded text-xs transition-colors ${
+                    filterType === 'error' 
+                      ? 'bg-red-500/30 text-red-400' 
+                      : 'text-[#666666] hover:text-red-400'
+                  }`}
+                  title="仅显示错误"
+                >
+                  错误({logStats.error})
+                </button>
+              )}
+              {logStats.warn > 0 && (
+                <button
+                  onClick={() => setFilterType('warn')}
+                  className={`px-2 py-0.5 rounded text-xs transition-colors ${
+                    filterType === 'warn' 
+                      ? 'bg-yellow-500/30 text-yellow-400' 
+                      : 'text-[#666666] hover:text-yellow-400'
+                  }`}
+                  title="仅显示警告"
+                >
+                  警告({logStats.warn})
+                </button>
+              )}
+              {logStats.info > 0 && (
+                <button
+                  onClick={() => setFilterType('info')}
+                  className={`px-2 py-0.5 rounded text-xs transition-colors ${
+                    filterType === 'info' 
+                      ? 'bg-blue-500/30 text-blue-400' 
+                      : 'text-[#666666] hover:text-blue-400'
+                  }`}
+                  title="仅显示信息"
+                >
+                  信息({logStats.info})
+                </button>
+              )}
+            </div>
             <button
               onClick={copyAllLogs}
               className="
@@ -170,6 +254,20 @@ const Console: React.FC<ConsoleProps> = ({ isOpen, onClose, logs, onClear }) => 
             >
               <Download size={14} />
               导出
+            </button>
+            <button
+              onClick={testLogSystem}
+              className="
+                px-3 py-1.5 rounded-lg text-sm
+                bg-[#1a1a1a] hover:bg-[#222222]
+                text-[#a0a0a0] hover:text-white
+                border border-[#2a2a2a] hover:border-[#3a3a3a]
+                transition-colors flex items-center gap-2
+              "
+              title="测试日志系统"
+            >
+              <TestTube size={14} />
+              测试
             </button>
             <button
               onClick={onClear}
@@ -211,12 +309,12 @@ const Console: React.FC<ConsoleProps> = ({ isOpen, onClose, logs, onClear }) => 
           style={{ scrollbarWidth: 'thin' }}
           onCopy={copySelectedLogs}
         >
-          {logs.length === 0 ? (
+          {filteredLogs.length === 0 ? (
             <div className="flex items-center justify-center h-full text-[#666666]">
-              <p>暂无错误日志</p>
+              <p>{filterType === 'all' ? '暂无日志' : `暂无${filterType === 'error' ? '错误' : filterType === 'warn' ? '警告' : filterType === 'info' ? '信息' : '调试'}日志`}</p>
             </div>
           ) : (
-            logs.map((log) => (
+            filteredLogs.map((log) => (
               <div
                 key={log.id}
                 className={`
@@ -260,10 +358,18 @@ const Console: React.FC<ConsoleProps> = ({ isOpen, onClose, logs, onClear }) => 
         </div>
 
         {/* 底部提示 */}
-        <div className="px-5 py-2 border-t border-[#2a2a2a] shrink-0">
+        <div className="px-5 py-2 border-t border-[#2a2a2a] shrink-0 flex items-center justify-between">
           <p className="text-[10px] text-[#555555]">
-            提示：可以选中文本复制，或使用"复制全部"按钮复制所有错误日志
+            提示：可以选中文本复制，或使用"复制全部"按钮复制所有日志。日志自动保存，最多保留 {logs.length >= 10000 ? '10000' : logs.length} 条。
           </p>
+          {filterType !== 'all' && (
+            <button
+              onClick={() => setFilterType('all')}
+              className="text-[10px] text-[#666666] hover:text-white transition-colors"
+            >
+              清除过滤
+            </button>
+          )}
         </div>
       </div>
     </div>
