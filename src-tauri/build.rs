@@ -12,8 +12,8 @@ fn main() {
         // ort crate 使用 download-binaries feature 时，DLL 可能位于多个位置
         
         let manifest_dir = PathBuf::from(env::var("CARGO_MANIFEST_DIR").unwrap());
-        let target_dir = env::var("OUT_DIR").unwrap();
-        let out_dir = PathBuf::from(&target_dir).parent().unwrap().parent().unwrap();
+        let target_dir = PathBuf::from(env::var("OUT_DIR").unwrap());
+        let out_dir = target_dir.parent().unwrap().parent().unwrap().to_path_buf();
         
         // 可能的 DLL 位置（按优先级排序）
         let possible_paths = [
@@ -41,9 +41,6 @@ fn main() {
             // 6. 项目根目录的 target 目录
             manifest_dir.parent().unwrap().join("target").join("DirectML.dll"),
         ];
-        
-        let out_dir = PathBuf::from(env::var("OUT_DIR").unwrap());
-        let embedded_dll_path = out_dir.join("DirectML.dll");
         
         // 查找 DLL
         let mut found_dll = None;

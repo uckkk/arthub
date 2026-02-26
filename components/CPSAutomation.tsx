@@ -647,8 +647,24 @@ const CPSAutomation: React.FC = () => {
 
   const handleReset = () => { setConfig(DEFAULT_CONFIG); setCustomName(''); showToast('success', '已恢复默认设置'); };
 
+  // 从输入中提取括号内的数字，如果没有括号则使用原值
+  const extractNameFromInput = (input: string): string => {
+    if (!input) return '';
+    
+    // 匹配中文括号（8）、（12）、（108）或英文括号 (8)、(12)、(108)
+    const match = input.match(/[（(](\d+)[）)]/);
+    if (match) {
+      // 提取括号中的数字
+      return match[1];
+    }
+    
+    // 如果没有括号，返回原值
+    return input;
+  };
+
   const generateFileName = (prefix: string, suffix?: string): string => {
-    const name = customName || '';
+    const rawName = customName || '';
+    const name = extractNameFromInput(rawName);
     let fn = prefix.replace('@', name);
     if (suffix) fn += `_${suffix}`;
     return `${fn}.png`;
@@ -656,12 +672,19 @@ const CPSAutomation: React.FC = () => {
 
   // 渲染带绿色高亮的文件名（@ 或被替换的自定义名称用绿色显示）
   const renderHighlightedName = (prefix: string, suffix?: string) => {
-    const name = customName || '@';
+    const rawName = customName || '@';
+    const name = rawName === '@' ? '@' : extractNameFromInput(rawName);
     const parts = prefix.split('@');
     const suffixStr = suffix ? `_${suffix}` : '';
+    
+    // 如果原始输入包含括号，显示提取后的值
+    const displayName = rawName.includes('（') || rawName.includes('(') 
+      ? `${rawName} → ${name}` 
+      : name;
+    
     return (
       <span>
-        {parts[0]}<span className="text-green-400">{name}</span>{parts[1] || ''}{suffixStr}.png
+        {parts[0]}<span className="text-green-400">{displayName}</span>{parts[1] || ''}{suffixStr}.png
       </span>
     );
   };
