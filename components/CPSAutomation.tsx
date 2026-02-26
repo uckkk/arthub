@@ -647,19 +647,23 @@ const CPSAutomation: React.FC = () => {
 
   const handleReset = () => { setConfig(DEFAULT_CONFIG); setCustomName(''); showToast('success', '已恢复默认设置'); };
 
-  // 从输入中提取括号内的数字，如果没有括号则使用原值
+  // 从4位数字中提取后3位，并去除前导0
   const extractNameFromInput = (input: string): string => {
     if (!input) return '';
     
-    // 匹配中文括号（8）、（12）、（108）或英文括号 (8)、(12)、(108)
-    const match = input.match(/[（(](\d+)[）)]/);
-    if (match) {
-      // 提取括号中的数字
-      return match[1];
+    // 只保留数字部分
+    const digits = input.replace(/\D/g, '');
+    
+    // 如果不足4位，返回原值（去除前导0）
+    if (digits.length < 4) {
+      return digits.replace(/^0+/, '') || '0';
     }
     
-    // 如果没有括号，返回原值
-    return input;
+    // 取后3位
+    const lastThree = digits.slice(-3);
+    
+    // 去除前导0
+    return lastThree.replace(/^0+/, '') || '0';
   };
 
   const generateFileName = (prefix: string, suffix?: string): string => {
@@ -677,8 +681,9 @@ const CPSAutomation: React.FC = () => {
     const parts = prefix.split('@');
     const suffixStr = suffix ? `_${suffix}` : '';
     
-    // 如果原始输入包含括号，显示提取后的值
-    const displayName = rawName.includes('（') || rawName.includes('(') 
+    // 如果输入是4位数，显示提取过程
+    const digits = rawName.replace(/\D/g, '');
+    const displayName = digits.length === 4 && rawName !== '@'
       ? `${rawName} → ${name}` 
       : name;
     
@@ -809,7 +814,7 @@ canvas{display:none}
   <input type="file" id="fileInput" accept="image/*" style="display:none">
   <div class="ctrl-row">
     <label>命名</label>
-    <input id="customName" placeholder="必须填产品给的命名序列号" maxlength="2">
+    <input id="customName" placeholder="必须填产品给的命名序列号（4位数字）" maxlength="4">
     <button class="btn btn-primary" id="exportBtn" disabled onclick="doExport()">生成并下载</button>
   </div>
   <div class="input-hint" id="inputHint">只允许输入2位数字</div>
@@ -1266,7 +1271,8 @@ async function doExport(){
             )}
             <div className="text-xs text-[#888888] mb-1">自定义命名</div>
             <input type="text" value={customName} onChange={e => setCustomName(e.target.value)}
-              placeholder="输入自定义命名" className="w-40 px-2 py-1 bg-[#2a2a2a] border border-[#3a3a3a] rounded text-white text-xs" />
+              placeholder="输入4位数字（取后3位）" maxLength={4}
+              className="w-40 px-2 py-1 bg-[#2a2a2a] border border-[#3a3a3a] rounded text-white text-xs" />
           </div>
         </div>
 
