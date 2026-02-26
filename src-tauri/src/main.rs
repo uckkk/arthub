@@ -262,14 +262,21 @@ fn create_icon_window(app: &tauri::AppHandle) -> Result<tauri::Window, Box<dyn s
                         let _: () = msg_send![ns_window, setBackgroundColor: clear_color];
                         let opaque: bool = false;
                         let _: () = msg_send![ns_window, setOpaque: opaque];
-                        let wants_layer: bool = true;
-                        let _: () = msg_send![ns_window, setWantsLayer: wants_layer];
-                        let layer: id = msg_send![ns_window, layer];
-                        if !layer.is_null() {
-                            let corner_radius: f64 = 16.0;
-                            let _: () = msg_send![layer, setCornerRadius: corner_radius];
-                            let masks_to_bounds: bool = true;
-                            let _: () = msg_send![layer, setMasksToBounds: masks_to_bounds];
+                        // setWantsLayer 是 NSView 方法，不能直接对 NSWindow 调用
+                        let content_view: id = msg_send![ns_window, contentView];
+                        if !content_view.is_null() {
+                            let responds: bool = msg_send![content_view, respondsToSelector: sel!(setWantsLayer:)];
+                            if responds {
+                                let wants_layer: bool = true;
+                                let _: () = msg_send![content_view, setWantsLayer: wants_layer];
+                            }
+                            let layer: id = msg_send![content_view, layer];
+                            if !layer.is_null() {
+                                let corner_radius: f64 = 16.0;
+                                let _: () = msg_send![layer, setCornerRadius: corner_radius];
+                                let masks_to_bounds: bool = true;
+                                let _: () = msg_send![layer, setMasksToBounds: masks_to_bounds];
+                            }
                         }
                     }
                 }
@@ -454,6 +461,16 @@ fn load_icon_position(app: &tauri::AppHandle) -> IconPosition {
 fn icon_drag_begin(app: tauri::AppHandle) {
     let state = app.state::<AppState>();
 
+    #[cfg(not(target_os = "windows"))]
+    {
+        if let Some(icon_window) = app.get_window("icon") {
+            let _ = icon_window.start_dragging();
+        }
+        let mut is_dragging = state.is_dragging.lock().unwrap();
+        *is_dragging = false;
+    }
+
+    #[cfg(target_os = "windows")]
     // 防止重复启动拖拽
     {
         let mut is_dragging = state.is_dragging.lock().unwrap();
@@ -461,27 +478,23 @@ fn icon_drag_begin(app: tauri::AppHandle) {
         *is_dragging = true;
     }
 
+    #[cfg(target_os = "windows")]
     // 获取光标物理位置和窗口当前物理位置，计算偏移
     let (offset_x, offset_y) = {
-        #[cfg(target_os = "windows")]
-        {
-            let mut pt = POINT { x: 0, y: 0 };
-            unsafe { GetCursorPos(&mut pt); }
-            if let Some(icon_window) = app.get_window("icon") {
-                if let Ok(pos) = icon_window.outer_position() {
-                    (pt.x - pos.x, pt.y - pos.y)
-                } else { (0, 0) }
-            } else { return; }
-        }
-        #[cfg(not(target_os = "windows"))]
-        { (0i32, 0i32) }
+        let mut pt = POINT { x: 0, y: 0 };
+        unsafe { GetCursorPos(&mut pt); }
+        if let Some(icon_window) = app.get_window("icon") {
+            if let Ok(pos) = icon_window.outer_position() {
+                (pt.x - pos.x, pt.y - pos.y)
+            } else { (0, 0) }
+        } else { return; }
     };
 
-    let app_clone = app.clone();
-    std::thread::spawn(move || {
-        loop {
-            #[cfg(target_os = "windows")]
-            {
+    #[cfg(target_os = "windows")]
+    {
+        let app_clone = app.clone();
+        std::thread::spawn(move || {
+            loop {
                 // 检测左键是否仍然按下
                 let key_state = unsafe { GetAsyncKeyState(VK_LBUTTON as i32) };
                 if key_state >= 0 { break; }
@@ -494,25 +507,50 @@ fn icon_drag_begin(app: tauri::AppHandle) {
                     let new_y = pt.y - offset_y;
                     let _ = icon_window.set_position(PhysicalPosition::new(new_x, new_y));
                 }
+                std::thread::sleep(std::time::Duration::from_millis(8));
             }
-            std::thread::sleep(std::time::Duration::from_millis(8));
-        }
 
-        // 拖拽结束：边缘吸附 + 保存位置
-        {
-            let state2 = app_clone.state::<AppState>();
-            let mut is_dragging = state2.is_dragging.lock().unwrap();
-            *is_dragging = false;
-        }
-        if let Some(icon_window) = app_clone.get_window("icon") {
+            // 拖拽结束：边缘吸附 + 保存位置
+            {
+                let state2 = app_clone.state::<AppState>();
+                let mut is_dragging = state2.is_dragging.lock().unwrap();
+                *is_dragging = false;
+            }
+            if let Some(icon_window) = app_clone.get_window("icon") {
+                if let Ok(pos) = icon_window.outer_position() {
+                    let snapped = snap_to_edge(pos.x, pos.y, ICON_SIZE);
+                    let constrained = constrain_to_visible_area(snapped.0, snapped.1, ICON_SIZE);
+                    let _ = icon_window.set_position(PhysicalPosition::new(constrained.0, constrained.1));
+                    save_icon_position(&app_clone, constrained.0, constrained.1);
+                }
+            }
+        });
+    }
+}
+
+// Tauri 命令：结束拖拽（macOS 用于保存位置）
+#[tauri::command]
+fn icon_drag_end(app: tauri::AppHandle) {
+    #[cfg(not(target_os = "windows"))]
+    {
+        let state = app.state::<AppState>();
+        let mut is_dragging = state.is_dragging.lock().unwrap();
+        *is_dragging = false;
+
+        if let Some(icon_window) = app.get_window("icon") {
             if let Ok(pos) = icon_window.outer_position() {
                 let snapped = snap_to_edge(pos.x, pos.y, ICON_SIZE);
                 let constrained = constrain_to_visible_area(snapped.0, snapped.1, ICON_SIZE);
                 let _ = icon_window.set_position(PhysicalPosition::new(constrained.0, constrained.1));
-                save_icon_position(&app_clone, constrained.0, constrained.1);
+                save_icon_position(&app, constrained.0, constrained.1);
             }
         }
-    });
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+        let _ = app;
+    }
 }
 
 // Windows: 查找主窗口的数据结构
@@ -745,14 +783,17 @@ fn app_exit(app: tauri::AppHandle) {
 
 // Tauri 命令：悬浮图标右键菜单（使用 Windows 原生 TrackPopupMenu，不创建额外窗口）
 #[tauri::command]
-fn show_icon_context_menu(app: tauri::AppHandle) {
+fn show_icon_context_menu(app: tauri::AppHandle, x: Option<f64>, y: Option<f64>) {
     #[cfg(target_os = "windows")]
     {
         // 在命令线程中获取光标位置（此时光标还在图标上）
-        let mut pt = POINT { x: 0, y: 0 };
-        unsafe { GetCursorPos(&mut pt); }
-        let cx = pt.x;
-        let cy = pt.y;
+        let (cx, cy) = if let (Some(x), Some(y)) = (x, y) {
+            (x as i32, y as i32)
+        } else {
+            let mut pt = POINT { x: 0, y: 0 };
+            unsafe { GetCursorPos(&mut pt); }
+            (pt.x, pt.y)
+        };
 
         let app_clone = app.clone();
         // TrackPopupMenu 必须在拥有消息循环的主线程上调用
@@ -812,6 +853,44 @@ fn show_icon_context_menu(app: tauri::AppHandle) {
                 DestroyMenu(hmenu);
             }
         });
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    {
+        use tauri::WindowUrl;
+        let pos_x = x.unwrap_or(0.0);
+        let pos_y = y.unwrap_or(0.0);
+        let menu_url = if cfg!(debug_assertions) {
+            WindowUrl::External("http://localhost:3000/icon-menu.html".parse().unwrap())
+        } else {
+            WindowUrl::App("icon-menu.html".into())
+        };
+
+        if let Some(menu_window) = app.get_window("icon_menu") {
+            let _ = menu_window.set_position(tauri::LogicalPosition::new(pos_x, pos_y));
+            let _ = menu_window.show();
+            let _ = menu_window.set_focus();
+            return;
+        }
+
+        let _ = tauri::WindowBuilder::new(&app, "icon_menu", menu_url)
+            .decorations(false)
+            .always_on_top(true)
+            .skip_taskbar(true)
+            .resizable(false)
+            .visible(true)
+            .inner_size(160.0, 84.0)
+            .position(pos_x, pos_y)
+            .title("")
+            .build();
+    }
+}
+
+// Tauri 命令：关闭悬浮图标菜单（macOS）
+#[tauri::command]
+fn close_icon_menu(app: tauri::AppHandle) {
+    if let Some(menu_window) = app.get_window("icon_menu") {
+        let _ = menu_window.hide();
     }
 }
 
@@ -2401,6 +2480,7 @@ fn main() {
         })
         .invoke_handler(tauri::generate_handler![
             icon_drag_begin,
+            icon_drag_end,
             icon_click,
             app_exit,
             launch_app,
@@ -2490,7 +2570,8 @@ fn main() {
             sync_read_file,
             sync_write_file,
             sync_get_config_path,
-            show_icon_context_menu
+            show_icon_context_menu,
+            close_icon_menu
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

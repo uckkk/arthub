@@ -10,7 +10,7 @@ import { preloadAllData } from './services/preloadService';
 import { initHotkey } from './services/hotkeyService';
 import { ToastProvider, useToast } from './components/Toast';
 import { ErrorBoundary } from './components/ErrorBoundary';
-import { Sidebar, MenuGroup, SkeletonScreen, ContentFadeIn } from './components/ui';
+import { Sidebar, MenuGroup, MenuItem, SkeletonScreen, ContentFadeIn } from './components/ui';
 import { CURRENT_VERSION } from './services/updateService';
 import { consoleService } from './services/consoleService';
 import Console from './components/Console';

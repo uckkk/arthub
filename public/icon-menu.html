@@ -45,6 +45,7 @@
     let invoke;
     function getInvoke() {
       if (window.__TAURI_INTERNALS__?.invoke) return window.__TAURI_INTERNALS__.invoke.bind(window.__TAURI_INTERNALS__);
+      if (window.__TAURI_INTERNALS__?.core?.invoke) return window.__TAURI_INTERNALS__.core.invoke.bind(window.__TAURI_INTERNALS__.core);
       if (window.__TAURI__?.invoke) return window.__TAURI__.invoke.bind(window.__TAURI__);
       return null;
     }
