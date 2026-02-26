@@ -111,10 +111,13 @@ pub async fn asset_scan_folder(
         let (thumb_path, width, height) = if thumbnail::can_generate_thumbnail(&file.ext) {
             match thumbnail::generate_thumbnail(&file.path, &thumb_dir, 300) {
                 Ok(result) => (result.thumb_path, result.width, result.height),
-                Err(_) => (String::new(), 0, 0),
+                Err(e) => {
+                    eprintln!("[AssetManager] 缩略图生成失败: {} -> {}", file.path, e);
+                    (String::new(), 0, 0)
+                }
             }
         } else {
-            // 非图片格式，暂时不生成缩略图
+            // 非图片格式（如视频、SVG 等）或暂不支持，不生成缩略图
             (String::new(), 0, 0)
         };
 

@@ -657,7 +657,10 @@ const AssetDetailSidebar: React.FC<{
     if (editingNote && noteRef.current) noteRef.current.focus();
   }, [editingNote]);
 
-  const thumbUrl = asset.thumb_path ? convertFileSrc(asset.thumb_path) : '';
+  // 有缩略图用缩略图；无缩略图时图片类型用原图路径回退
+  const thumbUrl = asset.thumb_path
+    ? convertFileSrc(asset.thumb_path)
+    : (IMAGE_EXTS.has(asset.file_ext) ? convertFileSrc(asset.file_path) : '');
   const detailTags = detail?.tags || [];
   const availableTags = allTags.filter(t => !detailTags.some(dt => dt.id === t.id));
   const isVideoFile = VIDEO_EXTS.has(asset.file_ext);
@@ -703,7 +706,7 @@ const AssetDetailSidebar: React.FC<{
                 className="w-full h-full"
                 imgClassName="w-full h-full object-contain"
                 fadeDuration={250}
-                fallback={<div className="text-[#444]">{React.createElement(getFileIcon(asset.file_ext), { size: 48 })}</div>}
+                fallback={<div className="w-full h-full flex items-center justify-center text-[#444]">{React.createElement(getFileIcon(asset.file_ext), { size: 48 })}</div>}
               />
             ) : (
               <div className="w-full h-full flex items-center justify-center text-[#444]">
@@ -1519,8 +1522,11 @@ const VirtualGrid: React.FC<VirtualGridProps> = ({ assets, containerRef, onClick
       // Skip items outside viewport
       if (li.y + li.h < viewTop || li.y > viewBottom) continue;
       const asset = assets[li.idx];
-      const hasThumbnail = !!asset.thumb_path;
-      const thumbUrl = hasThumbnail ? convertFileSrc(asset.thumb_path) : '';
+      // 有缩略图用缩略图；无缩略图时图片类型用原图路径回退，避免部分图片不显示
+      const thumbUrl = asset.thumb_path
+        ? convertFileSrc(asset.thumb_path)
+        : (IMAGE_EXTS.has(asset.file_ext) ? convertFileSrc(asset.file_path) : '');
+      const hasThumbnail = !!thumbUrl;
       const Icon = getFileIcon(asset.file_ext);
       const isSelected = selectedIds.has(asset.id);
       const assetTags = assetTagsMap.get(asset.id) || [];
@@ -1726,7 +1732,7 @@ const VirtualGrid: React.FC<VirtualGridProps> = ({ assets, containerRef, onClick
     if (top < 10) top = 10;
 
     const fileSrc = convertFileSrc(hoverAsset.file_path);
-    const thumbSrc = hoverAsset.thumb_path ? convertFileSrc(hoverAsset.thumb_path) : '';
+    const thumbSrc = hoverAsset.thumb_path ? convertFileSrc(hoverAsset.thumb_path) : (IMAGE_EXTS.has(hoverAsset.file_ext) ? fileSrc : '');
     const displaySrc = (isGif || isImage) ? fileSrc : thumbSrc;
 
     return (
@@ -1839,7 +1845,7 @@ const ListView: React.FC<ListViewProps> = ({
   for (let i = startIdx; i <= endIdx; i++) {
     const a = assets[i];
     const isSelected = selectedIds.has(a.id);
-    const thumbUrl = a.thumb_path ? convertFileSrc(a.thumb_path) : '';
+    const thumbUrl = a.thumb_path ? convertFileSrc(a.thumb_path) : (IMAGE_EXTS.has(a.file_ext) ? convertFileSrc(a.file_path) : '');
     const Icon = getFileIcon(a.file_ext);
     const tags = assetTagsMap.get(a.id) || [];
     const rating = assetRatingsMap.get(a.id) || 0;
@@ -2247,7 +2253,7 @@ const SpotlightSearch: React.FC<{
         {results.length > 0 && (
           <div className="max-h-80 overflow-y-auto py-1">
             {results.map((a, i) => {
-              const thumbUrl = a.thumb_path ? convertFileSrc(a.thumb_path) : '';
+              const thumbUrl = a.thumb_path ? convertFileSrc(a.thumb_path) : (IMAGE_EXTS.has(a.file_ext) ? convertFileSrc(a.file_path) : '');
               const Icon = getFileIcon(a.file_ext);
               return (
                 <div
@@ -2339,7 +2345,7 @@ const DuplicateFinderModal: React.FC<{
                         onClick={() => onSelectAsset(a.id)}
                       >
                         <div className="w-6 h-6 rounded overflow-hidden bg-[#1a1a1a] flex-none">
-                          {a.thumb_path ? <img src={convertFileSrc(a.thumb_path)} alt="" className="w-full h-full object-cover" /> : null}
+                          {(a.thumb_path || IMAGE_EXTS.has(a.file_ext)) ? <img src={a.thumb_path ? convertFileSrc(a.thumb_path) : convertFileSrc(a.file_path)} alt="" className="w-full h-full object-cover" /> : null}
                         </div>
                         <span className="flex-1 text-[#ccc] truncate">{a.file_name}</span>
                         <span className="text-[10px] text-[#555]">{formatFileSize(a.file_size)}</span>

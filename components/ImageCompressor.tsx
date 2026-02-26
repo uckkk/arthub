@@ -277,13 +277,26 @@ export default function ImageCompressor() {
   }, [pqQuality, pqEdgeSmooth]);
 
   const runOxipng = useCallback(async (img: UploadedImage): Promise<CompressionResult> => {
-    // @jsquash/oxipng 内部通过 import.meta.url 定位 .wasm 文件
+    const buf = img.pngBuffer;
+    if (!buf || buf.byteLength < 8) throw new Error('PNG 数据无效或为空');
+    const u8 = new Uint8Array(buf, 0, 8);
+    const pngSig = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
+    if (pngSig.some((b, i) => u8[i] !== b)) throw new Error('不是有效的 PNG 文件，无损优化仅支持 PNG');
+
     const oxipngModule = await import('@jsquash/oxipng');
     const optimise = oxipngModule.optimise || oxipngModule.default;
     if (!optimise) throw new Error('oxipng WASM 模块加载失败');
 
     const t0 = performance.now();
-    const optimized = await optimise(img.pngBuffer.slice(0), { level: oxiLevel });
+    let optimized: Uint8Array;
+    try {
+      optimized = await optimise(buf.slice(0), { level: oxiLevel });
+    } catch (e: unknown) {
+      const msg = (e instanceof Error ? e.message : String(e)) || '';
+      if (/unwrap|panic|assert|invalid|unsupported|failed/i.test(msg) || !msg.trim())
+        throw new Error('当前 PNG 格式或内容不被 OxiPNG 支持，请换一张图或改用其他算法');
+      throw e;
+    }
     const time = performance.now() - t0;
     const blob = new Blob([optimized], { type: 'image/png' });
     return { blob, url: URL.createObjectURL(blob), size: blob.size, ratio: blob.size / img.file.size, time };
@@ -370,14 +383,17 @@ export default function ImageCompressor() {
         return { ...prev, [key]: { ...(prev[key] || EMPTY_RESULTS), [algo]: result } };
       });
     } catch (err: unknown) {
-      // 提取错误信息（WASM 可能抛出非标准对象）
+      // 提取错误信息（WASM 可能抛出非标准对象或 panic/unwrap_throw）
       let msg: string;
       if (err instanceof Error) msg = err.message;
       else if (typeof err === 'string') msg = err;
       else if (err && typeof err === 'object' && 'message' in err) msg = String((err as Record<string, unknown>).message);
       else msg = String(err) || '未知错误';
+      const isWasmPanic = /unwrap_throw|panic|assertion failed|failed/i.test(msg) || !msg.trim();
+      if (isWasmPanic)
+        msg = '当前文件或格式不被该算法支持，请换一张图或改用其他算法';
       const algoName = ALGORITHMS.find(a => a.id === algo)?.name || algo;
-      console.error(`${algoName} 压缩失败:`, msg);
+      console.error(`${algoName} 压缩失败: ${msg}`);
       showToast('error', `${algoName} 压缩出错：${msg}`);
     }
     setProcessing(prev => ({ ...prev, [algo]: false }));
