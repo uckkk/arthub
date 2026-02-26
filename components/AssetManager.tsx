@@ -3088,16 +3088,41 @@ export default function AssetManager() {
     setAiIndexing(true);
     try {
       let hasMore = true;
+      let consecutiveEmptyBatches = 0;
+      const maxEmptyBatches = 3; // 如果连续3批都是空的，停止
+      
       while (hasMore) {
         const result = await invoke<{ batch_indexed: number; batch_failed: number; total_indexed: number; total_images: number }>('ai_index_embeddings');
         setAiStats({ indexed: result.total_indexed, total: result.total_images, progress: result.total_images > 0 ? result.total_indexed / result.total_images : 0 });
         const batchProcessed = result.batch_indexed + result.batch_failed;
+        
+        if (batchProcessed === 0) {
+          consecutiveEmptyBatches++;
+          // 如果连续多批都是空的，说明没有更多资产需要处理
+          if (consecutiveEmptyBatches >= maxEmptyBatches) {
+            hasMore = false;
+            break;
+          }
+        } else {
+          consecutiveEmptyBatches = 0; // 重置计数器
+        }
+        
+        // 如果已经全部索引完成，停止
+        if (result.total_indexed >= result.total_images) {
+          hasMore = false;
+          break;
+        }
+        
+        // 如果本批处理了资产，且还有未索引的，继续
         hasMore = batchProcessed > 0 && result.total_indexed < result.total_images;
       }
-    } catch (e) { console.error('AI indexing failed', e); }
+    } catch (e) { 
+      console.error('AI indexing failed', e);
+      showToast('AI 索引失败: ' + (e as Error).message, 'error');
+    }
     aiIndexingRef.current = false;
     setAiIndexing(false);
-  }, []);
+  }, [showToast]);
 
   const handleAiSearch = useCallback(async (query: string) => {
     if (!query.trim()) { setAiResults(null); return; }

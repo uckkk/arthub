@@ -987,7 +987,7 @@ pub fn get_asset_ids_without_embedding(conn: &Connection, limit: u32) -> Result<
     let mut stmt = conn.prepare(
         "SELECT a.id, a.file_path FROM assets a
          LEFT JOIN asset_embeddings ae ON a.id = ae.asset_id
-         WHERE ae.asset_id IS NULL
+         WHERE (ae.asset_id IS NULL OR ae.model_version = 'failed')
          AND a.file_ext IN ('png','jpg','jpeg','gif','bmp','webp','tiff','tif','svg','ico','psd','tga')
          LIMIT ?1"
     ).map_err(|e| e.to_string())?;
