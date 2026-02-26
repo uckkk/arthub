@@ -71,6 +71,7 @@ import {
 import { getSavedStoragePath, openSettingsAndHighlightPath } from '../services/fileStorageService';
 import { Edit2, X, Plus, Folder, Save, Download, Share2, Sun, Moon } from 'lucide-react';
 import { useToast } from './Toast';
+import { invoke } from '@tauri-apps/api/tauri';
 
 // 主题存储 key
 const THEME_STORAGE_KEY = 'arthub_whiteboard_theme';
@@ -187,6 +188,110 @@ const Whiteboard: React.FC = () => {
       showToast('error', `保存失败: ${error.message}`);
     }
   }, [currentProject, showToast]);
+
+  // 监听「截图/录屏」导入画板：将本地文件加入当前项目并添加到画布
+  useEffect(() => {
+    const handler = async (e: Event) => {
+      const filePath = (e as CustomEvent<{ filePath: string }>).detail?.filePath;
+      if (!filePath || typeof filePath !== 'string') return;
+      const project = getCurrentProject();
+      if (!project) {
+        showToast('info', '请先创建或选择画板项目后再使用截图/录屏导入');
+        return;
+      }
+      if (!editorRef.current) return;
+      const editor = editorRef.current;
+      const imageTypes = ['image/png', 'image/jpeg', 'image/jpg', 'image/gif', 'image/webp'];
+      const videoTypes = ['video/mp4', 'video/webm', 'video/ogg'];
+      const fileName = filePath.replace(/^.*[/\\]/, '') || 'screenshot.png';
+      const ext = (fileName.split('.').pop() || '').toLowerCase();
+      const mimeMap: Record<string, string> = {
+        png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', gif: 'image/gif', webp: 'image/webp',
+        mp4: 'video/mp4', webm: 'video/webm', ogg: 'video/ogg',
+      };
+      const mimeType = mimeMap[ext] || 'image/png';
+      const isImage = imageTypes.includes(mimeType);
+      const isVideo = videoTypes.includes(mimeType);
+      if (!isImage && !isVideo) return;
+      try {
+        const content = await invoke<number[]>('read_binary_file_with_path', { filePath });
+        const arrayBuffer = new Uint8Array(content).buffer;
+        const savedPath = await saveAssetToProjectFromBuffer(project.id, arrayBuffer, fileName, mimeType);
+        const fileUrl = await convertFilePathToUrl(savedPath);
+        if (isImage) {
+          const imageAssetId = AssetRecordType.createId();
+          const image = new Image();
+          image.onload = () => {
+            try {
+              editor.createAssets([{
+                id: imageAssetId,
+                type: 'image',
+                typeName: 'asset',
+                props: { w: image.width, h: image.height, name: fileName, src: fileUrl, mimeType, isAnimated: false },
+                meta: {},
+              }]);
+              editor.createShape({
+                id: createShapeId(),
+                type: 'image',
+                x: Math.random() * 400,
+                y: Math.random() * 400,
+                props: { w: image.width, h: image.height, assetId: imageAssetId },
+              });
+              showToast('success', `已导入到画板: ${fileName}`);
+            } catch (err) {
+              console.error('创建图片资源失败:', err);
+              showToast('error', `导入失败: ${fileName}`);
+            }
+          };
+          image.onerror = () => showToast('error', `加载图片失败: ${fileName}`);
+          image.src = fileUrl;
+        } else {
+          const videoAssetId = AssetRecordType.createId();
+          const video = document.createElement('video');
+          video.preload = 'metadata';
+          video.onloadedmetadata = () => {
+            try {
+              editor.createAssets([{
+                id: videoAssetId,
+                type: 'video',
+                typeName: 'asset',
+                props: {
+                  w: video.videoWidth || 640,
+                  h: video.videoHeight || 360,
+                  name: fileName,
+                  src: fileUrl,
+                  mimeType,
+                  isAnimated: true,
+                },
+                meta: {},
+              }]);
+              editor.createShape({
+                id: createShapeId(),
+                type: 'video',
+                x: Math.random() * 400,
+                y: Math.random() * 400,
+                props: {
+                  w: video.videoWidth || 640,
+                  h: video.videoHeight || 360,
+                  assetId: videoAssetId,
+                },
+              });
+              showToast('success', `已导入到画板: ${fileName}`);
+            } catch (err) {
+              console.error('创建视频资源失败:', err);
+              showToast('error', `导入失败: ${fileName}`);
+            }
+          };
+          video.onerror = () => showToast('error', `加载视频失败: ${fileName}`);
+          video.src = fileUrl;
+        }
+      } catch (err: any) {
+        showToast('error', `导入到画板失败: ${err?.message || err}`);
+      }
+    };
+    window.addEventListener('importFileToWhiteboard', handler);
+    return () => window.removeEventListener('importFileToWhiteboard', handler);
+  }, [showToast]);
 
   // 切换项目（不卸载 Tldraw，手动加载数据，避免 tldraw 内部 dispose 时 "h is not a function" 错误）
   const handleSelectProject = async (projectId: string) => {

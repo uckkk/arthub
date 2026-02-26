@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, lazy, Suspense } from 'react';
 import { 
   Type, Menu, User, Settings, 
-  Sparkles, Home, CheckSquare, Grid3X3, PenTool, Zap, ScanLine, Minimize2, Library
+  Sparkles, Home, CheckSquare, Grid3X3, PenTool, Zap, ScanLine, Minimize2, Library, Camera
 } from 'lucide-react';
 import { getStorageConfig, formatSyncTime } from './services/fileStorageService';
 import { getUserInfo, clearUserInfo, UserInfo, verifyUser, rustLogout } from './services/userAuthService';
@@ -33,6 +33,7 @@ const CPSAutomation = lazy(() => import('./components/CPSAutomation'));
 const UIAudit = lazy(() => import('./components/UIAudit'));
 const ImageCompressor = lazy(() => import('./components/ImageCompressor'));
 const AssetManager = lazy(() => import('./components/AssetManager'));
+const ScreenCapture = lazy(() => import('./components/ScreenCapture'));
 
 // 预加载所有组件的函数
 const preloadComponents = () => {
@@ -92,6 +93,10 @@ const preloadComponents = () => {
   schedulePreload(() => {
     import('./components/UIAudit').catch(() => {});
   }, 500);
+
+  schedulePreload(() => {
+    import('./components/ScreenCapture').catch(() => {});
+  }, 550);
 };
 
 // 定义菜单项
@@ -113,6 +118,7 @@ const createMenuGroups = (): MenuGroup[] => [
       { id: 'cps', label: 'CPS自动化', icon: Zap },
       { id: 'uiaudit', label: '图像分析', icon: ScanLine },
       { id: 'imgcompress', label: '图片压缩', icon: Minimize2 },
+      { id: 'screenCapture', label: '截图录屏', icon: Camera },
     ],
   },
 ];
@@ -384,6 +390,19 @@ const AppContent: React.FC = () => {
     return () => window.removeEventListener('openSettings', handleOpenSettings);
   }, []);
 
+  // 监听切换 Tab 事件（如截图/录屏完成后导入画板时切到无限画布）
+  useEffect(() => {
+    const handleSwitchTab = (e: Event) => {
+      const tab = (e as CustomEvent<{ tab: string }>).detail?.tab;
+      if (tab) {
+        setActiveTab(tab);
+        setVisitedTabs(prev => (prev.has(tab) ? prev : new Set([...prev, tab])));
+      }
+    };
+    window.addEventListener('switchTab', handleSwitchTab);
+    return () => window.removeEventListener('switchTab', handleSwitchTab);
+  }, []);
+
   // 监听键盘快捷键打开开发者工具（F12 或 Ctrl+Shift+I）
   useEffect(() => {
     const handleKeyDown = async (e: KeyboardEvent) => {
@@ -452,6 +471,7 @@ const AppContent: React.FC = () => {
       'uiaudit': 'uiaudit',
       'imgcompress': 'imgcompress',
       'assets': 'assets',
+      'screenCapture': 'screenCapture',
     };
     const tab = tabMapping[id] || 'home';
 
@@ -499,6 +519,7 @@ const AppContent: React.FC = () => {
     uiaudit:    { node: <UIAudit />,        skeleton: 'default' },
     imgcompress:{ node: <ImageCompressor />,skeleton: 'default' },
     assets:     { node: <AssetManager />,   skeleton: 'default' },
+    screenCapture: { node: <ScreenCapture />, skeleton: 'default' },
     ai:         { node: <AITool />,         skeleton: 'ai' },
   };
 

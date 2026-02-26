@@ -675,22 +675,15 @@ const CPSAutomation: React.FC = () => {
     return `${fn}.png`;
   };
 
-  // 渲染带绿色高亮的文件名（@ 或被替换的自定义名称用绿色显示）
+  // 渲染带绿色高亮的文件名（仅显示最终用于命名的数字，不显示输入或箭头）
   const renderHighlightedName = (prefix: string, suffix?: string) => {
     const rawName = customName || '@';
     const name = rawName === '@' ? '@' : extractNameFromInput(rawName);
     const parts = prefix.split('@');
     const suffixStr = suffix ? `_${suffix}` : '';
-    
-    // 如果输入是4位数，显示提取过程
-    const digits = rawName.replace(/\D/g, '');
-    const displayName = digits.length === 4 && rawName !== '@'
-      ? `${rawName} → ${name}` 
-      : name;
-    
     return (
       <span>
-        {parts[0]}<span className="text-green-400">{displayName}</span>{parts[1] || ''}{suffixStr}.png
+        {parts[0]}<span className="text-green-400">{name}</span>{parts[1] || ''}{suffixStr}.png
       </span>
     );
   };
@@ -1442,17 +1435,16 @@ async function doExport(){
         </div>
       </div>
 
-      {/* ====== 导出目录设置（仅主应用，独立页无此功能） ====== */}
-      {isTauri && (
-        <div className="mb-4 p-4 rounded-lg bg-[#1a1a1a] border border-[#2a2a2a]">
-          <div className="text-xs text-[#888888] mb-2">导出目录（可选，绝对路径。留空则每次导出时选择目录）</div>
-          <div className="flex gap-2 items-center flex-wrap">
+      {/* ====== 导出目录 + 打包导出：桌面端同一行（输入框内选择目录，右侧打包导出）；浏览器仅打包导出 ====== */}
+      <div className="mb-4 flex gap-2 items-center flex-wrap">
+        {isTauri && (
+          <div className="flex-1 min-w-[200px] flex items-center rounded-lg bg-[#0f0f0f] border border-[#2a2a2a] focus-within:border-blue-500 transition-colors">
             <input
               type="text"
               value={exportDirectory}
               onChange={e => setExportDirectory(e.target.value)}
-              placeholder="例如 D:\export 或 /Users/name/export"
-              className="flex-1 min-w-[200px] px-3 py-2 rounded-lg bg-[#0f0f0f] border border-[#2a2a2a] text-white text-sm placeholder-[#555] focus:outline-none focus:border-blue-500"
+              placeholder="导出目录（可选，绝对路径。留空则每次导出时选择目录）"
+              className="flex-1 min-w-0 px-3 py-2 bg-transparent text-white text-sm placeholder-[#555] focus:outline-none"
             />
             <button
               type="button"
@@ -1460,18 +1452,14 @@ async function doExport(){
                 const chosen = await open({ directory: true, multiple: false, title: '选择导出目录' });
                 if (chosen && typeof chosen === 'string') setExportDirectory(chosen);
               }}
-              className="px-3 py-2 rounded-lg bg-[#2a2a2a] hover:bg-[#3a3a3a] text-white text-sm transition-colors shrink-0"
+              className="px-3 py-2 rounded-r-md bg-[#2a2a2a] hover:bg-[#3a3a3a] text-white text-sm transition-colors shrink-0 border-l border-[#2a2a2a]"
             >
               选择目录
             </button>
           </div>
-        </div>
-      )}
-
-      {/* ====== 打包导出 ====== */}
-      <div className="flex justify-end mb-4">
+        )}
         <button onClick={handleExport} disabled={!canExport}
-          className={`px-6 py-2.5 rounded-lg font-medium transition-colors flex items-center gap-2 text-sm ${
+          className={`px-6 py-2.5 rounded-lg font-medium transition-colors flex items-center gap-2 text-sm shrink-0 ${isTauri ? '' : 'ml-auto'} ${
             canExport ? 'bg-blue-600 hover:bg-blue-700 text-white' : 'bg-[#2a2a2a] text-[#555555] cursor-not-allowed'
           }`}>
           <Download size={16} /> 打包导出

@@ -6,6 +6,7 @@ use serde::{Deserialize, Serialize};
 use std::sync::Mutex;
 
 mod asset_manager;
+mod screen_capture;
 #[cfg(target_os = "windows")]
 mod embedded_resources;
 
@@ -2466,6 +2467,7 @@ fn main() {
 
                 let ai_state = asset_manager::ai::AiState::new(&am_dir);
                 app.manage(ai_state);
+                app.manage(screen_capture::ScreenCaptureState::new());
                 println!("Asset manager initialized (with AI support)");
             }
 
@@ -2631,6 +2633,10 @@ fn main() {
             asset_manager::ffmpeg_check,
             asset_manager::ffmpeg_download,
             asset_manager::ffmpeg_extract_thumbnail,
+            screen_capture::screen_record_start,
+            screen_capture::screen_record_stop,
+            screen_capture::screen_record_is_recording,
+            screen_capture::screen_screenshot,
             sync_file_exists,
             sync_read_file,
             sync_write_file,
