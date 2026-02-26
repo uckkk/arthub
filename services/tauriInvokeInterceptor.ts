@@ -33,6 +33,11 @@ interface InvokeStats {
 
 const stats = new Map<string, InvokeStats>();
 
+// 标记已拦截，避免 consoleService 重复拦截
+if (typeof window !== 'undefined') {
+  (window as any).__arthub_tauri_intercepted = true;
+}
+
 /**
  * 增强的 invoke 函数，自动记录错误和性能
  */

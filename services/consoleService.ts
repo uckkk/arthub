@@ -392,15 +392,27 @@ class ConsoleService {
   }
 
   // 拦截 Tauri invoke 调用
+  // 注意：大部分组件已使用 tauriInvokeInterceptor，这里只作为备用拦截
+  // 如果 tauriInvokeInterceptor 已加载，则跳过拦截以避免冲突
   private interceptTauriInvoke() {
+    // 检查是否已有拦截器（通过检查 window 上的标记）
+    if ((window as any).__arthub_tauri_intercepted) {
+      // 已有拦截器，跳过
+      return;
+    }
+    
     try {
       // 动态导入 Tauri API
       import('@tauri-apps/api/tauri').then((tauriModule) => {
+        // 再次检查（可能在导入过程中其他拦截器已加载）
+        if ((window as any).__arthub_tauri_intercepted) {
+          return;
+        }
+        
         const originalInvoke = tauriModule.invoke;
         const service = this;
         
         // 尝试拦截 invoke 方法
-        // 注意：Tauri 的 invoke 可能是只读的，所以我们需要使用 Proxy 或其他方式
         try {
           // 先尝试直接赋值（最简单的方式）
           const wrappedInvoke = async function(command: string, args?: any) {
@@ -417,43 +429,37 @@ class ConsoleService {
                 writable: true,
                 configurable: true
               });
+              (window as any).__arthub_tauri_intercepted = true;
             } else if (descriptor.writable) {
               // 可写但不可配置，直接赋值
               (tauriModule as any).invoke = wrappedInvoke;
+              (window as any).__arthub_tauri_intercepted = true;
             } else {
               // 不可写也不可配置，无法拦截，静默失败
-              console.warn('[日志服务] 无法拦截 Tauri invoke：属性不可写且不可配置');
+              // 不记录警告，因为这是预期的行为
               return;
             }
           } else {
             // 没有描述符，直接赋值
             (tauriModule as any).invoke = wrappedInvoke;
+            (window as any).__arthub_tauri_intercepted = true;
           }
         } catch (e: any) {
-          // 拦截失败，记录警告但不阻止应用运行
+          // 拦截失败，静默处理（不记录警告，避免日志污染）
+          // 因为 tauriInvokeInterceptor 可能已经拦截了
           const errorMsg = e?.message || String(e);
-          if (!errorMsg.includes('Cannot redefine property')) {
-            // 只有非重定义错误才记录
-            this.addLog('warn', [
-              '[日志服务] 拦截 Tauri invoke 失败',
-              `错误: ${errorMsg}`
-            ]);
+          if (!errorMsg.includes('Cannot redefine property') && !errorMsg.includes('redefine')) {
+            // 只有非重定义错误才记录（但降低日志级别）
+            console.debug('[日志服务] 拦截 Tauri invoke 失败（可能已有其他拦截器）:', errorMsg);
           }
         }
       }).catch((importError) => {
-        // Tauri API 不可用，记录警告
-        this.addLog('warn', [
-          '[日志服务] Tauri API 不可用，无法拦截 invoke 调用',
-          `错误: ${importError?.message || String(importError)}`
-        ]);
+        // Tauri API 不可用，静默处理（不记录警告）
+        console.debug('[日志服务] Tauri API 不可用:', importError?.message || String(importError));
       });
     } catch (e) {
-      // 拦截失败，记录错误
-      this.addLog('error', [
-        '[日志服务] 拦截 Tauri invoke 失败',
-        `错误: ${e instanceof Error ? e.message : String(e)}`,
-        `堆栈: ${e instanceof Error ? e.stack : ''}`
-      ]);
+      // 拦截失败，静默处理
+      console.debug('[日志服务] 拦截 Tauri invoke 失败:', e instanceof Error ? e.message : String(e));
     }
   }
   
@@ -690,18 +696,50 @@ class ConsoleService {
   // 性能监控
   private startPerformanceMonitoring() {
     // 监控长任务（可能阻塞 UI）
+    // 注意：长任务阈值提高到 200ms，避免正常操作（如图片压缩）被误报
     if ('PerformanceObserver' in window) {
       try {
         const observer = new PerformanceObserver((list) => {
           for (const entry of list.getEntries()) {
-            // 长任务超过 50ms 可能影响用户体验
-            if (entry.duration > 50) {
-              this.addLog('warn', [
-                `[性能瓶颈] 检测到长任务`,
-                `耗时: ${Math.round(entry.duration)}ms`,
-                `名称: ${entry.name || 'Unknown'}`,
-                `建议: 优化代码或使用 Web Worker`
-              ]);
+            const duration = entry.duration;
+            const name = entry.name || 'Unknown';
+            
+            // 过滤掉预期的长任务（图片压缩、AI 处理等）
+            const isExpectedLongTask = 
+              name.includes('ImageCompressor') ||
+              name.includes('compress') ||
+              name.includes('encode') ||
+              name.includes('optimise') ||
+              name.includes('zopfli') ||
+              name.includes('oxipng') ||
+              name.includes('pngquant') ||
+              name.includes('avif') ||
+              name.includes('webp') ||
+              name.includes('AI') ||
+              name.includes('embedding');
+            
+            // 长任务超过 200ms 且不是预期的任务才警告
+            if (duration > 200 && !isExpectedLongTask) {
+              // 超过 1 秒的严重警告
+              if (duration > 1000) {
+                this.addLog('warn', [
+                  `[性能瓶颈] 检测到严重长任务`,
+                  `耗时: ${Math.round(duration)}ms (${Math.round(duration / 1000)}秒)`,
+                  `名称: ${name}`,
+                  `建议: 检查是否有阻塞主线程的同步操作，考虑使用 Web Worker`
+                ]);
+              } else {
+                // 200ms-1秒之间的中等警告（降低频率，避免日志过多）
+                // 只记录超过 500ms 的
+                if (duration > 500) {
+                  this.addLog('warn', [
+                    `[性能提示] 检测到较长任务`,
+                    `耗时: ${Math.round(duration)}ms`,
+                    `名称: ${name}`,
+                    `建议: 如果频繁出现，考虑优化`
+                  ]);
+                }
+              }
             }
           }
         });
