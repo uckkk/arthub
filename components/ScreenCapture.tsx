@@ -272,6 +272,34 @@ export default function ScreenCapture() {
     }
   };
 
+  /** 备用：通过选择该目录下的任意文件来确定保存目录（当系统目录选择不可用时） */
+  const choosePathByFile = async () => {
+    let defaultPath: string | undefined;
+    if (savePath.trim()) defaultPath = savePath.trim();
+    else {
+      try {
+        const path = await import('@tauri-apps/api/path');
+        defaultPath = (await path.documentDir()) ?? (await path.homeDir()) ?? undefined;
+      } catch {
+        defaultPath = undefined;
+      }
+    }
+    const chosen = await open({
+      directory: false,
+      multiple: false,
+      title: '选择保存目录（请选择目标文件夹内的任意文件以确定目录）',
+      defaultPath: defaultPath ? `${defaultPath.replace(/[/\\]+$/, '')}/_.png` : undefined,
+    });
+    if (typeof chosen === 'string') {
+      const dir = chosen.replace(/[/\\][^/\\]+$/, '').replace(/[/\\]+$/, '');
+      if (dir) {
+        setSavePath(dir);
+        saveCaptureOutputDir(dir);
+        showToast('success', '已设为该文件所在目录');
+      }
+    }
+  };
+
   const buildOutputPath = (dirOrFile: string, ext: 'png' | 'mp4') => {
     const base = dirOrFile.trim().replace(/[/\\]+$/, '');
     if (!base) return '';
@@ -507,6 +535,16 @@ export default function ScreenCapture() {
               >
                 选择
               </button>
+              {isTauri && (
+                <button
+                  type="button"
+                  onClick={() => choosePathByFile()}
+                  className="px-3 py-2 rounded-lg bg-[#252525] hover:bg-[#353535] text-[#888] text-sm shrink-0 border border-[#333]"
+                  title="若「选择」无法选文件夹，可点此并选择目标文件夹内的任意文件以确定目录"
+                >
+                  选择（备用）
+                </button>
+              )}
             </div>
           </div>
 
