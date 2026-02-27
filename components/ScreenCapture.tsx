@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { Camera, Square, Monitor, Settings, Keyboard, Download, Crop } from 'lucide-react';
+import { Camera, Square, Settings, Keyboard, Download, Crop } from 'lucide-react';
 import { invoke } from '@tauri-apps/api/tauri';
 import { open } from '@tauri-apps/api/dialog';
 import { appWindow } from '@tauri-apps/api/window';
@@ -33,13 +33,13 @@ const CAPTURE_KEY_MAP: Record<string, string> = {
 };
 
 export interface ScreenCaptureProps {
+  /** @deprecated 快捷键已改为调出浮窗，不再从 App 传入 */
   pendingTrigger?: 'screenshot' | 'record' | null;
   onTriggerConsumed?: () => void;
 }
 
-export default function ScreenCapture({ pendingTrigger: pendingTriggerProp, onTriggerConsumed }: ScreenCaptureProps = {}) {
+export default function ScreenCapture(_props: ScreenCaptureProps = {}) {
   const { showToast } = useToast();
-  const [mode, setMode] = useState<'screenshot' | 'record'>('screenshot');
   const [savePath, setSavePath] = useState('');
   const [recording, setRecording] = useState(false);
   const [ffmpegOk, setFfmpegOk] = useState<boolean | null>(null);
@@ -616,26 +616,9 @@ export default function ScreenCapture({ pendingTrigger: pendingTriggerProp, onTr
           </div>
         )}
 
-        <div className="flex gap-2 border-b border-[#2a2a2a] pb-2">
-          <button
-            onClick={() => setMode('screenshot')}
-            className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors flex items-center gap-2 ${
-              mode === 'screenshot' ? 'bg-blue-600 text-white' : 'bg-[#1a1a1a] text-[#888] hover:text-white'
-            }`}
-          >
-            <Monitor size={16} />
-            截图
-          </button>
-          <button
-            onClick={() => setMode('record')}
-            className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors flex items-center gap-2 ${
-              mode === 'record' ? 'bg-blue-600 text-white' : 'bg-[#1a1a1a] text-[#888] hover:text-white'
-            }`}
-          >
-            <Square size={16} />
-            录屏
-          </button>
-        </div>
+        <p className="text-xs text-[#666] mb-3">
+          推荐使用快捷键调出顶部浮窗选择截图/录屏；下方可设置保存路径与快捷键，也可直接操作。
+        </p>
 
         {isTauri && (
           <div className="flex flex-wrap items-center gap-2">
@@ -712,27 +695,26 @@ export default function ScreenCapture({ pendingTrigger: pendingTriggerProp, onTr
             </div>
           )}
 
-          {mode === 'screenshot' && (
+          <div className="flex gap-3">
             <button
               onClick={handleScreenshot}
               disabled={!ffmpegOk || (captureMode === 'region' && !selectedRegion)}
-              className="w-full px-4 py-3 rounded-lg bg-blue-600 hover:bg-blue-700 disabled:bg-[#333] disabled:text-[#555] text-white font-medium flex items-center justify-center gap-2"
+              className="flex-1 px-4 py-3 rounded-lg bg-blue-600 hover:bg-blue-700 disabled:bg-[#333] disabled:text-[#555] text-white font-medium flex items-center justify-center gap-2"
             >
               <Camera size={18} />
-              {captureMode === 'region' ? (selectedRegion ? '区域截图' : '请先框选区域') : '全屏截图'}
+              {captureMode === 'region' ? (selectedRegion ? '区域截图' : '按快捷键框选') : '全屏截图'}
             </button>
-          )}
-
-          {mode === 'record' && !recording && (
-            <button
-              onClick={handleRecordStart}
-              disabled={!ffmpegOk || (captureMode === 'region' && !selectedRegion)}
-              className="w-full px-4 py-3 rounded-lg bg-red-600 hover:bg-red-700 disabled:bg-[#333] disabled:text-[#555] text-white font-medium flex items-center justify-center gap-2"
-            >
-              <Square size={18} />
-              {captureMode === 'region' ? (selectedRegion ? '区域录屏' : '请先框选区域') : '开始录屏'}
-            </button>
-          )}
+            {!recording && (
+              <button
+                onClick={handleRecordStart}
+                disabled={!ffmpegOk || (captureMode === 'region' && !selectedRegion)}
+                className="flex-1 px-4 py-3 rounded-lg bg-red-600 hover:bg-red-700 disabled:bg-[#333] disabled:text-[#555] text-white font-medium flex items-center justify-center gap-2"
+              >
+                <Square size={18} />
+                {captureMode === 'region' ? (selectedRegion ? '区域录屏' : '按快捷键框选') : '开始录屏'}
+              </button>
+            )}
+          </div>
         </div>
 
         {isTauri && (
