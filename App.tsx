@@ -34,6 +34,7 @@ const UIAudit = lazy(() => import('./components/UIAudit'));
 const ImageCompressor = lazy(() => import('./components/ImageCompressor'));
 const AssetManager = lazy(() => import('./components/AssetManager'));
 const ScreenCapture = lazy(() => import('./components/ScreenCapture'));
+import CaptureFloatingBar from './components/CaptureFloatingBar';
 
 // 预加载所有组件的函数
 const preloadComponents = () => {
@@ -170,8 +171,9 @@ const AppContent: React.FC = () => {
 
   // 已访问过的 tab 集合 — 首次访问后保持挂载，切换时只改 display，实现秒切
   const [visitedTabs, setVisitedTabs] = useState<Set<string>>(new Set(['home']));
-  // 快捷键触发的截图/录屏类型（由 App 监听并传入 ScreenCapture，保证未打开过该 tab 时也能响应）
-  const [pendingCaptureTrigger, setPendingCaptureTrigger] = useState<'screenshot' | 'record' | null>(null);
+  // 按快捷键时调出截图/录屏浮窗条，在浮窗上选截图或录屏
+  const [showCaptureBar, setShowCaptureBar] = useState(false);
+  const [captureBarSuggested, setCaptureBarSuggested] = useState<'screenshot' | 'record' | null>(null);
 
   // 菜单顺序管理
   const [menuItemOrder, setMenuItemOrder] = useState<Record<number, string[]>>(() => {
@@ -408,17 +410,25 @@ const AppContent: React.FC = () => {
     return () => window.removeEventListener('switchTab', handleSwitchTab);
   }, []);
 
-  // 监听快捷键触发的截图/录屏（始终在 App 层监听，保证未打开过截图 tab 时也能先切 tab 再执行）
+  // 监听快捷键：调出小浮窗条，在浮窗上选全屏/区域、截图/录屏
   useEffect(() => {
+    const bringToFront = () => {
+      if (typeof (window as any).__TAURI__ !== 'undefined') {
+        import('@tauri-apps/api/window').then(({ appWindow }) => {
+          appWindow.show().catch(() => {});
+          appWindow.setFocus().catch(() => {});
+        }).catch(() => {});
+      }
+    };
     const onTriggerScreenshot = () => {
-      setPendingCaptureTrigger('screenshot');
-      setActiveTab('screenCapture');
-      setVisitedTabs(prev => (prev.has('screenCapture') ? prev : new Set([...prev, 'screenCapture'])));
+      bringToFront();
+      setCaptureBarSuggested('screenshot');
+      setShowCaptureBar(true);
     };
     const onTriggerRecord = () => {
-      setPendingCaptureTrigger('record');
-      setActiveTab('screenCapture');
-      setVisitedTabs(prev => (prev.has('screenCapture') ? prev : new Set([...prev, 'screenCapture'])));
+      bringToFront();
+      setCaptureBarSuggested('record');
+      setShowCaptureBar(true);
     };
     window.addEventListener('arthub-trigger-screenshot', onTriggerScreenshot);
     window.addEventListener('arthub-trigger-record', onTriggerRecord);
@@ -427,6 +437,16 @@ const AppContent: React.FC = () => {
       window.removeEventListener('arthub-trigger-record', onTriggerRecord);
     };
   }, []);
+
+  const handleCaptureBarRequestRegion = (action: 'screenshot' | 'record') => {
+    setShowCaptureBar(false);
+    setActiveTab('screenCapture');
+    setVisitedTabs(prev => (prev.has('screenCapture') ? prev : new Set([...prev, 'screenCapture'])));
+    // 等 ScreenCapture 懒加载挂载后再派发，确保能收到
+    setTimeout(() => {
+      window.dispatchEvent(new CustomEvent('arthub-capture-bar-request-region', { detail: { action } }));
+    }, 200);
+  };
 
   // 监听键盘快捷键打开开发者工具（F12 或 Ctrl+Shift+I）
   useEffect(() => {
@@ -544,15 +564,7 @@ const AppContent: React.FC = () => {
     uiaudit:    { node: <UIAudit />,        skeleton: 'default' },
     imgcompress:{ node: <ImageCompressor />,skeleton: 'default' },
     assets:     { node: <AssetManager />,   skeleton: 'default' },
-    screenCapture: {
-      node: (
-        <ScreenCapture
-          pendingTrigger={pendingCaptureTrigger}
-          onTriggerConsumed={() => setPendingCaptureTrigger(null)}
-        />
-      ),
-      skeleton: 'default',
-    },
+    screenCapture: { node: <ScreenCapture />, skeleton: 'default' },
     ai:         { node: <AITool />,         skeleton: 'ai' },
   };
 
@@ -680,6 +692,14 @@ const AppContent: React.FC = () => {
           <ErrorNotification maxHeight={400} />
           {/* 日志诊断 - 右下角一键复制 */}
           <LogTips />
+
+          {/* 按快捷键调出的截图/录屏浮窗条：选全屏/区域、截图/录屏 */}
+          <CaptureFloatingBar
+            visible={showCaptureBar}
+            onClose={() => setShowCaptureBar(false)}
+            suggestedAction={captureBarSuggested}
+            onRequestRegionPicker={handleCaptureBarRequestRegion}
+          />
         </div>
   );
 };

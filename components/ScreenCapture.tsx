@@ -145,23 +145,19 @@ export default function ScreenCapture({ pendingTrigger: pendingTriggerProp, onTr
     }
   }, [pendingTriggerProp, onTriggerConsumed]);
 
+  // 浮窗条在「区域」下点截图/录屏时：先切到本 tab 再发此事件，此处直接弹出框选
   useEffect(() => {
     if (!isTauri) return;
-    const onTriggerScreenshot = () => {
-      window.dispatchEvent(new CustomEvent('switchTab', { detail: { tab: 'screenCapture' } }));
-      setPendingTrigger('screenshot');
+    const onRequestRegion = (e: Event) => {
+      const action = (e as CustomEvent<{ action: 'screenshot' | 'record' }>).detail?.action;
+      if (action) {
+        setPendingHotkeyAction(action);
+        startRegionPicker();
+      }
     };
-    const onTriggerRecord = () => {
-      window.dispatchEvent(new CustomEvent('switchTab', { detail: { tab: 'screenCapture' } }));
-      setPendingTrigger('record');
-    };
-    window.addEventListener('arthub-trigger-screenshot', onTriggerScreenshot);
-    window.addEventListener('arthub-trigger-record', onTriggerRecord);
-    return () => {
-      window.removeEventListener('arthub-trigger-screenshot', onTriggerScreenshot);
-      window.removeEventListener('arthub-trigger-record', onTriggerRecord);
-    };
-  }, [isTauri]);
+    window.addEventListener('arthub-capture-bar-request-region', onRequestRegion);
+    return () => window.removeEventListener('arthub-capture-bar-request-region', onRequestRegion);
+  }, [isTauri, startRegionPicker]);
 
   useEffect(() => {
     if (!isTauri || !pendingTrigger) return;
@@ -183,6 +179,7 @@ export default function ScreenCapture({ pendingTrigger: pendingTriggerProp, onTr
         .then(() => {
           addPendingImport(path);
           setLastCapturePath(path);
+          setSavePath(path);
           setCaptureSavedType('screenshot');
           setShowCaptureSavedPrompt(true);
           saveCaptureOutputDir(dir);
@@ -196,6 +193,7 @@ export default function ScreenCapture({ pendingTrigger: pendingTriggerProp, onTr
       .then(() => {
         lastRecordPathRef.current = path;
         saveLastRecordPath(path);
+        setSavePath(path);
         saveCaptureOutputDir(dir);
         recordStartTimeRef.current = Date.now();
         setRecordElapsedMs(0);
@@ -206,15 +204,21 @@ export default function ScreenCapture({ pendingTrigger: pendingTriggerProp, onTr
   }, [isTauri, pendingTrigger, captureMode, startRegionPicker, showToast]);
 
   useEffect(() => {
-    if (!isTauri || !pendingHotkeyAction || regionPickerActive || !selectedRegion || !ffmpegOk) return;
+    if (!isTauri || !pendingHotkeyAction || regionPickerActive || !selectedRegion) return;
+    if (!ffmpegOk) {
+      showToast('error', '请先在设置中安装 FFmpeg 后再使用区域截图/录屏');
+      setPendingHotkeyAction(null);
+      return;
+    }
     const type = pendingHotkeyAction;
     setPendingHotkeyAction(null);
     const dir = getCaptureOutputDir().trim().replace(/[/\\]+$/, '');
     if (!dir) {
       showToast('info', '请先选择下方保存路径或选择目录');
+      setPendingHotkeyAction(null);
       return;
     }
-    const regionArg = { x: Math.round(selectedRegion.x), y: Math.round(selectedRegion.y), width: Math.round(selectedRegion.width), height: Math.round(selectedRegion.height) };
+    const regionArg = toRegionArg(selectedRegion);
     if (type === 'screenshot') {
       const path = buildOutputPath(dir, 'png');
       invoke('screen_screenshot', { outputPath: path, region: regionArg })
@@ -243,12 +247,18 @@ export default function ScreenCapture({ pendingTrigger: pendingTriggerProp, onTr
         showToast('success', '正在录屏，点击「停止录屏」结束');
       })
       .catch((e: unknown) => showToast('error', (e as Error)?.message || '开始录屏失败'));
-  }, [isTauri, pendingHotkeyAction, regionPickerActive, selectedRegion, ffmpegOk, showToast]);
+  }, [isTauri, pendingHotkeyAction, regionPickerActive, selectedRegion, ffmpegOk, showToast, toRegionArg]);
 
   useEffect(() => {
     if (!isTauri) return;
     setScreenshotHotkey(getSavedScreenshotHotkey());
     setRecordHotkey(getSavedRecordHotkey());
+  }, [isTauri]);
+
+  useEffect(() => {
+    if (!isTauri) return;
+    const dir = getCaptureOutputDir().trim();
+    if (dir) setSavePath(prev => (prev && prev.trim()) ? prev : dir);
   }, [isTauri]);
 
   useEffect(() => {
@@ -438,6 +448,14 @@ export default function ScreenCapture({ pendingTrigger: pendingTriggerProp, onTr
     }
   };
 
+  /** 将选区转为后端需要的区域参数（非负整数，宽高至少为 1） */
+  const toRegionArg = useCallback((r: { x: number; y: number; width: number; height: number }) => ({
+    x: Math.max(0, Math.round(r.x)),
+    y: Math.max(0, Math.round(r.y)),
+    width: Math.max(1, Math.round(r.width)),
+    height: Math.max(1, Math.round(r.height)),
+  }), []);
+
   const buildOutputPath = (dirOrFile: string, ext: 'png' | 'mp4') => {
     const base = dirOrFile.trim().replace(/[/\\]+$/, '');
     if (!base) return '';
@@ -462,9 +480,7 @@ export default function ScreenCapture({ pendingTrigger: pendingTriggerProp, onTr
       saveCaptureOutputDir(path);
     }
     path = buildOutputPath(path, 'png');
-    const regionArg = captureMode === 'region' && selectedRegion
-      ? { x: Math.round(selectedRegion.x), y: Math.round(selectedRegion.y), width: Math.round(selectedRegion.width), height: Math.round(selectedRegion.height) }
-      : null;
+    const regionArg = captureMode === 'region' && selectedRegion ? toRegionArg(selectedRegion) : null;
     try {
       await invoke('screen_screenshot', { outputPath: path, region: regionArg });
       setSavePath(path);
@@ -494,9 +510,7 @@ export default function ScreenCapture({ pendingTrigger: pendingTriggerProp, onTr
       saveCaptureOutputDir(path);
     }
     path = buildOutputPath(path, 'mp4');
-    const regionArg = captureMode === 'region' && selectedRegion
-      ? { x: Math.round(selectedRegion.x), y: Math.round(selectedRegion.y), width: Math.round(selectedRegion.width), height: Math.round(selectedRegion.height) }
-      : null;
+    const regionArg = captureMode === 'region' && selectedRegion ? toRegionArg(selectedRegion) : null;
     try {
       await invoke('screen_record_start', {
         outputPath: path,
@@ -573,6 +587,11 @@ export default function ScreenCapture({ pendingTrigger: pendingTriggerProp, onTr
           <Camera size={20} className="text-blue-400" />
           截图 / 录屏
         </h2>
+        {isTauri && (
+          <p className="text-sm text-[#888]">
+            按快捷键调出顶部浮窗，在浮窗中选择全屏/区域、截图或录屏；也可在本页设置保存路径与快捷键。
+          </p>
+        )}
 
         {!isTauri && (
           <div className="p-4 rounded-lg bg-yellow-500/10 border border-yellow-500/20 text-yellow-300 text-sm">
@@ -636,21 +655,10 @@ export default function ScreenCapture({ pendingTrigger: pendingTriggerProp, onTr
               <Crop size={14} />
               区域
             </button>
-            {captureMode === 'region' && (
-              <>
-                <button
-                  type="button"
-                  onClick={startRegionPicker}
-                  className="px-3 py-1.5 rounded-lg text-sm bg-blue-600/20 text-blue-300 hover:bg-blue-600/30"
-                >
-                  框选区域
-                </button>
-                {selectedRegion && (
-                  <span className="text-xs text-[#666]">
-                    {selectedRegion.width}×{selectedRegion.height}
-                  </span>
-                )}
-              </>
+            {captureMode === 'region' && selectedRegion && (
+              <span className="text-xs text-[#666]">
+                {selectedRegion.width}×{selectedRegion.height}
+              </span>
             )}
           </div>
         )}

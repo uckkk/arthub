@@ -1091,13 +1091,26 @@ const Whiteboard: React.FC = () => {
 
                 // 使用定时器代替 store.listen，避免 tldraw 内部 dispose 时 "h is not a function" 错误
                 const AUTO_SAVE_INTERVAL_MS = 600000; // 10 分钟
-                const intervalId = setInterval(async () => {
+                const intervalId = setInterval(() => {
                   if (!editorRef.current) return;
-                  try {
-                    const snapshot = editorRef.current.getSnapshot();
-                    await saveCanvasData(projectId, snapshot);
-                  } catch (error) {
-                    console.error('自动保存失败:', error);
+                  // 页面隐藏时不自动保存，避免后台时主线程阻塞触发长任务告警
+                  if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return;
+                  const runSave = () => {
+                    if (!editorRef.current) return;
+                    try {
+                      const snapshot = editorRef.current.getSnapshot();
+                      saveCanvasData(projectId, snapshot).catch((error) => {
+                        console.error('自动保存失败:', error);
+                      });
+                    } catch (error) {
+                      console.error('自动保存失败:', error);
+                    }
+                  };
+                  // 在空闲时执行 getSnapshot+保存，避免在定时器回调中直接阻塞主线程 3s+（长任务告警）
+                  if (typeof requestIdleCallback !== 'undefined') {
+                    requestIdleCallback(runSave, { timeout: 4000 });
+                  } else {
+                    setTimeout(runSave, 0);
                   }
                 }, AUTO_SAVE_INTERVAL_MS);
 
