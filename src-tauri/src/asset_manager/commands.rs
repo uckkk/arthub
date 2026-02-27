@@ -567,7 +567,7 @@ pub fn asset_batch_rename(
     Ok(count)
 }
 
-/// 后台颜色索引：提取未索引资产的主色
+/// 后台颜色索引：提取未索引资产的主色（在阻塞线程中执行，避免阻塞 async 运行时）
 #[tauri::command]
 pub async fn asset_index_colors(
     state: tauri::State<'_, AssetManagerState>,
@@ -576,21 +576,34 @@ pub async fn asset_index_colors(
         let conn = state.db.lock().map_err(|e| e.to_string())?;
         db::get_asset_ids_without_colors(&conn)?
     };
-    let mut count = 0u32;
-    for (asset_id, thumb_path) in &pending {
-        if thumb_path.is_empty() { continue; }
-        match extract_colors_from_image(thumb_path) {
-            Ok(colors) => {
+    let results: Vec<(i64, Vec<db::AssetColor>)> = tokio::task::spawn_blocking(move || {
+        let mut out = Vec::new();
+        for (asset_id, thumb_path) in pending {
+            if thumb_path.is_empty() { continue; }
+            if let Ok(colors) = extract_colors_from_image(&thumb_path) {
                 let db_colors: Vec<db::AssetColor> = colors.into_iter().map(|c| db::AssetColor {
-                    asset_id: *asset_id, hex: c.hex, ratio: c.ratio,
-                    r: c.r, g: c.g, b: c.b, h: c.h, s: c.s, l: c.l,
+                    asset_id,
+                    hex: c.hex,
+                    ratio: c.ratio,
+                    r: c.r,
+                    g: c.g,
+                    b: c.b,
+                    h: c.h,
+                    s: c.s,
+                    l: c.l,
                 }).collect();
-                let conn = state.db.lock().map_err(|e| e.to_string())?;
-                let _ = db::upsert_asset_colors(&conn, *asset_id, &db_colors);
-                count += 1;
+                out.push((asset_id, db_colors));
             }
-            Err(_) => {}
         }
+        out
+    })
+    .await
+    .map_err(|e| format!("颜色索引线程失败: {}", e))?;
+    let mut count = 0u32;
+    for (asset_id, db_colors) in results {
+        let conn = state.db.lock().map_err(|e| e.to_string())?;
+        let _ = db::upsert_asset_colors(&conn, asset_id, &db_colors);
+        count += 1;
     }
     Ok(count)
 }
@@ -666,7 +679,7 @@ pub fn asset_search_by_color(
     db::query_assets_by_color(&conn, h_min, h_max, s_min, l_min, l_max)
 }
 
-/// 后台 MD5 哈希计算
+/// 后台 MD5 哈希计算（在阻塞线程中执行，避免长时间阻塞 async 运行时）
 #[tauri::command]
 pub async fn asset_index_hashes(
     state: tauri::State<'_, AssetManagerState>,
@@ -675,16 +688,22 @@ pub async fn asset_index_hashes(
         let conn = state.db.lock().map_err(|e| e.to_string())?;
         db::get_asset_ids_without_hash(&conn)?
     };
-    let mut count = 0u32;
-    for (asset_id, file_path) in &pending {
-        match compute_file_md5(file_path) {
-            Ok(md5) => {
-                let conn = state.db.lock().map_err(|e| e.to_string())?;
-                let _ = db::upsert_asset_hash(&conn, *asset_id, &md5, "");
-                count += 1;
+    let results: Vec<(i64, String)> = tokio::task::spawn_blocking(move || {
+        let mut out = Vec::new();
+        for (asset_id, file_path) in pending {
+            if let Ok(md5) = compute_file_md5(&file_path) {
+                out.push((asset_id, md5));
             }
-            Err(_) => {}
         }
+        out
+    })
+    .await
+    .map_err(|e| format!("哈希索引线程失败: {}", e))?;
+    let mut count = 0u32;
+    for (asset_id, md5) in results {
+        let conn = state.db.lock().map_err(|e| e.to_string())?;
+        let _ = db::upsert_asset_hash(&conn, asset_id, &md5, "");
+        count += 1;
     }
     Ok(count)
 }

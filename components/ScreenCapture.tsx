@@ -32,21 +32,37 @@ const CAPTURE_KEY_MAP: Record<string, string> = {
   Insert: 'Insert', Home: 'Home', End: 'End', PageUp: 'PageUp', PageDown: 'PageDown',
 };
 
-export default function ScreenCapture() {
+export interface ScreenCaptureProps {
+  pendingTrigger?: 'screenshot' | 'record' | null;
+  onTriggerConsumed?: () => void;
+}
+
+export default function ScreenCapture({ pendingTrigger: pendingTriggerProp, onTriggerConsumed }: ScreenCaptureProps = {}) {
   const { showToast } = useToast();
   const [mode, setMode] = useState<'screenshot' | 'record'>('screenshot');
   const [savePath, setSavePath] = useState('');
   const [recording, setRecording] = useState(false);
   const [ffmpegOk, setFfmpegOk] = useState<boolean | null>(null);
   const lastRecordPathRef = useRef('');
+  const recordStartTimeRef = useRef<number>(0);
+  const [recordElapsedMs, setRecordElapsedMs] = useState(0);
   const [screenshotHotkey, setScreenshotHotkey] = useState('');
   const [recordHotkey, setRecordHotkey] = useState('');
   const [savingHotkeys, setSavingHotkeys] = useState(false);
   const [lastCapturePath, setLastCapturePath] = useState('');
   const [showCaptureSavedPrompt, setShowCaptureSavedPrompt] = useState(false);
   const [captureSavedType, setCaptureSavedType] = useState<'screenshot' | 'record' | null>(null);
-  const [captureMode, setCaptureMode] = useState<'fullscreen' | 'region'>('fullscreen');
+  const CAPTURE_MODE_KEY = 'arthub_capture_mode';
+  const [captureMode, setCaptureMode] = useState<'fullscreen' | 'region'>(() => {
+    try {
+      const s = localStorage.getItem(CAPTURE_MODE_KEY);
+      if (s === 'region' || s === 'fullscreen') return s;
+    } catch { /* ignore */ }
+    return 'fullscreen';
+  });
   const [selectedRegion, setSelectedRegion] = useState<{ x: number; y: number; width: number; height: number } | null>(null);
+  const [pendingHotkeyAction, setPendingHotkeyAction] = useState<'screenshot' | 'record' | null>(null);
+  const [pendingTrigger, setPendingTrigger] = useState<'screenshot' | 'record' | null>(null);
   const [regionPickerActive, setRegionPickerActive] = useState(false);
   const [regionDragStart, setRegionDragStart] = useState<{ x: number; y: number } | null>(null);
   const [regionDragCurrent, setRegionDragCurrent] = useState<{ x: number; y: number } | null>(null);
@@ -68,6 +84,7 @@ export default function ScreenCapture() {
     setRegionDragStart(null);
     setRegionDragCurrent(null);
     if (rect && rect.width > 4 && rect.height > 4) setSelectedRegion(rect);
+    else setPendingHotkeyAction(null);
     appWindow.setFullscreen(false).catch(() => {});
   }, []);
 
@@ -113,6 +130,120 @@ export default function ScreenCapture() {
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, [regionPickerActive, endRegionPicker]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(CAPTURE_MODE_KEY, captureMode);
+    } catch { /* ignore */ }
+  }, [captureMode]);
+
+  // 由 App 传入的快捷键触发类型（保证未打开过本 tab 时也能响应）
+  useEffect(() => {
+    if (pendingTriggerProp) {
+      setPendingTrigger(pendingTriggerProp);
+      onTriggerConsumed?.();
+    }
+  }, [pendingTriggerProp, onTriggerConsumed]);
+
+  useEffect(() => {
+    if (!isTauri) return;
+    const onTriggerScreenshot = () => {
+      window.dispatchEvent(new CustomEvent('switchTab', { detail: { tab: 'screenCapture' } }));
+      setPendingTrigger('screenshot');
+    };
+    const onTriggerRecord = () => {
+      window.dispatchEvent(new CustomEvent('switchTab', { detail: { tab: 'screenCapture' } }));
+      setPendingTrigger('record');
+    };
+    window.addEventListener('arthub-trigger-screenshot', onTriggerScreenshot);
+    window.addEventListener('arthub-trigger-record', onTriggerRecord);
+    return () => {
+      window.removeEventListener('arthub-trigger-screenshot', onTriggerScreenshot);
+      window.removeEventListener('arthub-trigger-record', onTriggerRecord);
+    };
+  }, [isTauri]);
+
+  useEffect(() => {
+    if (!isTauri || !pendingTrigger) return;
+    const type = pendingTrigger;
+    setPendingTrigger(null);
+    if (captureMode === 'region') {
+      setPendingHotkeyAction(type);
+      startRegionPicker();
+      return;
+    }
+    const dir = getCaptureOutputDir().trim().replace(/[/\\]+$/, '');
+    if (!dir) {
+      showToast('info', '请先选择下方保存路径或选择目录，快捷键将保存到该位置');
+      return;
+    }
+    if (type === 'screenshot') {
+      const path = buildOutputPath(dir, 'png');
+      invoke('screen_screenshot', { outputPath: path, region: null })
+        .then(() => {
+          addPendingImport(path);
+          setLastCapturePath(path);
+          setCaptureSavedType('screenshot');
+          setShowCaptureSavedPrompt(true);
+          saveCaptureOutputDir(dir);
+          showToast('success', '截图已保存');
+        })
+        .catch((e: unknown) => showToast('error', (e as Error)?.message || '截图失败'));
+      return;
+    }
+    const path = buildOutputPath(dir, 'mp4');
+    invoke('screen_record_start', { outputPath: path, region: null, crf: 22 })
+      .then(() => {
+        lastRecordPathRef.current = path;
+        saveLastRecordPath(path);
+        saveCaptureOutputDir(dir);
+        recordStartTimeRef.current = Date.now();
+        setRecordElapsedMs(0);
+        setRecording(true);
+        showToast('success', '正在录屏，点击「停止录屏」结束');
+      })
+      .catch((e: unknown) => showToast('error', (e as Error)?.message || '开始录屏失败'));
+  }, [isTauri, pendingTrigger, captureMode, startRegionPicker, showToast]);
+
+  useEffect(() => {
+    if (!isTauri || !pendingHotkeyAction || regionPickerActive || !selectedRegion || !ffmpegOk) return;
+    const type = pendingHotkeyAction;
+    setPendingHotkeyAction(null);
+    const dir = getCaptureOutputDir().trim().replace(/[/\\]+$/, '');
+    if (!dir) {
+      showToast('info', '请先选择下方保存路径或选择目录');
+      return;
+    }
+    const regionArg = { x: Math.round(selectedRegion.x), y: Math.round(selectedRegion.y), width: Math.round(selectedRegion.width), height: Math.round(selectedRegion.height) };
+    if (type === 'screenshot') {
+      const path = buildOutputPath(dir, 'png');
+      invoke('screen_screenshot', { outputPath: path, region: regionArg })
+        .then(() => {
+          addPendingImport(path);
+          setLastCapturePath(path);
+          setSavePath(path);
+          saveCaptureOutputDir(dir);
+          setCaptureSavedType('screenshot');
+          setShowCaptureSavedPrompt(true);
+          showToast('success', '截图已保存');
+        })
+        .catch((e: unknown) => showToast('error', (e as Error)?.message || '截图失败'));
+      return;
+    }
+    const path = buildOutputPath(dir, 'mp4');
+    invoke('screen_record_start', { outputPath: path, region: regionArg, crf: 22 })
+      .then(() => {
+        lastRecordPathRef.current = path;
+        saveLastRecordPath(path);
+        setSavePath(path);
+        saveCaptureOutputDir(dir);
+        recordStartTimeRef.current = Date.now();
+        setRecordElapsedMs(0);
+        setRecording(true);
+        showToast('success', '正在录屏，点击「停止录屏」结束');
+      })
+      .catch((e: unknown) => showToast('error', (e as Error)?.message || '开始录屏失败'));
+  }, [isTauri, pendingHotkeyAction, regionPickerActive, selectedRegion, ffmpegOk, showToast]);
 
   useEffect(() => {
     if (!isTauri) return;
@@ -247,6 +378,14 @@ export default function ScreenCapture() {
     return pollRecording();
   }, [recording, pollRecording]);
 
+  useEffect(() => {
+    if (!recording) return;
+    const t = setInterval(() => {
+      setRecordElapsedMs(Math.max(0, Date.now() - recordStartTimeRef.current));
+    }, 500);
+    return () => clearInterval(t);
+  }, [recording]);
+
   const choosePath = async () => {
     let defaultPath: string | undefined;
     if (savePath.trim()) defaultPath = savePath.trim();
@@ -369,6 +508,8 @@ export default function ScreenCapture() {
       const dir = path.replace(/[/\\][^/\\]+$/, '');
       if (dir) saveCaptureOutputDir(dir);
       saveLastRecordPath(path);
+      recordStartTimeRef.current = Date.now();
+      setRecordElapsedMs(0);
       setRecording(true);
       showToast('success', '正在录屏，点击「停止录屏」结束');
     } catch (e: any) {
@@ -574,27 +715,15 @@ export default function ScreenCapture() {
             </button>
           )}
 
-          {mode === 'record' && (
-            <div className="flex gap-2">
-              {!recording ? (
-                <button
-                  onClick={handleRecordStart}
-                  disabled={!ffmpegOk || (captureMode === 'region' && !selectedRegion)}
-                  className="flex-1 px-4 py-3 rounded-lg bg-red-600 hover:bg-red-700 disabled:bg-[#333] disabled:text-[#555] text-white font-medium flex items-center justify-center gap-2"
-                >
-                  <Square size={18} />
-                  {captureMode === 'region' ? (selectedRegion ? '区域录屏' : '请先框选区域') : '开始录屏'}
-                </button>
-              ) : (
-                <button
-                  onClick={handleRecordStop}
-                  className="flex-1 px-4 py-3 rounded-lg bg-red-700 hover:bg-red-800 text-white font-medium flex items-center justify-center gap-2 animate-pulse"
-                >
-                  <Square size={18} />
-                  停止录屏
-                </button>
-              )}
-            </div>
+          {mode === 'record' && !recording && (
+            <button
+              onClick={handleRecordStart}
+              disabled={!ffmpegOk || (captureMode === 'region' && !selectedRegion)}
+              className="w-full px-4 py-3 rounded-lg bg-red-600 hover:bg-red-700 disabled:bg-[#333] disabled:text-[#555] text-white font-medium flex items-center justify-center gap-2"
+            >
+              <Square size={18} />
+              {captureMode === 'region' ? (selectedRegion ? '区域录屏' : '请先框选区域') : '开始录屏'}
+            </button>
           )}
         </div>
 
@@ -646,6 +775,22 @@ export default function ScreenCapture() {
         </p>
       </div>
 
+      {recording && (
+        <div className="fixed top-4 left-1/2 -translate-x-1/2 z-[100] flex items-center gap-4 px-5 py-3 rounded-xl bg-red-900/90 border border-red-500/50 shadow-lg">
+          <span className="text-red-100 font-mono text-lg tabular-nums">
+            录屏中 {String(Math.floor(recordElapsedMs / 60000)).padStart(2, '0')}:{String(Math.floor((recordElapsedMs % 60000) / 1000)).padStart(2, '0')}
+          </span>
+          <button
+            type="button"
+            onClick={handleRecordStop}
+            className="px-4 py-2 rounded-lg bg-red-600 hover:bg-red-700 text-white font-medium text-sm flex items-center gap-2"
+          >
+            <Square size={16} />
+            停止录屏
+          </button>
+        </div>
+      )}
+
       {regionPickerActive && (
         <div
           className="fixed inset-0 z-[9999] cursor-crosshair bg-black/40"
@@ -677,7 +822,17 @@ export default function ScreenCapture() {
           <p className="text-sm text-[#e0e0e0]">
             {captureSavedType === 'record' ? '当前视频' : '当前截图'}已保存至画布
           </p>
-          <div className="flex gap-2">
+          <div className="flex flex-wrap items-center justify-center gap-2">
+            {isTauri && lastCapturePath && (
+              <button
+                type="button"
+                onClick={() => { handleDownloadTo(); setShowCaptureSavedPrompt(false); }}
+                className="px-4 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-medium flex items-center gap-1.5"
+              >
+                <Download size={16} />
+                下载
+              </button>
+            )}
             <button
               type="button"
               onClick={goToWhiteboard}

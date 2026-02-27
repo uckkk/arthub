@@ -629,18 +629,24 @@ class ConsoleService {
     this.detectPageFreeze();
   }
   
-  // 检测页面冻结
+  // 检测页面冻结（仅在前台报告；同一问题 5 分钟内只报一次，避免刷屏）
   private detectPageFreeze() {
     let lastHeartbeat = Date.now();
+    let lastFreezeReportAt = 0;
     const heartbeatInterval = 5000; // 5秒心跳
-    
-    // 定期发送心跳
+    const freezeReportCooldownMs = 5 * 60 * 1000; // 5 分钟内不重复报同一类冻结
+
     setInterval(() => {
       const now = Date.now();
       const timeSinceLastHeartbeat = now - lastHeartbeat;
-      
-      // 如果超过10秒没有心跳，可能页面冻结了
-      if (timeSinceLastHeartbeat > 10000) {
+
+      // 仅当页面可见时判定冻结：后台 tab 下 setInterval 会被节流到约 1 分钟，会误报
+      if (typeof document !== 'undefined' && document.visibilityState !== 'visible') {
+        lastHeartbeat = now;
+        return;
+      }
+      if (timeSinceLastHeartbeat > 10000 && now - lastFreezeReportAt >= freezeReportCooldownMs) {
+        lastFreezeReportAt = now;
         const memory = this.getMemoryUsage();
         this.addLog('error', [
           `[崩溃检测] 检测到可能的页面冻结`,
@@ -649,11 +655,10 @@ class ConsoleService {
           `建议: 检查是否有长时间运行的同步任务或内存泄漏`
         ]);
       }
-      
+
       lastHeartbeat = now;
     }, heartbeatInterval);
-    
-    // 监听用户交互，更新心跳
+
     ['mousedown', 'keydown', 'scroll', 'touchstart'].forEach(eventType => {
       document.addEventListener(eventType, () => {
         lastHeartbeat = Date.now();
@@ -695,6 +700,10 @@ class ConsoleService {
   
   // 性能监控
   private startPerformanceMonitoring() {
+    // 严重长任务告警节流：3 分钟内只报一次，避免刷屏
+    let lastSevereLongTaskAt = 0;
+    const severeLongTaskCooldownMs = 3 * 60 * 1000;
+
     // 监控长任务（可能阻塞 UI）
     // 注意：长任务阈值提高到 200ms，避免正常操作（如图片压缩）被误报
     if ('PerformanceObserver' in window) {
@@ -704,8 +713,10 @@ class ConsoleService {
             const duration = entry.duration;
             const name = entry.name || 'Unknown';
             
-            // 过滤掉预期的长任务（图片压缩、AI 处理等）
-            const isExpectedLongTask = 
+            // 页面在后台时可能因定时器节流出现长任务，不报告
+            if (typeof document !== 'undefined' && document.visibilityState !== 'visible') return;
+
+            const isExpectedLongTask =
               name.includes('ImageCompressor') ||
               name.includes('compress') ||
               name.includes('encode') ||
@@ -717,17 +728,19 @@ class ConsoleService {
               name.includes('webp') ||
               name.includes('AI') ||
               name.includes('embedding');
-            
-            // 长任务超过 200ms 且不是预期的任务才警告
+
             if (duration > 200 && !isExpectedLongTask) {
-              // 超过 1 秒的严重警告
               if (duration > 1000) {
-                this.addLog('warn', [
-                  `[性能瓶颈] 检测到严重长任务`,
-                  `耗时: ${Math.round(duration)}ms (${Math.round(duration / 1000)}秒)`,
-                  `名称: ${name}`,
-                  `建议: 检查是否有阻塞主线程的同步操作，考虑使用 Web Worker`
-                ]);
+                const now = Date.now();
+                if (now - lastSevereLongTaskAt >= severeLongTaskCooldownMs) {
+                  lastSevereLongTaskAt = now;
+                  this.addLog('warn', [
+                    `[性能瓶颈] 检测到严重长任务`,
+                    `耗时: ${Math.round(duration)}ms (${Math.round(duration / 1000)}秒)`,
+                    `名称: ${name}`,
+                    `建议: 检查是否有阻塞主线程的同步操作，考虑使用 Web Worker`
+                  ]);
+                }
               } else {
                 // 200ms-1秒之间的中等警告（降低频率，避免日志过多）
                 // 只记录超过 500ms 的

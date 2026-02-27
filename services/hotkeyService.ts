@@ -260,20 +260,8 @@ function buildCapturePath(filename: string): string {
   return `${dir}${sep}${filename}`;
 }
 
-async function onScreenshotShortcut(): Promise<void> {
-  const path = buildCapturePath(`截图_${new Date().toISOString().slice(0, 19).replace(/[-:T]/g, '')}.png`);
-  if (!path) {
-    window.dispatchEvent(new CustomEvent('arthub-capture-no-dir', { detail: { type: 'screenshot' } }));
-    return;
-  }
-  try {
-    await invoke('screen_screenshot', { outputPath: path, region: null });
-    addPendingImport(path);
-    window.dispatchEvent(new CustomEvent('arthub-capture-saved-to-canvas', { detail: { type: 'screenshot' as const } }));
-    window.dispatchEvent(new CustomEvent('arthub-capture-done', { detail: { type: 'screenshot', path } }));
-  } catch (e) {
-    window.dispatchEvent(new CustomEvent('arthub-capture-error', { detail: { type: 'screenshot', error: e } }));
-  }
+function onScreenshotShortcut(): void {
+  window.dispatchEvent(new CustomEvent('arthub-trigger-screenshot', { detail: { type: 'screenshot' as const } }));
 }
 
 async function onRecordShortcut(): Promise<void> {
@@ -293,19 +281,7 @@ async function onRecordShortcut(): Promise<void> {
   } catch {
     // ignore
   }
-  const path = buildCapturePath(`录屏_${new Date().toISOString().slice(0, 19).replace(/[-:T]/g, '')}.mp4`);
-  if (!path) {
-    window.dispatchEvent(new CustomEvent('arthub-capture-no-dir', { detail: { type: 'record' } }));
-    return;
-  }
-  try {
-    await invoke('screen_record_start', { outputPath: path, region: null, crf: 22 });
-    saveLastRecordPath(path);
-    window.dispatchEvent(new CustomEvent('arthub-record-started', { detail: { path } }));
-    window.dispatchEvent(new CustomEvent('arthub-capture-done', { detail: { type: 'record_start', path } }));
-  } catch (e) {
-    window.dispatchEvent(new CustomEvent('arthub-capture-error', { detail: { type: 'record', error: e } }));
-  }
+  window.dispatchEvent(new CustomEvent('arthub-trigger-record', { detail: { type: 'record' as const } }));
 }
 
 export async function registerScreenshotHotkey(hotkey: string): Promise<boolean> {
