@@ -6,6 +6,9 @@ use std::process::{Child, Command};
 use std::sync::Mutex;
 use tauri::{AppHandle, Manager, State};
 
+#[cfg(target_os = "windows")]
+use std::os::windows::process::CommandExt;
+
 #[derive(Debug, Clone, Deserialize)]
 pub struct RecordRegion {
     pub x: u32,
@@ -69,8 +72,10 @@ pub fn screen_record_start(
         let crf_s = crf.to_string();
         args.extend_from_slice(&["-i".into(), "desktop".into(), "-c:v".into(), "libx264".into(), "-crf".into(), crf_s, "-preset".into(), "fast".into(), output_path.clone()]);
 
+        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
         let child = Command::new(&ffmpeg)
             .args(&args)
+            .creation_flags(CREATE_NO_WINDOW)
             .spawn()
             .map_err(|e| format!("启动录屏失败: {}", e))?;
         *guard = Some(child);
@@ -126,8 +131,10 @@ pub fn screen_screenshot(app: AppHandle, output_path: String, region: Option<Rec
         }
         args.extend_from_slice(&["-i".into(), "desktop".into(), "-vframes".into(), "1".into(), output_path.clone()]);
 
+        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
         let out = Command::new(&ffmpeg)
             .args(&args)
+            .creation_flags(CREATE_NO_WINDOW)
             .output()
             .map_err(|e| format!("截图失败: {}", e))?;
         if !out.status.success() {

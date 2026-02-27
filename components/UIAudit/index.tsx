@@ -1667,29 +1667,23 @@ const UIAudit: React.FC = () => {
             transform: `translate(${pan.x}px, ${pan.y}px)`,
           }}
         >
-          {/* 上传区 / 画布 — 用固定尺寸, 不参与 flex 收缩 */}
+          {/* 上传区 — 复用图片压缩的撑满画布效果：无图时整块区域可点击/拖放 */}
           {!image ? (
             <div
               data-drop-target="ui-audit"
-              className={`pointer-events-auto rounded-2xl border-2 border-dashed transition-colors flex flex-col items-center justify-center cursor-pointer select-none shrink-0 ${
+              className={`pointer-events-auto w-full h-full flex flex-col items-center justify-center border-2 border-dashed rounded-xl transition-colors cursor-pointer select-none ${
                 isDragging
-                  ? 'border-blue-400 bg-blue-400/10'
-                  : 'border-[#333] hover:border-[#555] bg-[#161616]'
+                  ? 'border-blue-500 bg-blue-500/5'
+                  : 'border-[#333] hover:border-[#555]'
               }`}
-              style={{
-                width: canvasStyle.width,
-                height: canvasStyle.height,
-                minWidth: canvasStyle.width,
-                minHeight: canvasStyle.height,
-              }}
               onDrop={handleDrop}
               onDragOver={handleDragOver}
               onDragLeave={handleDragLeave}
               onClick={(e) => { e.stopPropagation(); fileInputRef.current?.click(); }}
             >
-              <Upload size={40} className="text-[#555] mb-3" />
-              <p className="text-sm text-[#888]">拖放或点击上传游戏截图</p>
-              <p className="text-xs text-[#555] mt-1">支持 PNG / JPG / WebP</p>
+              <Upload className="w-12 h-12 text-[#555] mb-4" />
+              <p className="text-sm text-[#888] mb-1">拖拽图片到此处，或点击上传</p>
+              <p className="text-xs text-[#555]">支持 PNG / JPEG / WebP</p>
               <p className="text-[10px] text-[#444] mt-2">{screenSize.width}×{screenSize.height}pt</p>
               <input
                 ref={fileInputRef}

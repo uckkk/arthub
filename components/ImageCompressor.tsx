@@ -610,323 +610,8 @@ export default function ImageCompressor() {
                 </div>
               </div>
 
-              {/* ---- Right Panel: Algorithms & Results ---- */}
-              <div className="lg:w-[320px] shrink-0 flex flex-col gap-3 overflow-y-auto" style={{ scrollbarWidth: 'thin' }}>
-                {/* Algorithm tabs */}
-                <div className="flex gap-0.5 p-1 bg-[#151515] rounded-lg overflow-x-auto" style={{ scrollbarWidth: 'none' }}>
-                  {ALGORITHMS.map(algo => (
-                    <button key={algo.id}
-                      onClick={() => setActiveAlgo(algo.id)}
-                      className={`shrink-0 py-1.5 px-2 rounded-md text-[11px] font-medium transition-all whitespace-nowrap
-                        ${activeAlgo === algo.id ? 'bg-[#222] text-white shadow-sm' : 'text-[#666] hover:text-[#aaa]'}`}
-                    >
-                      {algo.name}
-                    </button>
-                  ))}
-                </div>
-
-                {/* Active algorithm settings */}
-                <div className="bg-[#151515] rounded-xl p-3 space-y-2.5">
-                  <div className="flex items-center gap-2">
-                    <span className="text-xs font-medium">{ALGORITHMS.find(a => a.id === activeAlgo)?.name}</span>
-                    <span className="text-[10px] px-1.5 py-0.5 rounded-full font-medium"
-                      style={{ backgroundColor: ALGORITHMS.find(a => a.id === activeAlgo)!.tagColor + '20', color: ALGORITHMS.find(a => a.id === activeAlgo)!.tagColor }}>
-                      {ALGORITHMS.find(a => a.id === activeAlgo)?.tag}
-                    </span>
-                  </div>
-                  <p className="text-[10px] text-[#666] leading-relaxed flex items-start gap-1">
-                    <Info className="w-3 h-3 mt-0.5 shrink-0" />
-                    {ALGORITHMS.find(a => a.id === activeAlgo)?.desc}
-                  </p>
-
-                  {activeAlgo === 'pngquant' && (
-                    <div className="space-y-2">
-                      <div className="flex items-center justify-between">
-                        <label className="text-[10px] text-[#888]">画质</label>
-                        <span className="text-[10px] text-[#aaa] font-mono">{pqQuality}</span>
-                      </div>
-                      <input type="range" min={10} max={100} value={pqQuality}
-                        onChange={e => setPqQuality(Number(e.target.value))}
-                        className="w-full h-1 bg-[#333] rounded-full appearance-none cursor-pointer [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-3 [&::-webkit-slider-thumb]:h-3 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-amber-500" />
-                      <p className="text-[10px] text-[#555]">越低体积越小，越高画质越好</p>
-
-                      <div className="flex items-center justify-between">
-                        <label className="text-[10px] text-[#888]">边缘柔化</label>
-                        <label className="relative inline-flex items-center cursor-pointer">
-                          <input type="checkbox" checked={pqEdgeSmooth}
-                            onChange={e => setPqEdgeSmooth(e.target.checked)} className="sr-only peer" />
-                          <div className="
-                            w-9 h-5 rounded-full
-                            bg-[#39393d] peer-checked:bg-amber-500
-                            after:content-[''] after:absolute after:top-[2px] after:left-[2px]
-                            after:bg-white after:rounded-full after:h-4 after:w-4
-                            after:shadow-sm
-                            after:transition-all after:duration-200
-                            peer-checked:after:translate-x-4
-                            transition-colors duration-200
-                          "></div>
-                        </label>
-                      </div>
-                      <p className="text-[10px] text-[#555]">
-                        {pqEdgeSmooth
-                          ? '量化前对 alpha 预抖动，半透明边缘更平滑'
-                          : '直接量化，速度更快但边缘可能有阶梯'}
-                      </p>
-
-                      <button onClick={() => rerunAlgo('pngquant')} disabled={processing.pngquant}
-                        className="w-full py-1.5 text-[10px] font-medium rounded-lg bg-amber-500/10 text-amber-500 hover:bg-amber-500/20 disabled:opacity-50 transition-colors">
-                        {processing.pngquant ? '压缩中...' : '重新压缩'}
-                      </button>
-                    </div>
-                  )}
-
-                  {activeAlgo === 'oxipng' && (
-                    <div className="space-y-2">
-                      <div className="flex items-center justify-between">
-                        <label className="text-[10px] text-[#888]">压缩等级</label>
-                        <span className="text-[10px] text-[#aaa] font-mono">{oxiLevel}</span>
-                      </div>
-                      <input type="range" min={1} max={6} step={1} value={oxiLevel}
-                        onChange={e => setOxiLevel(Number(e.target.value))}
-                        className="w-full h-1 bg-[#333] rounded-full appearance-none cursor-pointer [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-3 [&::-webkit-slider-thumb]:h-3 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-green-500" />
-                      <button onClick={() => rerunAlgo('oxipng')} disabled={processing.oxipng}
-                        className="w-full py-1.5 text-[10px] font-medium rounded-lg bg-green-500/10 text-green-500 hover:bg-green-500/20 disabled:opacity-50 transition-colors">
-                        {processing.oxipng ? '优化中...' : '重新优化'}
-                      </button>
-                    </div>
-                  )}
-
-                  {activeAlgo === 'zopfli' && (
-                    <div className="space-y-2">
-                      {/* 引擎状态指示 */}
-                      <div className="flex items-center justify-between">
-                        <label className="text-[10px] text-[#888]">压缩引擎</label>
-                        <span className={`text-[10px] font-medium ${zopfliEngine === 'available' ? 'text-blue-400' : 'text-[#888]'}`}>
-                          {zopfliEngine === 'available' ? 'Zopfli WASM' : '原生 Deflate'}
-                        </span>
-                      </div>
-
-                      {/* 迭代次数滑块仅在 Zopfli WASM 可用时显示 */}
-                      {zopfliEngine === 'available' ? (
-                        <>
-                          <div className="flex items-center justify-between">
-                            <label className="text-[10px] text-[#888]">迭代次数</label>
-                            <span className="text-[10px] text-[#aaa] font-mono">{zopfliIter}</span>
-                          </div>
-                          <input type="range" min={1} max={15} step={1} value={zopfliIter}
-                            onChange={e => setZopfliIter(Number(e.target.value))}
-                            className="w-full h-1 bg-[#333] rounded-full appearance-none cursor-pointer [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-3 [&::-webkit-slider-thumb]:h-3 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-blue-500" />
-                          <p className="text-[10px] text-[#555]">迭代越多体积越小，但耗时线性增长</p>
-                        </>
-                      ) : (
-                        <>
-                          <p className="text-[10px] text-[#555] leading-relaxed">
-                            Zopfli WASM 在当前环境不可用，已自动使用浏览器原生压缩引擎。原生引擎无迭代参数，但结合最优行滤波仍可获得不错的压缩率。
-                          </p>
-                          <button
-                            onClick={async () => {
-                              resetZopfliStatus();
-                              setZopfliEngine('untested');
-                              // 静默重试，无需提示
-                              await rerunAlgo('zopfli');
-                              setZopfliEngine(getZopfliStatus());
-                            }}
-                            disabled={processing.zopfli}
-                            className="w-full py-1.5 text-[10px] font-medium rounded-lg border border-dashed border-[#333] text-[#666] hover:text-blue-400 hover:border-blue-500/30 disabled:opacity-50 transition-colors">
-                            重试 Zopfli WASM
-                          </button>
-                        </>
-                      )}
-
-                      {/* 进度条 / 重新压缩按钮 */}
-                      {processing.zopfli && zopfliProgress > 0 ? (
-                        <div className="w-full space-y-1">
-                          <div className="flex items-center justify-between text-[10px]">
-                            <span className="text-blue-400">{zopfliPhase}</span>
-                            <span className="text-blue-400 font-mono">{Math.round(zopfliProgress * 100)}%</span>
-                          </div>
-                          <div className="w-full h-1.5 bg-[#222] rounded-full overflow-hidden">
-                            <div className="h-full bg-gradient-to-r from-blue-600 to-blue-400 rounded-full transition-all duration-200 ease-out"
-                              style={{ width: `${Math.max(2, zopfliProgress * 100)}%` }} />
-                          </div>
-                          {zopfliEta > 1000 && (
-                            <div className="text-[10px] text-[#555] text-right font-mono">
-                              预计剩余 {zopfliEta >= 60000
-                                ? `${Math.floor(zopfliEta / 60000)}分${Math.round((zopfliEta % 60000) / 1000)}秒`
-                                : `${Math.round(zopfliEta / 1000)}秒`}
-                            </div>
-                          )}
-                        </div>
-                      ) : !processing.zopfli ? (
-                        <button onClick={() => rerunAlgo('zopfli')} disabled={processing.zopfli}
-                          className="w-full py-1.5 text-[10px] font-medium rounded-lg bg-blue-500/10 text-blue-500 hover:bg-blue-500/20 disabled:opacity-50 transition-colors">
-                          重新压缩
-                        </button>
-                      ) : (
-                        <div className="flex items-center justify-center gap-2 py-1">
-                          <Loader2 className="w-3 h-3 text-blue-500 animate-spin" />
-                          <span className="text-[10px] text-[#666]">初始化中...</span>
-                        </div>
-                      )}
-                    </div>
-                  )}
-
-                  {activeAlgo === 'webp' && (
-                    <div className="space-y-2">
-                      <div className="flex items-center justify-between">
-                        <label className="text-[10px] text-[#888]">无损模式</label>
-                        <label className="relative inline-flex items-center cursor-pointer">
-                          <input type="checkbox" checked={webpLossless}
-                            onChange={e => setWebpLossless(e.target.checked)} className="sr-only peer" />
-                          <div className="
-                            w-9 h-5 rounded-full
-                            bg-[#39393d] peer-checked:bg-cyan-500
-                            after:content-[''] after:absolute after:top-[2px] after:left-[2px]
-                            after:bg-white after:rounded-full after:h-4 after:w-4
-                            after:shadow-sm
-                            after:transition-all after:duration-200
-                            peer-checked:after:translate-x-4
-                            transition-colors duration-200
-                          "></div>
-                        </label>
-                      </div>
-                      {!webpLossless && (
-                        <>
-                          <div className="flex items-center justify-between">
-                            <label className="text-[10px] text-[#888]">画质</label>
-                            <span className="text-[10px] text-[#aaa] font-mono">{webpQuality}</span>
-                          </div>
-                          <input type="range" min={10} max={100} value={webpQuality}
-                            onChange={e => setWebpQuality(Number(e.target.value))}
-                            className="w-full h-1 bg-[#333] rounded-full appearance-none cursor-pointer [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-3 [&::-webkit-slider-thumb]:h-3 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-cyan-500" />
-                        </>
-                      )}
-                      <p className="text-[10px] text-[#555]">{webpLossless ? '像素级无损，压缩率通常优于 PNG' : '越低体积越小，越高画质越好'}</p>
-                      <button onClick={() => rerunAlgo('webp')} disabled={processing.webp}
-                        className="w-full py-1.5 text-[10px] font-medium rounded-lg bg-cyan-500/10 text-cyan-500 hover:bg-cyan-500/20 disabled:opacity-50 transition-colors">
-                        {processing.webp ? '编码中...' : '重新编码'}
-                      </button>
-                    </div>
-                  )}
-
-                  {activeAlgo === 'avif' && (
-                    <div className="space-y-2">
-                      <div className="flex items-center justify-between">
-                        <label className="text-[10px] text-[#888]">画质</label>
-                        <span className="text-[10px] text-[#aaa] font-mono">{avifQuality}</span>
-                      </div>
-                      <input type="range" min={1} max={100} value={avifQuality}
-                        onChange={e => setAvifQuality(Number(e.target.value))}
-                        className="w-full h-1 bg-[#333] rounded-full appearance-none cursor-pointer [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-3 [&::-webkit-slider-thumb]:h-3 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-purple-500" />
-                      <p className="text-[10px] text-[#555]">80+ 肉眼几乎无损，体积远小于 PNG</p>
-                      <button onClick={() => rerunAlgo('avif')} disabled={processing.avif}
-                        className="w-full py-1.5 text-[10px] font-medium rounded-lg bg-purple-500/10 text-purple-500 hover:bg-purple-500/20 disabled:opacity-50 transition-colors">
-                        {processing.avif ? '编码中...' : '重新编码'}
-                      </button>
-                    </div>
-                  )}
-                </div>
-
-                {/* ---- Results Table ---- */}
-                <div className="bg-[#151515] rounded-xl overflow-hidden">
-                  <div className="px-3 py-2 border-b border-[#222]">
-                    <span className="text-xs font-medium text-[#888]">压缩结果对比</span>
-                  </div>
-                  <div className="divide-y divide-[#1a1a1a]">
-                    {ALGORITHMS.map(algo => {
-                      const r = currentResults[algo.id];
-                      const isActive = activeAlgo === algo.id;
-                      const isRunning = processing[algo.id];
-                      return (
-                        <div key={algo.id} role="button" tabIndex={0}
-                          onClick={() => setActiveAlgo(algo.id)}
-                          onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') setActiveAlgo(algo.id); }}
-                          className={`w-full px-3 py-2.5 flex items-center gap-3 transition-colors text-left cursor-pointer select-none
-                            ${isActive ? 'bg-[#1a1a1a]' : 'hover:bg-[#131313]'}`}
-                        >
-                          {/* Status indicator */}
-                          <div className={`w-1.5 h-1.5 rounded-full shrink-0 ${isRunning ? 'bg-yellow-500 animate-pulse' : r ? 'bg-green-500' : 'bg-[#333]'}`} />
-                          {/* Name */}
-                          <div className="flex-1 min-w-0">
-                            <div className="flex items-center gap-1.5">
-                              <span className={`text-xs font-medium ${isActive ? 'text-white' : 'text-[#aaa]'}`}>{algo.name}</span>
-                              <span className="text-[9px] px-1 py-px rounded" style={{ backgroundColor: algo.tagColor + '15', color: algo.tagColor }}>
-                                {algo.tag}
-                              </span>
-                            </div>
-                            {isRunning && algo.id === 'zopfli' && zopfliProgress > 0 ? (
-                              /* Zopfli 迷你真实进度条 + ETA */
-                              <div className="mt-0.5 space-y-0.5">
-                                <div className="flex items-center gap-2">
-                                  <div className="flex-1 h-1 bg-[#222] rounded-full overflow-hidden">
-                                    <div className="h-full bg-blue-500 rounded-full transition-all duration-200 ease-out"
-                                      style={{ width: `${Math.max(2, zopfliProgress * 100)}%` }} />
-                                  </div>
-                                  <span className="text-[10px] text-blue-400 font-mono shrink-0">{Math.round(zopfliProgress * 100)}%</span>
-                                </div>
-                                {zopfliEta > 1000 && (
-                                  <span className="text-[9px] text-[#555] font-mono">
-                                    ~{zopfliEta >= 60000
-                                      ? `${Math.floor(zopfliEta / 60000)}m${Math.round((zopfliEta % 60000) / 1000)}s`
-                                      : `${Math.round(zopfliEta / 1000)}s`}
-                                  </span>
-                                )}
-                              </div>
-                            ) : isRunning ? (
-                              <span className="text-[10px] text-[#666]">处理中...</span>
-                            ) : null}
-                          </div>
-                          {/* Result */}
-                          {r && !isRunning && (
-                            <div className="text-right shrink-0">
-                              <div className="text-xs font-mono text-white">{fmtSize(r.size)}</div>
-                              <div className="flex items-center gap-2 text-[10px]">
-                                <span className={r.ratio < 0.5 ? 'text-green-400' : r.ratio < 0.8 ? 'text-amber-400' : 'text-[#888]'}>
-                                  {fmtRatio(r.ratio)}
-                                </span>
-                                <span className="text-[#555]">{fmtTime(r.time)}</span>
-                              </div>
-                            </div>
-                          )}
-                          {/* Download */}
-                          {r && !isRunning && (
-                            <button
-                              onClick={e => { e.stopPropagation(); handleDownload(r, selectedImage!.file.name, algo.id); }}
-                              className="shrink-0 p-1.5 rounded-md hover:bg-[#333] text-[#666] hover:text-white transition-colors"
-                              title="下载"
-                            >
-                              <Download className="w-3.5 h-3.5" />
-                            </button>
-                          )}
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-
-                {/* Batch actions */}
-                {images.length > 1 && (
-                  <div className="bg-[#151515] rounded-xl p-3 space-y-2">
-                    <span className="text-[10px] text-[#666]">批量操作 ({images.length} 张)</span>
-                    <div className="flex gap-2">
-                      {ALGORITHMS.map(algo => (
-                        <button key={algo.id}
-                          onClick={() => handleBatchDownload(algo.id)}
-                          className="flex-1 py-1.5 text-[10px] font-medium rounded-lg border border-[#333] text-[#888] hover:text-white hover:border-[#555] transition-colors">
-                          {algo.name}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                )}
-              </div>
-            </div>
-          )}
-          </div>
-        )}
-
-        {/* ---- Right Panel: Algorithms & Results (Always Visible) ---- */}
-        <div className="lg:w-[320px] shrink-0 flex flex-col gap-3 overflow-y-auto" style={{ scrollbarWidth: 'thin' }}>
+              {/* ---- 右侧属性栏：仅此一块，与对比图同一行 ---- */}
+              <div key="compressor-right-panel" className="w-full lg:w-[320px] shrink-0 flex flex-col gap-3 overflow-y-auto min-w-0" style={{ scrollbarWidth: 'thin' }}>
           {/* Algorithm tabs */}
           <div className="flex gap-0.5 p-1 bg-[#151515] rounded-lg overflow-x-auto" style={{ scrollbarWidth: 'none' }}>
             {ALGORITHMS.map(algo => (
@@ -940,8 +625,8 @@ export default function ImageCompressor() {
             ))}
           </div>
 
-          {/* Active algorithm settings */}
-          <div className="bg-[#151515] rounded-xl p-3 space-y-2.5">
+          {/* 当前算法设置（仅此一块，下方为结果列表） */}
+          <div className="bg-[#151515] rounded-xl p-3 space-y-2.5" data-section="algo-settings">
             <div className="flex items-center gap-2">
               <span className="text-xs font-medium">{ALGORITHMS.find(a => a.id === activeAlgo)?.name}</span>
               <span className="text-[10px] px-1.5 py-0.5 rounded-full font-medium"
@@ -1144,13 +829,11 @@ export default function ImageCompressor() {
             )}
           </div>
 
-          {/* ---- Results Table (Only show when images exist) ---- */}
-          {images.length > 0 && (
-            <>
-              <div className="bg-[#151515] rounded-xl overflow-hidden">
-                <div className="px-3 py-2 border-b border-[#222]">
-                  <span className="text-xs font-medium text-[#888]">压缩结果对比</span>
-                </div>
+          {/* ---- 压缩结果对比（与上方算法设置同属本栏，仅一块） ---- */}
+          <div className="bg-[#151515] rounded-xl overflow-hidden">
+            <div className="px-3 py-2 border-b border-[#222]">
+              <span className="text-xs font-medium text-[#888]">压缩结果对比</span>
+            </div>
                 <div className="divide-y divide-[#1a1a1a]">
                   {ALGORITHMS.map(algo => {
                     const r = currentResults[algo.id];
@@ -1223,24 +906,26 @@ export default function ImageCompressor() {
                 </div>
               </div>
 
-              {/* Batch actions */}
-              {images.length > 1 && (
-                <div className="bg-[#151515] rounded-xl p-3 space-y-2">
-                  <span className="text-[10px] text-[#666]">批量操作 ({images.length} 张)</span>
-                  <div className="flex gap-2">
-                    {ALGORITHMS.map(algo => (
-                      <button key={algo.id}
-                        onClick={() => handleBatchDownload(algo.id)}
-                        className="flex-1 py-1.5 text-[10px] font-medium rounded-lg border border-[#333] text-[#888] hover:text-white hover:border-[#555] transition-colors">
-                        {algo.name}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              )}
-            </>
+          {/* Batch actions */}
+          {images.length > 1 && (
+            <div className="bg-[#151515] rounded-xl p-3 space-y-2">
+              <span className="text-[10px] text-[#666]">批量操作 ({images.length} 张)</span>
+              <div className="flex gap-2">
+                {ALGORITHMS.map(algo => (
+                  <button key={algo.id}
+                    onClick={() => handleBatchDownload(algo.id)}
+                    className="flex-1 py-1.5 text-[10px] font-medium rounded-lg border border-[#333] text-[#888] hover:text-white hover:border-[#555] transition-colors">
+                    {algo.name}
+                  </button>
+                ))}
+              </div>
+            </div>
           )}
-        </div>
+              </div>
+            </div>
+          )}
+          </div>
+        )}
       </div>
     </div>
   );

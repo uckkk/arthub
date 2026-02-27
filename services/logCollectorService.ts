@@ -74,12 +74,20 @@ class LogCollectorService {
     }
   }
 
+  /** 是否为可忽略的“崩溃”（如 ResizeObserver 良性提示，不记为崩溃） */
+  private isBenignError(message: string): boolean {
+    const m = (message || '').toLowerCase();
+    return m.includes('resizeobserver loop') || m.includes('resizeobserver loop completed');
+  }
+
   /** 崩溃守卫：在 unload 前保存最后的错误 */
   private installCrashGuard() {
     window.addEventListener('error', (e) => {
       try {
+        const message = e.message || 'Unknown error';
+        if (this.isBenignError(message)) return;
         const record: CrashRecord = {
-          message: e.message || 'Unknown error',
+          message,
           stack: e.error?.stack,
           timestamp: new Date().toISOString(),
           url: e.filename || location.href,
@@ -90,8 +98,10 @@ class LogCollectorService {
 
     window.addEventListener('unhandledrejection', (e) => {
       try {
+        const message = e.reason?.message || String(e.reason);
+        if (this.isBenignError(message)) return;
         const record: CrashRecord = {
-          message: e.reason?.message || String(e.reason),
+          message,
           stack: e.reason?.stack,
           timestamp: new Date().toISOString(),
           url: location.href,

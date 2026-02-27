@@ -1,5 +1,8 @@
 use tauri::{AppHandle, Manager};
 use image::GenericImageView;
+
+#[cfg(target_os = "windows")]
+use std::os::windows::process::CommandExt;
 use crate::asset_manager::db::{self, AssetManagerState, AssetQueryParams, AssetQueryResult, FolderInfo, FolderStats, ScanProgress, TagInfo, AssetDetail, SmartFolder};
 use crate::asset_manager::scanner;
 use crate::asset_manager::thumbnail;
@@ -904,7 +907,11 @@ pub fn ffmpeg_check(app: tauri::AppHandle) -> ffmpeg::FfmpegStatus {
     if let Some(app_data) = app.path_resolver().app_data_dir() {
         if let Some(ff_path) = ffmpeg::get_ffmpeg_path(&app_data) {
             if ff_path.exists() {
-                if let Ok(output) = std::process::Command::new(&ff_path).arg("-version").output() {
+                let mut c = std::process::Command::new(&ff_path);
+                c.arg("-version");
+                #[cfg(target_os = "windows")]
+                c.creation_flags(0x0800_0000);
+                if let Ok(output) = c.output() {
                     if output.status.success() {
                         let version_str = String::from_utf8_lossy(&output.stdout);
                         let version = version_str.lines().next().unwrap_or("").to_string();

@@ -4,6 +4,9 @@ use std::hash::{Hash, Hasher};
 use std::path::{Path, PathBuf};
 use std::fs;
 
+#[cfg(target_os = "windows")]
+use std::os::windows::process::CommandExt;
+
 /// 可生成缩略图的图片格式（image crate 能解码的）
 const DECODABLE_EXTENSIONS: &[&str] = &[
     "png", "jpg", "jpeg", "gif", "bmp", "webp", "tiff", "tif", "ico", "tga", "hdr", "exr",
@@ -211,19 +214,20 @@ pub fn generate_video_thumbnail(
         });
     }
 
-    // 用 FFmpeg 提取第1秒的帧
-    let status = std::process::Command::new(ffmpeg_path)
-        .args(&[
-            "-y", "-i", video_path,
-            "-ss", "1",
-            "-vframes", "1",
-            "-vf", &format!("scale={}:-1", max_width),
-            &thumb_path.to_string_lossy(),
-        ])
-        .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null())
-        .status()
-        .map_err(|e| format!("执行FFmpeg失败: {}", e))?;
+    // 用 FFmpeg 提取第1秒的帧（Windows 下不弹出控制台）
+    let mut cmd = std::process::Command::new(ffmpeg_path);
+    cmd.args(&[
+        "-y", "-i", video_path,
+        "-ss", "1",
+        "-vframes", "1",
+        "-vf", &format!("scale={}:-1", max_width),
+        &thumb_path.to_string_lossy(),
+    ])
+    .stdout(std::process::Stdio::null())
+    .stderr(std::process::Stdio::null());
+    #[cfg(target_os = "windows")]
+    cmd.creation_flags(0x0800_0000);
+    let status = cmd.status().map_err(|e| format!("执行FFmpeg失败: {}", e))?;
 
     if !status.success() {
         return Err("FFmpeg缩略图生成失败".to_string());
@@ -238,16 +242,17 @@ pub fn generate_video_thumbnail(
 
 /// 通过 ffprobe 获取视频/音频尺寸和时长
 pub fn get_media_info(ffprobe_path: &Path, media_path: &str) -> Option<(u32, u32, f64)> {
-    let output = std::process::Command::new(ffprobe_path)
-        .args(&[
-            "-v", "quiet",
-            "-print_format", "json",
-            "-show_streams",
-            "-show_format",
-            media_path,
-        ])
-        .output()
-        .ok()?;
+    let mut cmd = std::process::Command::new(ffprobe_path);
+    cmd.args(&[
+        "-v", "quiet",
+        "-print_format", "json",
+        "-show_streams",
+        "-show_format",
+        media_path,
+    ]);
+    #[cfg(target_os = "windows")]
+    cmd.creation_flags(0x0800_0000);
+    let output = cmd.output().ok()?;
 
     let json_str = String::from_utf8_lossy(&output.stdout);
     let parsed: serde_json::Value = serde_json::from_str(&json_str).ok()?;

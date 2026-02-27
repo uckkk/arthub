@@ -3,6 +3,9 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
+#[cfg(target_os = "windows")]
+use std::os::windows::process::CommandExt;
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FfmpegStatus {
     pub installed: bool,
@@ -17,10 +20,22 @@ pub struct DownloadProgress {
     pub message: String,
 }
 
+const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+
+fn ffmpeg_output(mut cmd: Command) -> std::io::Result<std::process::Output> {
+    #[cfg(target_os = "windows")]
+    {
+        cmd.creation_flags(CREATE_NO_WINDOW);
+    }
+    cmd.output()
+}
+
 /// Check if ffmpeg is available on the system
 pub fn check_ffmpeg() -> FfmpegStatus {
     // First check in PATH
-    if let Ok(output) = Command::new("ffmpeg").arg("-version").output() {
+    let mut c = Command::new("ffmpeg");
+    c.arg("-version");
+    if let Ok(output) = ffmpeg_output(c) {
         if output.status.success() {
             let version_str = String::from_utf8_lossy(&output.stdout);
             let version = version_str.lines().next().unwrap_or("").to_string();
@@ -43,7 +58,9 @@ pub fn check_ffmpeg() -> FfmpegStatus {
 
         for p in &common_paths {
             if Path::new(p).exists() {
-                if let Ok(output) = Command::new(p).arg("-version").output() {
+                let mut c = Command::new(p);
+                c.arg("-version");
+                if let Ok(output) = ffmpeg_output(c) {
                     if output.status.success() {
                         let version_str = String::from_utf8_lossy(&output.stdout);
                         let version = version_str.lines().next().unwrap_or("").to_string();
@@ -69,7 +86,9 @@ pub fn get_ffmpeg_path(app_data_dir: &Path) -> Option<PathBuf> {
     }
 
     // Check system PATH
-    if Command::new("ffmpeg").arg("-version").output().map(|o| o.status.success()).unwrap_or(false) {
+    let mut c = Command::new("ffmpeg");
+    c.arg("-version");
+    if ffmpeg_output(c).map(|o| o.status.success()).unwrap_or(false) {
         return Some(PathBuf::from("ffmpeg"));
     }
 
@@ -200,18 +219,17 @@ pub fn extract_video_thumbnail(
     output_path: &Path,
     width: u32,
 ) -> Result<(), String> {
-    let output = Command::new(ffmpeg_path)
-        .args(&[
-            "-y",
-            "-i", &video_path.to_string_lossy(),
-            "-vframes", "1",
-            "-ss", "00:00:01",
-            "-vf", &format!("scale={}:-1", width),
-            "-q:v", "3",
-            &output_path.to_string_lossy(),
-        ])
-        .output()
-        .map_err(|e| format!("ffmpeg 执行失败: {}", e))?;
+    let mut c = Command::new(ffmpeg_path);
+    c.args(&[
+        "-y",
+        "-i", &video_path.to_string_lossy(),
+        "-vframes", "1",
+        "-ss", "00:00:01",
+        "-vf", &format!("scale={}:-1", width),
+        "-q:v", "3",
+        &output_path.to_string_lossy(),
+    ]);
+    let output = ffmpeg_output(c).map_err(|e| format!("ffmpeg 执行失败: {}", e))?;
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
