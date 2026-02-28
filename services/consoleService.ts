@@ -700,20 +700,21 @@ class ConsoleService {
   
   // 性能监控
   private startPerformanceMonitoring() {
-    // 严重长任务告警节流：3 分钟内只报一次，避免刷屏
+    // 最优策略：严重仅 ≥5 秒、5 分钟节流；较长 1s～5s、2 分钟节流，减少 2～3 秒任务的告警噪音
     let lastSevereLongTaskAt = 0;
-    const severeLongTaskCooldownMs = 3 * 60 * 1000;
+    let lastMediumLongTaskAt = 0;
+    const severeLongTaskThresholdMs = 5000;
+    const severeLongTaskCooldownMs = 5 * 60 * 1000;
+    const mediumLongTaskThresholdMs = 1000;
+    const mediumLongTaskCooldownMs = 2 * 60 * 1000;
 
     // 监控长任务（可能阻塞 UI）
-    // 注意：长任务阈值提高到 200ms，避免正常操作（如图片压缩）被误报
     if ('PerformanceObserver' in window) {
       try {
         const observer = new PerformanceObserver((list) => {
           for (const entry of list.getEntries()) {
             const duration = entry.duration;
             const name = entry.name || 'Unknown';
-            
-            // 页面在后台时可能因定时器节流出现长任务，不报告
             if (typeof document !== 'undefined' && document.visibilityState !== 'visible') return;
 
             const isExpectedLongTask =
@@ -730,7 +731,7 @@ class ConsoleService {
               name.includes('embedding');
 
             if (duration > 200 && !isExpectedLongTask) {
-              if (duration > 1000) {
+              if (duration > severeLongTaskThresholdMs) {
                 const now = Date.now();
                 if (now - lastSevereLongTaskAt >= severeLongTaskCooldownMs) {
                   lastSevereLongTaskAt = now;
@@ -741,15 +742,15 @@ class ConsoleService {
                     `建议: 检查是否有阻塞主线程的同步操作，考虑使用 Web Worker`
                   ]);
                 }
-              } else {
-                // 200ms-1秒之间的中等警告（降低频率，避免日志过多）
-                // 只记录超过 500ms 的
-                if (duration > 500) {
+              } else if (duration > mediumLongTaskThresholdMs) {
+                const now = Date.now();
+                if (now - lastMediumLongTaskAt >= mediumLongTaskCooldownMs) {
+                  lastMediumLongTaskAt = now;
                   this.addLog('warn', [
                     `[性能提示] 检测到较长任务`,
                     `耗时: ${Math.round(duration)}ms`,
                     `名称: ${name}`,
-                    `建议: 如果频繁出现，考虑优化`
+                    `建议: 若频繁出现可考虑优化`
                   ]);
                 }
               }

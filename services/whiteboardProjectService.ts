@@ -353,29 +353,59 @@ export async function saveCanvasData(projectId: string, data: unknown): Promise<
     if (!isTauriEnvironment()) {
       throw new Error('此功能仅在 Tauri 桌面应用中可用');
     }
+    if (!projectId || typeof projectId !== 'string') {
+      throw new Error('项目 ID 无效');
+    }
 
-    const projects = getAllProjects();
+    let projects: WhiteboardProject[];
+    try {
+      projects = getAllProjects();
+    } catch {
+      throw new Error('读取项目列表失败，请刷新后重试');
+    }
     const project = projects.find(p => p.id === projectId);
     if (!project) {
       throw new Error('项目不存在');
     }
+    if (!project.directoryPath?.trim()) {
+      throw new Error('项目目录未设置，请先在设置中关联存储路径');
+    }
 
     const { join } = await getTauriPathApi();
-    const filePath = await join(project.directoryPath, CANVAS_DATA_FILE);
+    const filePath = await join(project.directoryPath.trim(), CANVAS_DATA_FILE);
+    if (!filePath?.trim()) {
+      throw new Error('无法生成保存路径');
+    }
 
-    // 将数据序列化为 JSON
-    const jsonContent = JSON.stringify(data, null, 2);
+    // 将数据序列化为 JSON（防止循环引用或不可序列化值导致崩溃）
+    let jsonContent: string;
+    try {
+      jsonContent = JSON.stringify(data, null, 2);
+    } catch (stringifyError) {
+      const msg = stringifyError instanceof Error ? stringifyError.message : String(stringifyError);
+      if (/circular|cyclic/i.test(msg)) {
+        throw new Error('画布数据含循环引用，无法保存，请尝试减少内容后重试');
+      }
+      if (/stack|maximum/i.test(msg)) {
+        throw new Error('画布内容过大或结构过深，请尝试减少内容后重试');
+      }
+      throw new Error(`序列化画布数据失败: ${msg}`);
+    }
+
     const encoder = new TextEncoder();
     const uint8Array = encoder.encode(jsonContent);
+    const content = Array.from(uint8Array);
+    const MAX_SIZE = 15 * 1024 * 1024; // 15MB，避免过大 payload 导致 IPC/崩溃
+    if (content.length > MAX_SIZE) {
+      throw new Error(`画布数据过大（${(content.length / 1024 / 1024).toFixed(1)}MB），请减少内容或分批保存后重试`);
+    }
 
-    // 写入文件
     const { invoke } = await import('@tauri-apps/api/tauri');
     await invoke('write_binary_file_with_path', {
-      filePath: filePath,
-      content: Array.from(uint8Array),
+      filePath,
+      content,
     });
 
-    // 更新项目更新时间
     project.updatedAt = Date.now();
     saveProjects(projects);
 

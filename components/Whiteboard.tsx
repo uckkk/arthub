@@ -185,23 +185,72 @@ const Whiteboard: React.FC = () => {
     }
   };
 
-  // 手动保存当前画布（未关联本地目录时提示并跳转设置）
-  const handleSaveCanvas = useCallback(async () => {
-    if (!currentProject || !editorRef.current) return;
-    const path = await getSavedStoragePath();
-    if (!path) {
-      showToast('info', '请先关联本地目录以保存画布');
-      openSettingsAndHighlightPath();
-      return;
-    }
-    try {
-      const snapshot = editorRef.current.getSnapshot();
-      await saveCanvasData(currentProject.id, snapshot);
-      showToast('success', '画布已保存');
-    } catch (error: any) {
-      showToast('error', `保存失败: ${error.message}`);
-    }
-  }, [currentProject, showToast]);
+  // 手动保存当前画布（未关联本地目录时提示并跳转设置；延后执行避免阻塞主线程导致崩溃）
+  const [savingCanvas, setSavingCanvas] = useState(false);
+  const handleSaveCanvas = useCallback(() => {
+    if (savingCanvas || !currentProject?.id || !editorRef.current) return;
+    getSavedStoragePath().then((path) => {
+      if (!path) {
+        showToast('info', '请先关联本地目录以保存画布');
+        openSettingsAndHighlightPath();
+        return;
+      }
+      setSavingCanvas(true);
+      showToast('info', '正在保存画布，请勿关闭…');
+      const projectId = String(currentProject.id);
+      const runSave = () => {
+        try {
+          if (!editorRef.current) {
+            setSavingCanvas(false);
+            return;
+          }
+          let snapshot: unknown;
+          try {
+            snapshot = editorRef.current.getSnapshot();
+          } catch (e) {
+            const msg = e instanceof Error ? e.message : String(e);
+            showToast('error', `获取画布失败: ${msg}`);
+            setSavingCanvas(false);
+            return;
+          }
+          if (snapshot === undefined) {
+            showToast('error', '无法获取画布数据');
+            setSavingCanvas(false);
+            return;
+          }
+          // 让出主线程再序列化+写入，避免 getSnapshot 与 JSON.stringify 连续阻塞导致卡死/闪退
+          const doWrite = () => {
+            Promise.resolve()
+              .then(() => saveCanvasData(projectId, snapshot))
+              .then(() => showToast('success', '画布已保存'))
+              .catch((error: unknown) => {
+                const msg = error instanceof Error ? error.message : String(error);
+                showToast('error', `保存失败: ${msg}`);
+                console.error('[Whiteboard] handleSaveCanvas', error);
+              })
+              .finally(() => setSavingCanvas(false));
+          };
+          if (typeof requestIdleCallback !== 'undefined') {
+            requestIdleCallback(doWrite, { timeout: 2000 });
+          } else {
+            setTimeout(doWrite, 0);
+          }
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : String(err);
+          showToast('error', `保存失败: ${msg}`);
+          console.error('[Whiteboard] handleSaveCanvas sync', err);
+          setSavingCanvas(false);
+        }
+      };
+      if (typeof requestIdleCallback !== 'undefined') {
+        requestIdleCallback(runSave, { timeout: 3000 });
+      } else {
+        setTimeout(runSave, 0);
+      }
+    }).catch((err) => {
+      showToast('error', err instanceof Error ? err.message : '获取存储路径失败');
+    });
+  }, [currentProject, showToast, savingCanvas]);
 
   // 监听「截图/录屏」导入画板：单路径时入队并触发处理（不跳转）；处理时整齐排列不叠加
   useEffect(() => {
