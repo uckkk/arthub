@@ -99,21 +99,18 @@ const Whiteboard: React.FC = () => {
   const [showProjectSelector, setShowProjectSelector] = useState(false);
   const [storagePath, setStoragePath] = useState<string | null>(null);
   const editorRef = useRef<Editor | null>(null);
+  const whiteboardContainerRef = useRef<HTMLDivElement>(null);
 
-  // 延迟挂载 tldraw：首次渲染先显示轻量 placeholder，空闲时再挂载重量级画布
+  // 仅在容器可见（用户停留在白板 tab）时才挂载 tldraw，避免在其他 tab 下触发 2s+ 同步阻塞
   const [tldrawReady, setTldrawReady] = useState(false);
   useEffect(() => {
-    const id = typeof requestIdleCallback !== 'undefined'
-      ? requestIdleCallback(() => setTldrawReady(true), { timeout: 300 })
-      : setTimeout(() => setTldrawReady(true), 50);
-    return () => {
-      if (typeof cancelIdleCallback !== 'undefined' && typeof id === 'number') {
-        cancelIdleCallback(id);
-      } else {
-        clearTimeout(id as ReturnType<typeof setTimeout>);
-      }
-    };
-  }, []);
+    if (tldrawReady) return;
+    const id = setInterval(() => {
+      const el = whiteboardContainerRef.current;
+      if (el && el.offsetParent !== null) setTldrawReady(true);
+    }, 250);
+    return () => clearInterval(id);
+  }, [tldrawReady]);
   
   // 进度条状态（加载/上传时显示）
   const [progress, setProgress] = useState<{ visible: boolean; percent: number; message: string }>({
@@ -662,8 +659,6 @@ const Whiteboard: React.FC = () => {
     }
   }, [currentProject, showToast]);
 
-  // 处理拖拽上传
-  const whiteboardContainerRef = useRef<HTMLDivElement>(null);
   const handleDrop = useCallback(async (e: React.DragEvent) => {
     e.preventDefault();
     e.stopPropagation();
