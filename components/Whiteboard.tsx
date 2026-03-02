@@ -1053,15 +1053,12 @@ const Whiteboard: React.FC = () => {
             editorRef.current = null;
           }}>
             <Tldraw
-              // 不使用 key 避免切换项目时卸载，防止 tldraw 内部 dispose 触发 "h is not a function"
-              onMount={async (editor) => {
+              onMount={(editor) => {
                 const projectId = currentProject.id;
                 editorRef.current = editor;
                 console.log('tldraw 画布已加载，项目:', currentProject.name);
 
-                // 隐藏 tldraw 水印
                 const hideWatermark = () => {
-                  // 方法1：通过 CSS 隐藏
                   let style = document.getElementById('tldraw-hide-watermark');
                   if (!style) {
                     style = document.createElement('style');
@@ -1084,8 +1081,6 @@ const Whiteboard: React.FC = () => {
                       pointer-events: none !important;
                     }
                   `;
-                  
-                  // 方法2：直接移除 DOM 元素
                   const watermarkElements = document.querySelectorAll(
                     '[data-testid="made-with-tldraw"], a[href*="tldraw"], a[href*="tldraw.com"]'
                   );
@@ -1096,10 +1091,7 @@ const Whiteboard: React.FC = () => {
                   });
                 };
                 
-                // 立即隐藏
                 hideWatermark();
-                
-                // 延迟再次隐藏（确保DOM渲染后），保存 timer ID 以便清理
                 const wmTimers = [
                   setTimeout(hideWatermark, 100),
                   setTimeout(hideWatermark, 500),
@@ -1107,42 +1099,38 @@ const Whiteboard: React.FC = () => {
                   setTimeout(hideWatermark, 2000),
                 ];
                 
-                // 使用 MutationObserver 监控 tldraw 容器（而非整个 body，减少性能开销）
                 const tldrawContainer = document.querySelector('.tl-container') || document.body;
                 const watermarkObserver = new MutationObserver(() => {
                   hideWatermark();
                 });
-                
                 watermarkObserver.observe(tldrawContainer, {
                   childList: true,
                   subtree: true,
                 });
 
                 let savedTheme: string | null = null;
-                try { savedTheme = localStorage.getItem(THEME_STORAGE_KEY); } catch { /* Safari 隐私模式 */ }
+                try { savedTheme = localStorage.getItem(THEME_STORAGE_KEY); } catch { /* ignore */ }
                 editor.user.updateUserPreferences({
                   colorScheme: savedTheme === 'light' ? 'light' : 'dark',
                 });
 
-                try {
-                  const savedData = await loadCanvasData(projectId, (percent, message) => {
-                    setProgress({ visible: true, percent, message });
-                  });
-                  if (savedData) {
-                    editor.loadSnapshot(savedData as any);
+                // 异步加载画布数据（不阻塞 onMount 返回，避免返回 Promise 导致 tldraw 内部 "p is not a function"）
+                loadCanvasData(projectId, (percent, message) => {
+                  setProgress({ visible: true, percent, message });
+                }).then((savedData) => {
+                  if (savedData && editorRef.current) {
+                    editorRef.current.loadSnapshot(savedData as any);
                     console.log('已从本地文件加载画布数据');
                   }
-                } catch (error) {
+                }).catch((error) => {
                   console.error('加载画布数据失败:', error);
-                } finally {
+                }).finally(() => {
                   setProgress(p => ({ ...p, visible: false }));
-                }
+                });
 
-                // 使用定时器代替 store.listen，避免 tldraw 内部 dispose 时 "h is not a function" 错误
-                const AUTO_SAVE_INTERVAL_MS = 600000; // 10 分钟
+                const AUTO_SAVE_INTERVAL_MS = 600000;
                 const intervalId = setInterval(() => {
                   if (!editorRef.current) return;
-                  // 页面隐藏时不自动保存，避免后台时主线程阻塞触发长任务告警
                   if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return;
                   const runSave = () => {
                     if (!editorRef.current) return;
@@ -1155,7 +1143,6 @@ const Whiteboard: React.FC = () => {
                       console.error('自动保存失败:', error);
                     }
                   };
-                  // 在空闲时执行 getSnapshot+保存，避免在定时器回调中直接阻塞主线程 3s+（长任务告警）
                   if (typeof requestIdleCallback !== 'undefined') {
                     requestIdleCallback(runSave, { timeout: 4000 });
                   } else {
