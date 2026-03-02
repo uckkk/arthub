@@ -7,29 +7,40 @@ use std::sync::Mutex;
 
 pub struct AssetManagerState {
     pub db: Mutex<Connection>,
-    pub thumb_dir: PathBuf,
+    pub thumb_dir: Mutex<PathBuf>,
 }
 
 impl AssetManagerState {
     pub fn new(db_path: PathBuf, thumb_dir: PathBuf) -> Result<Self, String> {
-        let conn = Connection::open(&db_path)
-            .map_err(|e| format!("打开数据库失败: {}", e))?;
-
-        // WAL 模式：允许并发读 + 串行写，性能更好
-        conn.execute_batch(
-            "PRAGMA journal_mode=WAL;
-             PRAGMA synchronous=NORMAL;
-             PRAGMA foreign_keys=ON;
-             PRAGMA cache_size=-8000;"
-        ).map_err(|e| format!("设置数据库参数失败: {}", e))?;
-
+        let conn = open_connection(&db_path)?;
         init_tables(&conn)?;
 
         Ok(Self {
             db: Mutex::new(conn),
-            thumb_dir,
+            thumb_dir: Mutex::new(thumb_dir),
         })
     }
+
+    pub fn reconnect(&self, db_path: PathBuf, thumb_dir: PathBuf) -> Result<(), String> {
+        let conn = open_connection(&db_path)?;
+        init_tables(&conn)?;
+        std::fs::create_dir_all(&thumb_dir).ok();
+        *self.db.lock().map_err(|e| e.to_string())? = conn;
+        *self.thumb_dir.lock().map_err(|e| e.to_string())? = thumb_dir;
+        Ok(())
+    }
+}
+
+fn open_connection(db_path: &std::path::Path) -> Result<Connection, String> {
+    let conn = Connection::open(db_path)
+        .map_err(|e| format!("打开数据库失败: {}", e))?;
+    conn.execute_batch(
+        "PRAGMA journal_mode=WAL;
+         PRAGMA synchronous=NORMAL;
+         PRAGMA foreign_keys=ON;
+         PRAGMA cache_size=-8000;"
+    ).map_err(|e| format!("设置数据库参数失败: {}", e))?;
+    Ok(conn)
 }
 
 // ---- Data Types ----
@@ -225,6 +236,15 @@ fn init_tables(conn: &Connection) -> Result<(), String> {
             asset_id INTEGER PRIMARY KEY,
             embedding BLOB NOT NULL,
             model_version TEXT NOT NULL DEFAULT 'clip-vit-base-patch32',
+            FOREIGN KEY (asset_id) REFERENCES assets(id) ON DELETE CASCADE
+        );
+
+        CREATE TABLE IF NOT EXISTS asset_custom_paths (
+            asset_id INTEGER PRIMARY KEY,
+            source_path TEXT NOT NULL DEFAULT '',
+            slice_path TEXT NOT NULL DEFAULT '',
+            effect_path TEXT NOT NULL DEFAULT '',
+            updated_at INTEGER NOT NULL DEFAULT (strftime('%s','now')),
             FOREIGN KEY (asset_id) REFERENCES assets(id) ON DELETE CASCADE
         );"
     ).map_err(|e| format!("创建数据表失败: {}", e))?;
@@ -540,11 +560,19 @@ pub struct TagInfo {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CustomPaths {
+    pub source_path: String,
+    pub slice_path: String,
+    pub effect_path: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AssetDetail {
     pub asset: AssetInfo,
     pub tags: Vec<TagInfo>,
     pub rating: i32,
     pub note: String,
+    pub custom_paths: CustomPaths,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -692,7 +720,44 @@ pub fn get_note(conn: &Connection, asset_id: i64) -> String {
     ).unwrap_or_default()
 }
 
-// ---- Asset Detail (tags + rating + note in one call) ----
+// ---- Custom Paths ----
+
+pub fn get_custom_paths(conn: &Connection, asset_id: i64) -> CustomPaths {
+    conn.query_row(
+        "SELECT source_path, slice_path, effect_path FROM asset_custom_paths WHERE asset_id = ?1",
+        params![asset_id],
+        |row| Ok(CustomPaths {
+            source_path: row.get(0)?,
+            slice_path: row.get(1)?,
+            effect_path: row.get(2)?,
+        }),
+    ).unwrap_or_else(|_| CustomPaths {
+        source_path: String::new(),
+        slice_path: String::new(),
+        effect_path: String::new(),
+    })
+}
+
+pub fn set_custom_paths(conn: &Connection, asset_id: i64, source_path: &str, slice_path: &str, effect_path: &str) -> Result<(), String> {
+    if source_path.is_empty() && slice_path.is_empty() && effect_path.is_empty() {
+        conn.execute("DELETE FROM asset_custom_paths WHERE asset_id = ?1", params![asset_id])
+            .map_err(|e| e.to_string())?;
+    } else {
+        conn.execute(
+            "INSERT INTO asset_custom_paths (asset_id, source_path, slice_path, effect_path)
+             VALUES (?1, ?2, ?3, ?4)
+             ON CONFLICT(asset_id) DO UPDATE SET
+               source_path = excluded.source_path,
+               slice_path = excluded.slice_path,
+               effect_path = excluded.effect_path,
+               updated_at = strftime('%s','now')",
+            params![asset_id, source_path, slice_path, effect_path],
+        ).map_err(|e| format!("设置自定义路径失败: {}", e))?;
+    }
+    Ok(())
+}
+
+// ---- Asset Detail (tags + rating + note + custom_paths in one call) ----
 
 pub fn get_asset_detail(conn: &Connection, asset_id: i64) -> Result<AssetDetail, String> {
     let asset = conn.query_row(
@@ -710,8 +775,9 @@ pub fn get_asset_detail(conn: &Connection, asset_id: i64) -> Result<AssetDetail,
     let tags = get_asset_tags(conn, asset_id)?;
     let rating = get_rating(conn, asset_id);
     let note = get_note(conn, asset_id);
+    let custom_paths = get_custom_paths(conn, asset_id);
 
-    Ok(AssetDetail { asset, tags, rating, note })
+    Ok(AssetDetail { asset, tags, rating, note, custom_paths })
 }
 
 // ---- Smart Folder CRUD ----

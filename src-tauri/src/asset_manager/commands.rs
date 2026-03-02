@@ -3,6 +3,7 @@ use image::GenericImageView;
 
 #[cfg(target_os = "windows")]
 use std::os::windows::process::CommandExt;
+use std::path::PathBuf;
 use crate::asset_manager::db::{self, AssetManagerState, AssetQueryParams, AssetQueryResult, FolderInfo, FolderStats, ScanProgress, TagInfo, AssetDetail, SmartFolder};
 use crate::asset_manager::scanner;
 use crate::asset_manager::thumbnail;
@@ -57,7 +58,10 @@ pub fn asset_remove_folder(
         .collect();
 
     // 清理缩略图
-    thumbnail::cleanup_thumbnails(&state.thumb_dir, &paths);
+    {
+        let td = state.thumb_dir.lock().map_err(|e| e.to_string())?;
+        thumbnail::cleanup_thumbnails(&td, &paths);
+    }
 
     // 删除数据库记录
     db::remove_folder(&conn, folder_id)
@@ -82,7 +86,7 @@ pub async fn asset_scan_folder(
         // 清空旧记录
         db::clear_folder_assets(&conn, folder_id)?;
 
-        (path, state.thumb_dir.clone())
+        (path, state.thumb_dir.lock().map_err(|e| e.to_string())?.clone())
     };
 
     // 2. 扫描文件系统（在阻塞线程中执行）
@@ -345,7 +349,20 @@ pub fn asset_set_note(
     db::set_note(&conn, asset_id, &note, "")
 }
 
-/// 获取资产详情（含标签+评分+备注）
+/// 设置资产自定义路径
+#[tauri::command]
+pub fn asset_set_custom_paths(
+    state: tauri::State<'_, AssetManagerState>,
+    asset_id: i64,
+    source_path: String,
+    slice_path: String,
+    effect_path: String,
+) -> Result<(), String> {
+    let conn = state.db.lock().map_err(|e| e.to_string())?;
+    db::set_custom_paths(&conn, asset_id, &source_path, &slice_path, &effect_path)
+}
+
+/// 获取资产详情（含标签+评分+备注+自定义路径）
 #[tauri::command]
 pub fn asset_get_detail(
     state: tauri::State<'_, AssetManagerState>,
@@ -475,7 +492,10 @@ pub fn asset_batch_delete(
     }
 
     // 清理缩略图
-    thumbnail::cleanup_thumbnails(&state.thumb_dir, &paths);
+    {
+        let td = state.thumb_dir.lock().map_err(|e| e.to_string())?;
+        thumbnail::cleanup_thumbnails(&td, &paths);
+    }
 
     // 删除数据库记录
     db::batch_delete_assets(&conn, &asset_ids)
@@ -1186,4 +1206,41 @@ pub fn ai_embedding_stats(
         "total": total,
         "progress": if total > 0 { indexed as f64 / total as f64 } else { 0.0 },
     }))
+}
+
+/// 切换资产管理器存储路径（用户更改存储目录后调用，无需重启）
+#[tauri::command]
+pub fn asset_reconnect_storage(
+    app: AppHandle,
+    state: tauri::State<'_, AssetManagerState>,
+    storage_dir: String,
+) -> Result<(), String> {
+    let base = if storage_dir.is_empty() {
+        app.path_resolver().app_data_dir()
+            .ok_or_else(|| "无法获取应用数据目录".to_string())?
+    } else {
+        PathBuf::from(&storage_dir)
+    };
+
+    let am_dir = base.join("asset_manager");
+    let thumb_dir = am_dir.join("thumbnails");
+    std::fs::create_dir_all(&thumb_dir)
+        .map_err(|e| format!("创建目录失败: {}", e))?;
+    let db_path = am_dir.join("assets.db");
+
+    // 如果旧位置（AppData）有数据而新位置没有，自动迁移
+    if let Some(app_data) = app.path_resolver().app_data_dir() {
+        let old_db = app_data.join("asset_manager").join("assets.db");
+        if old_db.exists() && !db_path.exists() && old_db != db_path {
+            std::fs::copy(&old_db, &db_path).ok();
+            let old_thumb = app_data.join("asset_manager").join("thumbnails");
+            if old_thumb.exists() {
+                crate::copy_dir_recursive(&old_thumb, &thumb_dir);
+            }
+        }
+    }
+
+    state.reconnect(db_path, thumb_dir)?;
+    println!("Asset manager reconnected to: {:?}", am_dir);
+    Ok(())
 }

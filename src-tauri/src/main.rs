@@ -7,6 +7,21 @@ use std::sync::Mutex;
 
 mod asset_manager;
 mod screen_capture;
+
+fn copy_dir_recursive(src: &std::path::Path, dst: &std::path::Path) {
+    if let Ok(entries) = std::fs::read_dir(src) {
+        std::fs::create_dir_all(dst).ok();
+        for entry in entries.flatten() {
+            let src_path = entry.path();
+            let dst_path = dst.join(entry.file_name());
+            if src_path.is_dir() {
+                copy_dir_recursive(&src_path, &dst_path);
+            } else if !dst_path.exists() {
+                std::fs::copy(&src_path, &dst_path).ok();
+            }
+        }
+    }
+}
 #[cfg(target_os = "windows")]
 mod embedded_resources;
 
@@ -2456,10 +2471,48 @@ fn main() {
             {
                 let app_data = app.path_resolver().app_data_dir()
                     .expect("Failed to get app data dir");
-                let am_dir = app_data.join("asset_manager");
+
+                // 读取用户配置的存储目录，优先使用用户目录存放所有数据
+                let base_dir = {
+                    let config_path = app_data.join("arthub_sync_config.json");
+                    let mut user_dir: Option<std::path::PathBuf> = None;
+                    if let Ok(content) = std::fs::read_to_string(&config_path) {
+                        if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&content) {
+                            if let Some(dir) = parsed.get("directoryPath").and_then(|v| v.as_str()) {
+                                if !dir.is_empty() {
+                                    let p = std::path::PathBuf::from(dir);
+                                    if p.exists() {
+                                        user_dir = Some(p);
+                                        println!("Asset manager: using user storage dir: {}", dir);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    user_dir.unwrap_or_else(|| {
+                        println!("Asset manager: using default app data dir");
+                        app_data.clone()
+                    })
+                };
+
+                let am_dir = base_dir.join("asset_manager");
                 let thumb_dir = am_dir.join("thumbnails");
                 std::fs::create_dir_all(&thumb_dir).ok();
                 let db_path = am_dir.join("assets.db");
+
+                // 如果旧位置有数据库而新位置没有，自动迁移
+                let old_db = app_data.join("asset_manager").join("assets.db");
+                if old_db.exists() && !db_path.exists() && old_db != db_path {
+                    println!("Migrating asset DB from {:?} to {:?}", old_db, db_path);
+                    if let Err(e) = std::fs::copy(&old_db, &db_path) {
+                        eprintln!("DB migration copy failed: {}", e);
+                    }
+                    // 迁移缩略图目录
+                    let old_thumb = app_data.join("asset_manager").join("thumbnails");
+                    if old_thumb.exists() {
+                        copy_dir_recursive(&old_thumb, &thumb_dir);
+                    }
+                }
 
                 let am_state = asset_manager::AssetManagerState::new(db_path, thumb_dir)
                     .expect("Failed to init asset manager database");
@@ -2589,6 +2642,8 @@ fn main() {
             asset_manager::asset_batch_add_tag,
             asset_manager::asset_set_rating,
             asset_manager::asset_set_note,
+            asset_manager::asset_set_custom_paths,
+            asset_manager::asset_reconnect_storage,
             asset_manager::asset_get_detail,
             asset_manager::asset_get_smart_folders,
             asset_manager::asset_create_smart_folder,

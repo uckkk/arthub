@@ -74,11 +74,18 @@ interface TagInfo {
   asset_count: number;
 }
 
+interface CustomPaths {
+  source_path: string;
+  slice_path: string;
+  effect_path: string;
+}
+
 interface AssetDetail {
   asset: AssetEntry;
   tags: TagInfo[];
   rating: number;
   note: string;
+  custom_paths: CustomPaths;
 }
 
 interface SmartFolder {
@@ -629,6 +636,7 @@ const AssetDetailSidebar: React.FC<{
   onClose: () => void;
   onSetRating: (rating: number) => void;
   onSetNote: (note: string) => void;
+  onSetCustomPaths: (paths: CustomPaths) => void;
   onAddTag: (tagId: number) => void;
   onRemoveTag: (tagId: number) => void;
   isFavorite?: boolean;
@@ -641,7 +649,7 @@ const AssetDetailSidebar: React.FC<{
   onUnlock?: () => void;
   fileHistory?: FileHistoryInfo | null;
   onRestoreVersion?: (version: number) => void;
-}> = ({ asset, detail, allTags, onClose, onSetRating, onSetNote, onAddTag, onRemoveTag,
+}> = ({ asset, detail, allTags, onClose, onSetRating, onSetNote, onSetCustomPaths, onAddTag, onRemoveTag,
   isFavorite, onToggleFavorite,
   isTeamSpace, lockStatus, currentUser, onLock, onUnlock, fileHistory, onRestoreVersion }) => {
   const [editingNote, setEditingNote] = useState(false);
@@ -649,9 +657,16 @@ const AssetDetailSidebar: React.FC<{
   const [showTagPicker, setShowTagPicker] = useState(false);
   const noteRef = useRef<HTMLTextAreaElement>(null);
 
+  const [customPaths, setCustomPaths] = useState<CustomPaths>({ source_path: '', slice_path: '', effect_path: '' });
+  const [editingPaths, setEditingPaths] = useState(false);
+
   useEffect(() => {
     if (detail) setNoteText(detail.note || '');
   }, [detail?.note]);
+
+  useEffect(() => {
+    if (detail?.custom_paths) setCustomPaths(detail.custom_paths);
+  }, [detail?.custom_paths]);
 
   useEffect(() => {
     if (editingNote && noteRef.current) noteRef.current.focus();
@@ -832,6 +847,57 @@ const AssetDetailSidebar: React.FC<{
             {noteText || '点击添加备注'}
           </p>
         )}
+      </div>
+
+      {/* Custom Paths */}
+      <div className="border-t border-[#1a1a1a]" />
+      <div className="px-3 py-3">
+        <div className="flex items-center justify-between mb-2">
+          <div className="flex items-center gap-2">
+            <FolderOpen size={12} className="text-[#666]" />
+            <span className="text-[11px] text-[#888]">关联路径</span>
+          </div>
+          <button
+            onClick={() => {
+              if (editingPaths) {
+                onSetCustomPaths(customPaths);
+                setEditingPaths(false);
+              } else {
+                setEditingPaths(true);
+              }
+            }}
+            className="text-[#555] hover:text-[#3b82f6]"
+          >
+            {editingPaths ? <Check size={14} /> : <Edit3 size={12} />}
+          </button>
+        </div>
+        {([
+          ['source_path', '源文件路径'] as const,
+          ['slice_path', '切图路径'] as const,
+          ['effect_path', '动效路径'] as const,
+        ]).map(([key, label]) => (
+          <div key={key} className="mb-2 last:mb-0">
+            <span className="text-[10px] text-[#555] block mb-0.5">{label}</span>
+            {editingPaths ? (
+              <input
+                type="text"
+                value={customPaths[key]}
+                onChange={e => setCustomPaths(prev => ({ ...prev, [key]: e.target.value }))}
+                onBlur={() => { onSetCustomPaths(customPaths); }}
+                className="w-full bg-[#111] border border-[#2a2a2a] rounded px-2 py-1 text-xs text-[#ccc] placeholder-[#555] outline-none focus:border-[#3b82f6]"
+                placeholder={`输入${label}...`}
+              />
+            ) : (
+              <p
+                className={`text-xs cursor-pointer rounded px-1 py-0.5 -mx-1 hover:bg-[#1a1a1a] truncate ${customPaths[key] ? 'text-[#aaa]' : 'text-[#444] italic'}`}
+                title={customPaths[key] || undefined}
+                onClick={() => setEditingPaths(true)}
+              >
+                {customPaths[key] || `点击添加${label}`}
+              </p>
+            )}
+          </div>
+        ))}
       </div>
 
       {/* Team features */}
@@ -3766,6 +3832,20 @@ export default function AssetManager() {
     }
   };
 
+  const handleSetCustomPaths = async (assetId: number, paths: CustomPaths) => {
+    try {
+      await invoke('asset_set_custom_paths', {
+        assetId,
+        sourcePath: paths.source_path,
+        slicePath: paths.slice_path,
+        effectPath: paths.effect_path,
+      });
+      if (detailAssetId === assetId) loadAssetDetail(assetId);
+    } catch (e: any) {
+      showToast('error', e?.toString() || '设置自定义路径失败');
+    }
+  };
+
   // ---- Favorite Handler ----
   const handleToggleFavorite = async (assetId: number) => {
     try {
@@ -4896,6 +4976,7 @@ export default function AssetManager() {
               onClose={() => setDetailAssetId(null)}
               onSetRating={r => handleSetRating(detailAssetId, r)}
               onSetNote={n => handleSetNote(detailAssetId, n)}
+              onSetCustomPaths={p => handleSetCustomPaths(detailAssetId, p)}
               onAddTag={tagId => handleAddTagToAsset(detailAssetId, tagId)}
               onRemoveTag={tagId => handleRemoveTagFromAsset(detailAssetId, tagId)}
               isFavorite={favoriteIds.has(detailAssetId)}

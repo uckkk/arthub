@@ -203,6 +203,14 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ isOpen, onClose, triggerR
         } catch {
           // 文件不存在是正常情况，忽略
         }
+        // 让资产管理器立即切换到新存储路径（无需重启）
+        try {
+          const { invoke } = await import('@tauri-apps/api/tauri');
+          await invoke('asset_reconnect_storage', { storageDir: result.path });
+          console.log('资产管理器已切换到新存储路径');
+        } catch (e) {
+          console.warn('切换资产存储路径失败:', e);
+        }
         await autoSyncToFile();
         const config = getStorageConfig();
         setLastSyncTime(config.lastSyncTime);
