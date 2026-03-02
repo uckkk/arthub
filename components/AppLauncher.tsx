@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { Trash2, Plus, Grid3X3, Camera } from 'lucide-react';
 import { handleDroppedAppFile, launchApp, isAppFile } from '../services/appService';
 import { useMiddleMouseScroll } from '../utils/useMiddleMouseScroll';
+import { openCaptureWindow } from './CaptureFloatingBar';
 
 const S_L = '/';
 const B_L = '\\';
@@ -676,7 +677,7 @@ const AppLauncher: React.FC = () => {
       >
           <div className={'grid gap-4'} style={{ gridTemplateColumns: `repeat(${columnsPerRow}, minmax(0, 1fr))` }}>
             <div
-              onClick={() => window.dispatchEvent(new CustomEvent('arthub-show-capture-bar'))}
+              onClick={() => openCaptureWindow()}
               className="group relative bg-[#1a1a1a] hover:bg-[#222222] border border-[#2a2a2a] hover:border-[#3a3a3a] rounded-xl p-4 flex flex-col items-center gap-3 cursor-pointer transition-all duration-150 hover:scale-105"
             >
               <div className="w-16 h-16 rounded-lg bg-[#0f0f0f] group-hover:bg-[#151515] transition-colors flex items-center justify-center">

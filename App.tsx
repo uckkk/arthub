@@ -33,7 +33,7 @@ const CPSAutomation = lazy(() => import('./components/CPSAutomation'));
 const UIAudit = lazy(() => import('./components/UIAudit'));
 const ImageCompressor = lazy(() => import('./components/ImageCompressor'));
 const AssetManager = lazy(() => import('./components/AssetManager'));
-import CaptureFloatingBar from './components/CaptureFloatingBar';
+import { openCaptureWindow } from './components/CaptureFloatingBar';
 
 // 预加载所有组件的函数
 const preloadComponents = () => {
@@ -168,9 +168,6 @@ const AppContent: React.FC = () => {
 
   // 已访问过的 tab 集合 — 首次访问后保持挂载，切换时只改 display，实现秒切
   const [visitedTabs, setVisitedTabs] = useState<Set<string>>(new Set(['home']));
-  // 按快捷键时调出截图/录屏浮窗条，在浮窗上选截图或录屏
-  const [showCaptureBar, setShowCaptureBar] = useState(false);
-  const [captureBarSuggested, setCaptureBarSuggested] = useState<'screenshot' | 'record' | null>(null);
 
   // 菜单顺序管理
   const [menuItemOrder, setMenuItemOrder] = useState<Record<number, string[]>>(() => {
@@ -293,71 +290,36 @@ const AppContent: React.FC = () => {
 
   // 应用启动时优先从本地存储导入数据
   useEffect(() => {
+    // 立即开始预加载组件，不等待任何 I/O
+    preloadComponents();
+
     const loadData = async () => {
-      // 关键修复：检查 localStorage 中是否已有 API 配置（包括空字符串）
-      // 如果 localStorage 中存在这些键（即使值为空），说明用户已经操作过，优先保留 localStorage 的值
-      // 只有在 localStorage 中完全不存在这些键时，才从文件导入
-      const geminiKey = localStorage.getItem('arthub_gemini_key');
-      const baiduAppId = localStorage.getItem('arthub_baidu_appid');
-      const baiduSecret = localStorage.getItem('arthub_baidu_secret');
-      
-      // 检查 localStorage 中是否存在这些键（无论值是否为空）
-      // 如果键存在，说明用户已经操作过，不应该从文件导入覆盖
-      const hasApiKeysInStorage = (
-        geminiKey !== null ||
-        baiduAppId !== null ||
-        baiduSecret !== null
-      );
-      
-      // 只有在 localStorage 中完全不存在这些键时，才从文件导入
-      // 这样可以确保用户最新输入的值（包括清空操作）不会被文件中的旧值覆盖
+      // 文件导入（仅 localStorage 无 API 配置时）
+      const hasApiKeysInStorage =
+        localStorage.getItem('arthub_gemini_key') !== null ||
+        localStorage.getItem('arthub_baidu_appid') !== null ||
+        localStorage.getItem('arthub_baidu_secret') !== null;
+
       if (!hasApiKeysInStorage) {
-        console.log('[API保护] localStorage 中不存在 API 配置键，允许从文件导入');
         try {
           const { autoImportFromFile } = await import('./services/fileStorageService');
           const result = await autoImportFromFile();
-          if (result.success && result.imported) {
-            console.log('[API保护] 成功从本地文件导入数据，设置已恢复');
-            // 显示提示消息
-            if (result.message) {
-              // 延迟显示，确保 ToastProvider 已初始化
-              setTimeout(() => {
-                showToast('success', result.message || '本地信息已同步');
-              }, 500);
-            }
-          } else {
-            console.log('[API保护] 文件导入完成，但未导入 API 配置');
+          if (result.success && result.imported && result.message) {
+            setTimeout(() => showToast('success', result.message || '本地信息已同步'), 500);
           }
-        } catch (error) {
-          // 静默处理导入错误
-          console.warn('[API保护] 启动时导入文件数据失败:', error);
+        } catch {
+          // 文件不存在等情况，静默处理
         }
-      } else {
-        console.log('[API保护] 检测到 localStorage 中已有 API 配置键，保留用户最新输入，跳过文件导入');
-        console.log('[API保护] 当前 API 配置:', {
-          geminiKey: geminiKey ? `${geminiKey.substring(0, 10)}...` : '(空)',
-          baiduAppId: baiduAppId ? `${baiduAppId.substring(0, 20)}...` : '(空)',
-          baiduSecret: baiduSecret ? '(已设置)' : '(空)'
-        });
-        console.log('[API保护] 实际值:', {
-          geminiKey: geminiKey || '(null)',
-          baiduAppId: baiduAppId || '(null)',
-          baiduSecret: baiduSecret ? '(已设置)' : '(null)'
-        });
       }
-      
-      // 等待导入完成后再加载其他数据
-      await new Promise(resolve => setTimeout(resolve, 100));
-      
+
+      // 用户验证
       const savedUserInfo = getUserInfo();
       if (savedUserInfo) {
-        // 用已保存的凭据重新向 Rust 后端验证（确保 Rust 端 authenticated=true）
         try {
           const valid = await verifyUser(savedUserInfo.username, savedUserInfo.userId);
           if (valid) {
             setIsUserVerified(true);
             setUserInfo(savedUserInfo);
-            // 认证成功后再启动自动同步（同步需要 Rust 端认证状态）
             initAutoSync();
           } else {
             clearUserInfo();
@@ -365,12 +327,10 @@ const AppContent: React.FC = () => {
         } catch {
           clearUserInfo();
         }
-        preloadComponents();
-        await preloadAllData();
-      } else {
-        preloadComponents();
-        await preloadAllData();
       }
+
+      // 数据预加载（不阻塞，后台执行）
+      preloadAllData();
     };
     
     loadData();
@@ -407,37 +367,14 @@ const AppContent: React.FC = () => {
     return () => window.removeEventListener('switchTab', handleSwitchTab);
   }, []);
 
-  // 监听快捷键：调出小浮窗条，在浮窗上选全屏/区域、截图/录屏
   useEffect(() => {
-    const bringToFront = () => {
-      if (typeof (window as any).__TAURI__ !== 'undefined') {
-        import('@tauri-apps/api/window').then(({ appWindow }) => {
-          appWindow.show().catch(() => {});
-          appWindow.setFocus().catch(() => {});
-        }).catch(() => {});
-      }
-    };
-    const onTriggerScreenshot = () => {
-      bringToFront();
-      setCaptureBarSuggested('screenshot');
-      setShowCaptureBar(true);
-    };
-    const onTriggerRecord = () => {
-      bringToFront();
-      setCaptureBarSuggested('record');
-      setShowCaptureBar(true);
-    };
-    const onShowCaptureBar = () => {
-      setCaptureBarSuggested(null);
-      setShowCaptureBar(true);
-    };
+    const onTriggerScreenshot = () => openCaptureWindow();
+    const onTriggerRecord = () => openCaptureWindow();
     window.addEventListener('arthub-trigger-screenshot', onTriggerScreenshot);
     window.addEventListener('arthub-trigger-record', onTriggerRecord);
-    window.addEventListener('arthub-show-capture-bar', onShowCaptureBar);
     return () => {
       window.removeEventListener('arthub-trigger-screenshot', onTriggerScreenshot);
       window.removeEventListener('arthub-trigger-record', onTriggerRecord);
-      window.removeEventListener('arthub-show-capture-bar', onShowCaptureBar);
     };
   }, []);
 
@@ -685,17 +622,28 @@ const AppContent: React.FC = () => {
           {/* 日志诊断 - 右下角一键复制 */}
           <LogTips />
 
-          {/* 按快捷键调出的截图/录屏浮窗条：选全屏/区域、截图/录屏 */}
-          <CaptureFloatingBar
-            visible={showCaptureBar}
-            onClose={() => setShowCaptureBar(false)}
-            suggestedAction={captureBarSuggested}
-          />
         </div>
   );
 };
 
+const CaptureWindowApp: React.FC = () => {
+  const CaptureBar = React.lazy(() => import('./components/CaptureFloatingBar'));
+  return (
+    <div style={{ width: '100%', height: '100%', background: 'transparent', overflow: 'hidden' }}>
+      <React.Suspense fallback={null}>
+        <CaptureBar />
+      </React.Suspense>
+    </div>
+  );
+};
+
 const App: React.FC = () => {
+  const isCaptureMode = typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('mode') === 'capture';
+
+  if (isCaptureMode) {
+    return <CaptureWindowApp />;
+  }
+
   return (
     <ErrorBoundary>
       <ToastProvider>
