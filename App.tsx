@@ -561,7 +561,7 @@ const AppContent: React.FC = () => {
     paths:      { node: <PathManager />,    skeleton: 'paths' },
     todo:       { node: <QuadrantTodo />,   skeleton: 'todo' },
     apps:       { node: <AppLauncher />,    skeleton: 'apps' },
-    whiteboard: { node: <Whiteboard />,     skeleton: 'whiteboard', absolute: true },
+    whiteboard: { node: <Whiteboard />,     skeleton: 'whiteboard' },
     cps:        { node: <CPSAutomation />,  skeleton: 'default' },
     uiaudit:    { node: <UIAudit />,        skeleton: 'default' },
     imgcompress:{ node: <ImageCompressor />,skeleton: 'default' },
