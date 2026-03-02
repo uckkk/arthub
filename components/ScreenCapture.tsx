@@ -132,6 +132,25 @@ export default function ScreenCapture(props: ScreenCaptureProps = {}) {
     return () => window.removeEventListener('keydown', onKey);
   }, [regionPickerActive, endRegionPicker]);
 
+  const toRegionArg = useCallback((r: { x: number; y: number; width: number; height: number }) => ({
+    x: Math.max(0, Math.round(r.x)),
+    y: Math.max(0, Math.round(r.y)),
+    width: Math.max(1, Math.round(r.width)),
+    height: Math.max(1, Math.round(r.height)),
+  }), []);
+
+  const buildOutputPath = (dirOrFile: string, ext: 'png' | 'mp4') => {
+    const base = dirOrFile.trim().replace(/[/\\]+$/, '');
+    if (!base) return '';
+    const isFile = base.toLowerCase().endsWith('.png') || base.toLowerCase().endsWith('.mp4');
+    if (isFile) return ext === 'png' ? (base.endsWith('.png') ? base : base + '.png') : (base.endsWith('.mp4') ? base : base + '.mp4');
+    const sep = base.includes('/') ? '/' : '\\';
+    const name = ext === 'png'
+      ? `截图_${new Date().toISOString().slice(0, 19).replace(/[-:T]/g, '')}.png`
+      : `录屏_${new Date().toISOString().slice(0, 19).replace(/[-:T]/g, '')}.mp4`;
+    return `${base}${sep}${name}`;
+  };
+
   useEffect(() => {
     try {
       localStorage.setItem(CAPTURE_MODE_KEY, captureMode);
@@ -447,24 +466,6 @@ export default function ScreenCapture(props: ScreenCaptureProps = {}) {
         showToast('success', '已设为该文件所在目录');
       }
     }
-  };
-
-  /** 将选区转为后端需要的区域参数（非负整数，宽高至少为 1） */
-  const toRegionArg = useCallback((r: { x: number; y: number; width: number; height: number }) => ({
-    x: Math.max(0, Math.round(r.x)),
-    y: Math.max(0, Math.round(r.y)),
-    width: Math.max(1, Math.round(r.width)),
-    height: Math.max(1, Math.round(r.height)),
-  }), []);
-
-  const buildOutputPath = (dirOrFile: string, ext: 'png' | 'mp4') => {
-    const base = dirOrFile.trim().replace(/[/\\]+$/, '');
-    if (!base) return '';
-    const isFile = base.toLowerCase().endsWith('.png') || base.toLowerCase().endsWith('.mp4');
-    if (isFile) return ext === 'png' ? (base.endsWith('.png') ? base : base + '.png') : (base.endsWith('.mp4') ? base : base + '.mp4');
-    const sep = base.includes('/') ? '/' : '\\';
-    const name = ext === 'png' ? `截图_${new Date().toISOString().slice(0, 19).replace(/[-:T]/g, '')}.png` : `录屏_${new Date().toISOString().slice(0, 19).replace(/[-:T]/g, '')}.mp4`;
-    return `${base}${sep}${name}`;
   };
 
   const handleScreenshot = async () => {
