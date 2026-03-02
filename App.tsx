@@ -141,20 +141,22 @@ const AppContent: React.FC = () => {
     return getStorageConfig().lastSyncTime;
   });
 
-  // 控制台显示状态（使用模态框，不打开新窗口）
   const [showConsole, setShowConsole] = useState(false);
-  const [consoleLogs, setConsoleLogs] = useState(consoleService.getLogs());
+  const showConsoleRef = useRef(showConsole);
+  showConsoleRef.current = showConsole;
+  const [consoleLogs, setConsoleLogs] = useState<import('./components/Console').LogEntry[]>([]);
 
-  // 订阅控制台日志更新
   useEffect(() => {
     const unsubscribe = consoleService.subscribe((logs) => {
-      setConsoleLogs(logs);
+      if (showConsoleRef.current) {
+        setConsoleLogs(logs);
+      }
     });
     return unsubscribe;
   }, []);
 
-  // 打开控制台（切换显示状态）
   const openConsoleWindow = () => {
+    setConsoleLogs(consoleService.getLogs());
     setShowConsole(true);
   };
 

@@ -38,7 +38,8 @@ export interface ScreenCaptureProps {
   onTriggerConsumed?: () => void;
 }
 
-export default function ScreenCapture(_props: ScreenCaptureProps = {}) {
+export default function ScreenCapture(props: ScreenCaptureProps = {}) {
+  const { pendingTrigger: pendingTriggerProp, onTriggerConsumed } = props ?? {};
   const { showToast } = useToast();
   const [savePath, setSavePath] = useState('');
   const [recording, setRecording] = useState(false);

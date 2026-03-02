@@ -96,7 +96,11 @@ jobs:
             echo "版本号格式验证: major=1, minor=0, patch=${BUILD_TIMESTAMP}"
           fi
           echo "version=$VERSION" >> $GITHUB_OUTPUT
-          echo "当前版本号: $VERSION"
+          BUILD_DATE=$(date -u +"%Y%m%d")
+          SHORT_SHA=$(git rev-parse --short HEAD)
+          echo "build_date=$BUILD_DATE" >> $GITHUB_OUTPUT
+          echo "short_sha=$SHORT_SHA" >> $GITHUB_OUTPUT
+          echo "当前版本号: $VERSION | 构建标签: $BUILD_DATE-$SHORT_SHA"
       
       # 4.5. 更新版本号到 package.json
       - name: Update version in package.json
@@ -203,7 +207,7 @@ jobs:
         if: matrix.platform == 'windows-latest'
         uses: actions/upload-artifact@v4
         with:
-          name: ArtHub-${{ matrix.name }}-EXE
+          name: ArtHub-${{ matrix.name }}-EXE-${{ steps.version.outputs.build_date }}-${{ steps.version.outputs.short_sha }}
           path: |
             src-tauri/target/${{ matrix.target }}/release/ArtHub.exe
             # 注意：不包含 DLL 文件，DirectML.dll 已嵌入到 exe 中，程序启动时会自动提取
@@ -227,7 +231,7 @@ jobs:
         if: startsWith(matrix.platform, 'macos')
         uses: actions/upload-artifact@v4
         with:
-          name: ArtHub-${{ matrix.name }}-DMG
+          name: ArtHub-${{ matrix.name }}-DMG-${{ steps.version.outputs.build_date }}-${{ steps.version.outputs.short_sha }}
           path: src-tauri/target/${{ matrix.target }}/release/bundle/dmg/*.dmg
           if-no-files-found: ignore
           retention-days: 30  # 保留 30 天

@@ -13,7 +13,7 @@ interface ReactErrorInfo {
 class ConsoleService {
   private logs: LogEntry[] = [];
   private listeners: Set<(logs: LogEntry[]) => void> = new Set();
-  private maxLogs = 10000; // 最大日志数量
+  private maxLogs = 10000;
   private originalConsole: {
     log: typeof console.log;
     info: typeof console.info;
@@ -22,6 +22,8 @@ class ConsoleService {
     debug: typeof console.debug;
   };
   private originalLog: typeof console.log;
+  private _persistTimer: ReturnType<typeof setTimeout> | null = null;
+  private _notifyTimer: ReturnType<typeof setTimeout> | null = null;
 
   constructor() {
     // 保存原始的 console 方法
@@ -892,20 +894,12 @@ class ConsoleService {
 
     this.logs.push(entry);
 
-    // 限制日志数量
     if (this.logs.length > this.maxLogs) {
       this.logs.shift();
     }
 
-    // 保存到 localStorage（供控制台窗口读取）
-    try {
-      localStorage.setItem('arthub_console_logs', JSON.stringify(this.logs));
-    } catch (e) {
-      // 忽略存储错误
-    }
-
-    // 通知监听器
-    this.notifyListeners();
+    this.schedulePersist();
+    this.scheduleNotify();
   }
 
   // 获取用户操作上下文
@@ -924,20 +918,39 @@ class ConsoleService {
 
   // 记录 React ErrorBoundary 错误（供外部调用）
   logErrorBoundary(error: Error, errorInfo: ReactErrorInfo) {
+    const msg = error?.message ?? String(error);
+    const stack = error?.stack ?? '';
     this.addLog('error', [
-      `[React 错误边界] ${error.message}`,
-      `组件堆栈:\n${errorInfo.componentStack}`,
-      { error, errorInfo },
-    ]);
+      `[React 错误边界] ${msg}`,
+      errorInfo?.componentStack ? `组件堆栈:\n${errorInfo.componentStack}` : '',
+      stack ? `堆栈: ${stack.slice(0, 500)}` : '',
+    ].filter(Boolean));
+  }
+
+  private schedulePersist() {
+    if (this._persistTimer) return;
+    this._persistTimer = setTimeout(() => {
+      this._persistTimer = null;
+      try {
+        localStorage.setItem('arthub_console_logs', JSON.stringify(this.logs));
+      } catch (_) { /* ignore */ }
+    }, 2000);
+  }
+
+  private scheduleNotify() {
+    if (this._notifyTimer) return;
+    this._notifyTimer = setTimeout(() => {
+      this._notifyTimer = null;
+      this.notifyListeners();
+    }, 500);
   }
 
   private notifyListeners() {
+    const snapshot = [...this.logs];
     this.listeners.forEach(listener => {
       try {
-        listener([...this.logs]);
-      } catch (error) {
-        // 忽略监听器错误
-      }
+        listener(snapshot);
+      } catch (_) { /* ignore */ }
     });
   }
 
