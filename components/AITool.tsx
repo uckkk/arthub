@@ -820,11 +820,6 @@ const AITool: React.FC = () => {
       {showAddModal && (
         <div 
           className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50"
-          onClick={(e) => {
-            if (e.target === e.currentTarget) {
-              handleCancel();
-            }
-          }}
         >
           <div 
             className="
@@ -833,7 +828,6 @@ const AITool: React.FC = () => {
               shadow-2xl shadow-black/50
               animate-scale-in
             "
-            onClick={(e) => e.stopPropagation()}
           >
             {/* 模态框头部 */}
             <div className="flex items-center justify-between px-6 py-4 border-b border-[#2a2a2a]">
