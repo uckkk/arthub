@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Trash2, Plus, Grid3X3 } from 'lucide-react';
+import { Trash2, Plus, Grid3X3, Camera } from 'lucide-react';
 import { handleDroppedAppFile, launchApp, isAppFile } from '../services/appService';
 import { useMiddleMouseScroll } from '../utils/useMiddleMouseScroll';
 
@@ -674,16 +674,20 @@ const AppLauncher: React.FC = () => {
         className={'flex-1 min-h-0 max-h-full overflow-y-auto px-6 py-6 transition-colors duration-200 ' + (isDraggingOver ? 'bg-blue-500' + S_L + '10 border-2 border-dashed border-blue-500' : '')}
         style={{ scrollbarWidth: 'thin', scrollbarColor: '#2a2a2a #0a0a0a', maxHeight: '100%' }}
       >
-        {apps.length === 0 ? (
-          <div className="flex flex-col items-center justify-center h-full text-center">
-            <div className="w-16 h-16 rounded-full bg-[#1a1a1a] flex items-center justify-center mb-4">
-              <Plus size={28} className="text-[#333333]" />
-            </div>
-            <h3 className="text-lg font-medium text-white mb-2">暂无应用</h3>
-            <p className="text-[#666666] mb-6">拖入 .exe、.lnk 或 .bat 文件来添加应用</p>
-          </div>
-        ) : (
           <div className={'grid gap-4'} style={{ gridTemplateColumns: `repeat(${columnsPerRow}, minmax(0, 1fr))` }}>
+            <div
+              onClick={() => window.dispatchEvent(new CustomEvent('arthub-show-capture-bar'))}
+              className="group relative bg-[#1a1a1a] hover:bg-[#222222] border border-[#2a2a2a] hover:border-[#3a3a3a] rounded-xl p-4 flex flex-col items-center gap-3 cursor-pointer transition-all duration-150 hover:scale-105"
+            >
+              <div className="w-16 h-16 rounded-lg bg-[#0f0f0f] group-hover:bg-[#151515] transition-colors flex items-center justify-center">
+                <Camera size={28} className="text-blue-400" />
+              </div>
+              <div className="flex-1 w-full text-center">
+                <h3 className="text-sm font-medium text-white group-hover:text-blue-400 transition-colors">
+                  截图录屏
+                </h3>
+              </div>
+            </div>
             {apps.map((app) => (
               <div
                 key={app.id}
@@ -717,7 +721,6 @@ const AppLauncher: React.FC = () => {
               </div>
             ))}
           </div>
-        )}
       </div>
     </div>
   );

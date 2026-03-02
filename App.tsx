@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, lazy, Suspense } from 'react';
 import { 
   Type, Menu, User, Settings, 
-  Sparkles, Home, CheckSquare, Grid3X3, PenTool, Zap, ScanLine, Minimize2, Library, Camera
+  Sparkles, Home, CheckSquare, Grid3X3, PenTool, Zap, ScanLine, Minimize2, Library
 } from 'lucide-react';
 import { getStorageConfig, formatSyncTime } from './services/fileStorageService';
 import { getUserInfo, clearUserInfo, UserInfo, verifyUser, rustLogout } from './services/userAuthService';
@@ -33,7 +33,6 @@ const CPSAutomation = lazy(() => import('./components/CPSAutomation'));
 const UIAudit = lazy(() => import('./components/UIAudit'));
 const ImageCompressor = lazy(() => import('./components/ImageCompressor'));
 const AssetManager = lazy(() => import('./components/AssetManager'));
-const ScreenCapture = lazy(() => import('./components/ScreenCapture'));
 import CaptureFloatingBar from './components/CaptureFloatingBar';
 
 // 预加载所有组件的函数
@@ -95,9 +94,6 @@ const preloadComponents = () => {
     import('./components/UIAudit').catch(() => {});
   }, 500);
 
-  schedulePreload(() => {
-    import('./components/ScreenCapture').catch(() => {});
-  }, 550);
 };
 
 // 定义菜单项
@@ -119,7 +115,6 @@ const createMenuGroups = (): MenuGroup[] => [
       { id: 'cps', label: 'CPS自动化', icon: Zap },
       { id: 'uiaudit', label: '图像分析', icon: ScanLine },
       { id: 'imgcompress', label: '图片压缩', icon: Minimize2 },
-      { id: 'screenCapture', label: '截图录屏', icon: Camera },
     ],
   },
 ];
@@ -432,23 +427,20 @@ const AppContent: React.FC = () => {
       setCaptureBarSuggested('record');
       setShowCaptureBar(true);
     };
+    const onShowCaptureBar = () => {
+      setCaptureBarSuggested(null);
+      setShowCaptureBar(true);
+    };
     window.addEventListener('arthub-trigger-screenshot', onTriggerScreenshot);
     window.addEventListener('arthub-trigger-record', onTriggerRecord);
+    window.addEventListener('arthub-show-capture-bar', onShowCaptureBar);
     return () => {
       window.removeEventListener('arthub-trigger-screenshot', onTriggerScreenshot);
       window.removeEventListener('arthub-trigger-record', onTriggerRecord);
+      window.removeEventListener('arthub-show-capture-bar', onShowCaptureBar);
     };
   }, []);
 
-  const handleCaptureBarRequestRegion = (action: 'screenshot' | 'record') => {
-    setShowCaptureBar(false);
-    setActiveTab('screenCapture');
-    setVisitedTabs(prev => (prev.has('screenCapture') ? prev : new Set([...prev, 'screenCapture'])));
-    // 等 ScreenCapture 懒加载挂载后再派发，确保能收到
-    setTimeout(() => {
-      window.dispatchEvent(new CustomEvent('arthub-capture-bar-request-region', { detail: { action } }));
-    }, 200);
-  };
 
   // 监听键盘快捷键打开开发者工具（F12 或 Ctrl+Shift+I）
   useEffect(() => {
@@ -518,7 +510,6 @@ const AppContent: React.FC = () => {
       'uiaudit': 'uiaudit',
       'imgcompress': 'imgcompress',
       'assets': 'assets',
-      'screenCapture': 'screenCapture',
     };
     const tab = tabMapping[id] || 'home';
 
@@ -566,7 +557,6 @@ const AppContent: React.FC = () => {
     uiaudit:    { node: <UIAudit />,        skeleton: 'default' },
     imgcompress:{ node: <ImageCompressor />,skeleton: 'default' },
     assets:     { node: <AssetManager />,   skeleton: 'default' },
-    screenCapture: { node: <ScreenCapture />, skeleton: 'default' },
     ai:         { node: <AITool />,         skeleton: 'ai' },
   };
 
@@ -700,7 +690,6 @@ const AppContent: React.FC = () => {
             visible={showCaptureBar}
             onClose={() => setShowCaptureBar(false)}
             suggestedAction={captureBarSuggested}
-            onRequestRegionPicker={handleCaptureBarRequestRegion}
           />
         </div>
   );
