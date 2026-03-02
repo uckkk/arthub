@@ -99,6 +99,21 @@ const Whiteboard: React.FC = () => {
   const [showProjectSelector, setShowProjectSelector] = useState(false);
   const [storagePath, setStoragePath] = useState<string | null>(null);
   const editorRef = useRef<Editor | null>(null);
+
+  // 延迟挂载 tldraw：首次渲染先显示轻量 placeholder，空闲时再挂载重量级画布
+  const [tldrawReady, setTldrawReady] = useState(false);
+  useEffect(() => {
+    const id = typeof requestIdleCallback !== 'undefined'
+      ? requestIdleCallback(() => setTldrawReady(true), { timeout: 300 })
+      : setTimeout(() => setTldrawReady(true), 50);
+    return () => {
+      if (typeof cancelIdleCallback !== 'undefined' && typeof id === 'number') {
+        cancelIdleCallback(id);
+      } else {
+        clearTimeout(id as ReturnType<typeof setTimeout>);
+      }
+    };
+  }, []);
   
   // 进度条状态（加载/上传时显示）
   const [progress, setProgress] = useState<{ visible: boolean; percent: number; message: string }>({
@@ -1047,8 +1062,12 @@ const Whiteboard: React.FC = () => {
           e.stopPropagation();
         }}
       >
-        {/* tldraw 容器需要 position: absolute 来填充父元素 */}
         <div style={{ position: 'absolute', inset: 0 }}>
+          {!tldrawReady ? (
+            <div className="h-full flex items-center justify-center bg-[#0a0a0a]">
+              <div className="text-[#666] text-sm">正在加载画布…</div>
+            </div>
+          ) : (
           <TldrawErrorBoundary onReset={() => {
             editorRef.current = null;
           }}>
@@ -1170,6 +1189,7 @@ const Whiteboard: React.FC = () => {
               }}
             />
           </TldrawErrorBoundary>
+          )}
         </div>
       </div>
     </div>
