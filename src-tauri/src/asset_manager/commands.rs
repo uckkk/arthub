@@ -1086,8 +1086,7 @@ pub async fn ai_index_embeddings(
     state: tauri::State<'_, AssetManagerState>,
     ai_state: tauri::State<'_, AiState>,
 ) -> Result<serde_json::Value, String> {
-    // Ensure model is loaded
-    {
+    fn ensure_model(ai_state: &AiState) -> Result<(), String> {
         let lock = ai_state.model.lock().map_err(|e| e.to_string())?;
         if lock.is_none() {
             drop(lock);
@@ -1095,21 +1094,24 @@ pub async fn ai_index_embeddings(
             let mut lock = ai_state.model.lock().map_err(|e| e.to_string())?;
             *lock = Some(model);
         }
+        Ok(())
     }
+
+    ensure_model(&ai_state)?;
 
     let batch_size = 50u32;
     let assets: Vec<(i64, String)>;
     {
         let conn = state.db.lock().map_err(|e| e.to_string())?;
-        assets = db::get_asset_ids_without_embedding(&conn, batch_size)?;
+        assets = db::get_asset_ids_without_embedding_new_only(&conn, batch_size)?;
     }
 
     let total = assets.len();
     let mut indexed = 0u32;
     let mut failed = 0u32;
+    let mut consecutive_failures = 0u32;
 
     for (i, (asset_id, file_path)) in assets.iter().enumerate() {
-        // 先检查文件是否存在
         if !std::path::Path::new(file_path).exists() {
             let conn = state.db.lock().map_err(|e| e.to_string())?;
             let _ = db::mark_embedding_failed(&conn, *asset_id);
@@ -1129,11 +1131,25 @@ pub async fn ai_index_embeddings(
                 let conn = state.db.lock().map_err(|e| e.to_string())?;
                 db::upsert_embedding(&conn, *asset_id, &bytes, ai::get_model_version())?;
                 indexed += 1;
+                consecutive_failures = 0;
             }
             Err(_) => {
                 let conn = state.db.lock().map_err(|e| e.to_string())?;
                 let _ = db::mark_embedding_failed(&conn, *asset_id);
                 failed += 1;
+                consecutive_failures += 1;
+
+                if consecutive_failures >= 3 {
+                    // Model likely crashed — drop and reload
+                    {
+                        let mut lock = ai_state.model.lock().map_err(|e| e.to_string())?;
+                        *lock = None;
+                    }
+                    if ensure_model(&ai_state).is_err() {
+                        break;
+                    }
+                    consecutive_failures = 0;
+                }
             }
         }
 
