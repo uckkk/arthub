@@ -796,6 +796,83 @@ pub fn get_asset_detail(conn: &Connection, asset_id: i64) -> Result<AssetDetail,
     Ok(AssetDetail { asset: asset.0, tags, rating: asset.1, note: asset.2, custom_paths: asset.3 })
 }
 
+/// 批量获取资产详情（标签+评分），减少 N+1 IPC 调用
+pub fn get_asset_details_batch(conn: &Connection, asset_ids: &[i64]) -> Result<Vec<AssetDetail>, String> {
+    if asset_ids.is_empty() {
+        return Ok(vec![]);
+    }
+
+    let placeholders: Vec<String> = asset_ids.iter().enumerate().map(|(i, _)| format!("?{}", i + 1)).collect();
+    let ph_str = placeholders.join(",");
+
+    let sql = format!(
+        "SELECT a.id, a.folder_id, a.file_path, a.file_name, a.file_ext, a.file_size,
+                a.width, a.height, a.thumb_path, a.modified_at,
+                COALESCE(r.rating, 0),
+                COALESCE(n.note, ''),
+                COALESCE(cp.source_path, ''),
+                COALESCE(cp.slice_path, ''),
+                COALESCE(cp.effect_path, '')
+         FROM assets a
+         LEFT JOIN asset_ratings r ON a.id = r.asset_id
+         LEFT JOIN asset_notes n ON a.id = n.asset_id
+         LEFT JOIN asset_custom_paths cp ON a.id = cp.asset_id
+         WHERE a.id IN ({})", ph_str
+    );
+
+    let params_vec: Vec<Box<dyn rusqlite::types::ToSql>> = asset_ids.iter().map(|id| Box::new(*id) as Box<dyn rusqlite::types::ToSql>).collect();
+    let param_refs: Vec<&dyn rusqlite::types::ToSql> = params_vec.iter().map(|p| p.as_ref()).collect();
+
+    let mut stmt = conn.prepare(&sql).map_err(|e| format!("准备批量查询失败: {}", e))?;
+    let rows: Vec<(AssetInfo, i32, String, CustomPaths)> = stmt.query_map(param_refs.as_slice(), |row| {
+        Ok((
+            AssetInfo {
+                id: row.get(0)?, folder_id: row.get(1)?, file_path: row.get(2)?,
+                file_name: row.get(3)?, file_ext: row.get(4)?, file_size: row.get(5)?,
+                width: row.get::<_, u32>(6).unwrap_or(0), height: row.get::<_, u32>(7).unwrap_or(0),
+                thumb_path: row.get(8)?, modified_at: row.get(9)?,
+            },
+            row.get::<_, i32>(10).unwrap_or(0),
+            row.get::<_, String>(11).unwrap_or_default(),
+            CustomPaths {
+                source_path: row.get::<_, String>(12).unwrap_or_default(),
+                slice_path: row.get::<_, String>(13).unwrap_or_default(),
+                effect_path: row.get::<_, String>(14).unwrap_or_default(),
+            },
+        ))
+    }).map_err(|e| format!("批量查询资产失败: {}", e))?
+      .filter_map(|r| r.ok())
+      .collect();
+
+    // 批量查询所有标签（单次 SQL）
+    let tag_sql = format!(
+        "SELECT at.asset_id, t.id, t.name, t.color FROM tags t
+         JOIN asset_tags at ON t.id = at.tag_id
+         WHERE at.asset_id IN ({}) ORDER BY t.name", ph_str
+    );
+    let mut tag_stmt = conn.prepare(&tag_sql).map_err(|e| format!("准备标签查询失败: {}", e))?;
+    let tag_rows: Vec<(i64, TagInfo)> = tag_stmt.query_map(param_refs.as_slice(), |row| {
+        Ok((
+            row.get::<_, i64>(0)?,
+            TagInfo { id: row.get(1)?, name: row.get(2)?, color: row.get(3)?, asset_count: 0 },
+        ))
+    }).map_err(|e| format!("批量查询标签失败: {}", e))?
+      .filter_map(|r| r.ok())
+      .collect();
+
+    let mut tags_map: std::collections::HashMap<i64, Vec<TagInfo>> = std::collections::HashMap::new();
+    for (aid, tag) in tag_rows {
+        tags_map.entry(aid).or_default().push(tag);
+    }
+
+    let results = rows.into_iter().map(|(asset, rating, note, custom_paths)| {
+        let tags = tags_map.remove(&asset.id).unwrap_or_default();
+        AssetDetail { asset, tags, rating, note, custom_paths }
+    }).collect();
+
+    Ok(results)
+}
+
 // ---- Smart Folder CRUD ----
 
 pub fn create_smart_folder(conn: &Connection, name: &str, conditions: &str, space_type: &str) -> Result<SmartFolder, String> {

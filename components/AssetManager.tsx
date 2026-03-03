@@ -3754,29 +3754,29 @@ export default function AssetManager() {
     else setDetailData(null);
   }, [detailAssetId, loadAssetDetail]);
 
-  // Batch load tags for visible assets (debounced)
+  // Batch load tags/ratings for visible assets (single IPC call)
   useEffect(() => {
     if (assets.length === 0) return;
     const loadBatch = async () => {
       const toLoad = assets.filter(a => !assetTagsMap.has(a.id)).slice(0, 50);
       if (toLoad.length === 0) return;
-      for (const asset of toLoad) {
-        try {
-          const detail = await invoke<AssetDetail>('asset_get_detail', { assetId: asset.id });
-          setAssetTagsMap(prev => {
-            const next = new Map(prev);
-            next.set(asset.id, detail.tags);
-            return next;
-          });
-          if (detail.rating > 0) {
-            setAssetRatingsMap(prev => {
-              const next = new Map(prev);
-              next.set(asset.id, detail.rating);
-              return next;
-            });
+      try {
+        const details = await invoke<AssetDetail[]>('asset_get_details_batch', {
+          assetIds: toLoad.map(a => a.id),
+        });
+        setAssetTagsMap(prev => {
+          const next = new Map(prev);
+          for (const d of details) next.set(d.asset.id, d.tags);
+          return next;
+        });
+        setAssetRatingsMap(prev => {
+          const next = new Map(prev);
+          for (const d of details) {
+            if (d.rating > 0) next.set(d.asset.id, d.rating);
           }
-        } catch { /* ignore */ }
-      }
+          return next;
+        });
+      } catch { /* ignore */ }
     };
     const timer = setTimeout(loadBatch, 300);
     return () => clearTimeout(timer);

@@ -147,18 +147,33 @@ const translateWithGemini = async (text: string, apiKey: string): Promise<string
 };
 
 // ============================================================================
-//   百度翻译服务
+//   百度翻译服务（含 1 QPS 节流 + 54003 自动重试）
 // ============================================================================
-const translateWithBaidu = async (text: string, config: BaiduConfig): Promise<string> => {
+let baiduLastCallTime = 0;
+const BAIDU_MIN_INTERVAL_MS = 1100; // 百度免费 API 限制 1 QPS
+
+const baiduThrottle = (): Promise<void> => {
+  const now = Date.now();
+  const elapsed = now - baiduLastCallTime;
+  if (elapsed >= BAIDU_MIN_INTERVAL_MS) {
+    baiduLastCallTime = now;
+    return Promise.resolve();
+  }
+  const waitMs = BAIDU_MIN_INTERVAL_MS - elapsed;
+  baiduLastCallTime = now + waitMs;
+  return new Promise(resolve => setTimeout(resolve, waitMs));
+};
+
+const translateWithBaidu = async (text: string, config: BaiduConfig, retries = 2): Promise<string> => {
   try {
-    // 验证配置
     if (!config.appId || !config.secretKey) {
       throw new Error("百度翻译配置不完整：请检查 AppID 和 SecretKey 是否正确填写");
     }
 
+    await baiduThrottle();
+
     const salt = Date.now().toString();
     
-    // 加载 MD5 函数
     let md5Func: (str: string) => string;
     try {
       md5Func = await getMd5();
@@ -166,25 +181,12 @@ const translateWithBaidu = async (text: string, config: BaiduConfig): Promise<st
       throw new Error(`无法加载 MD5 库: ${error.message}。请检查网络连接。`);
     }
 
-    // 计算签名：appid + query + salt + secretKey（注意：顺序很重要！）
     const signString = config.appId + text + salt + config.secretKey;
-    console.log('百度翻译签名计算:', {
-      appId: config.appId,
-      text: text.substring(0, 20) + '...',
-      salt: salt,
-      signStringLength: signString.length,
-      secretKeyLength: config.secretKey.length
-    });
-    
     const sign = md5Func(signString);
     
-    // 验证签名是否生成成功
     if (!sign || typeof sign !== 'string' || sign.length !== 32) {
-      console.error('MD5 签名生成失败:', { sign, signType: typeof sign, signLength: sign?.length });
       throw new Error(`MD5 签名生成失败（长度: ${sign?.length}），请检查 MD5 库是否正确加载`);
     }
-    
-    console.log('百度翻译签名生成成功:', sign.substring(0, 8) + '...');
     
     const params = {
       q: text,
@@ -195,14 +197,21 @@ const translateWithBaidu = async (text: string, config: BaiduConfig): Promise<st
       sign: sign,
     };
 
-    // 使用 HTTPS 端点 + JSONP
     const url = `https://api.fanyi.baidu.com/api/trans/vip/translate`;
     
     const data = await jsonp(url, params);
 
     if (data.error_code) {
-      // 提供更详细的错误信息
       const errorMsg = data.error_msg || '未知错误';
+      if (data.error_code === '54003' && retries > 0) {
+        const backoffMs = (3 - retries) * 1500;
+        console.warn(`百度翻译频率限制，${backoffMs}ms 后重试 (剩余 ${retries} 次)`);
+        await new Promise(resolve => setTimeout(resolve, backoffMs));
+        return translateWithBaidu(text, config, retries - 1);
+      }
+      if (data.error_code === '54003') {
+        throw new Error(`百度翻译频率超限，请稍后再试`);
+      }
       if (data.error_code === '52003') {
         throw new Error(`Baidu Error [${data.error_code}]: ${errorMsg}。请检查：1) AppID 和 SecretKey 是否正确；2) 百度翻译服务是否已开通；3) 签名计算是否正确`);
       }

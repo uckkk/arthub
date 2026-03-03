@@ -372,6 +372,16 @@ pub fn asset_get_detail(
     db::get_asset_detail(&conn, asset_id)
 }
 
+/// 批量获取资产详情（减少 N+1 IPC 调用）
+#[tauri::command]
+pub fn asset_get_details_batch(
+    state: tauri::State<'_, AssetManagerState>,
+    asset_ids: Vec<i64>,
+) -> Result<Vec<AssetDetail>, String> {
+    let conn = state.db.lock().map_err(|e| e.to_string())?;
+    db::get_asset_details_batch(&conn, &asset_ids)
+}
+
 /// 获取智能文件夹列表
 #[tauri::command]
 pub fn asset_get_smart_folders(

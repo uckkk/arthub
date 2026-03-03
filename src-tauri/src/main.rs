@@ -2668,6 +2668,7 @@ fn main() {
             asset_manager::asset_set_custom_paths,
             asset_manager::asset_reconnect_storage,
             asset_manager::asset_get_detail,
+            asset_manager::asset_get_details_batch,
             asset_manager::asset_get_smart_folders,
             asset_manager::asset_create_smart_folder,
             asset_manager::asset_update_smart_folder,
