@@ -1,6 +1,6 @@
 /**
  * 错误通知组件
- * 右下角显示小图标+角标，点击展开错误详情面板
+ * 右下角显示小图标徽章，点击展开错误面板
  */
 
 import React, { useState, useEffect, useRef } from 'react';
@@ -26,7 +26,7 @@ const ErrorNotification: React.FC<ErrorNotificationProps> = ({
       const errors = logs.filter(log => log.type === 'error' || log.type === 'warn');
       setErrorLogs(errors);
     });
-    return () => unsubscribe();
+    return unsubscribe;
   }, []);
 
   useEffect(() => {
@@ -40,7 +40,7 @@ const ErrorNotification: React.FC<ErrorNotificationProps> = ({
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, [isPanelOpen]);
 
-  const newCount = Math.max(0, errorLogs.length - seenCount);
+  const newCount = errorLogs.length - seenCount;
 
   const formatError = (log: LogEntry): string => {
     let message = log.message;
@@ -78,10 +78,10 @@ const ErrorNotification: React.FC<ErrorNotificationProps> = ({
     navigator.clipboard.writeText(text).catch(() => {});
   };
 
-  const togglePanel = () => {
-    const willOpen = !isPanelOpen;
-    setIsPanelOpen(willOpen);
-    if (willOpen) {
+  const handleTogglePanel = () => {
+    const opening = !isPanelOpen;
+    setIsPanelOpen(opening);
+    if (opening) {
       setSeenCount(errorLogs.length);
     }
   };
@@ -93,48 +93,15 @@ const ErrorNotification: React.FC<ErrorNotificationProps> = ({
 
   return (
     <div ref={panelRef} className="fixed bottom-4 right-4 z-[9999]">
-      {/* 折叠态：小图标 + 角标 */}
-      {!isPanelOpen && (
-        <button
-          onClick={togglePanel}
-          className="
-            relative w-10 h-10 rounded-full flex items-center justify-center
-            bg-[#1a1a1a] border border-red-500/30 shadow-lg shadow-black/40
-            hover:bg-[#252525] hover:border-red-500/50 transition-colors
-          "
-          title={`${errorLogs.length} 条错误/警告`}
-        >
-          <AlertCircle size={18} className="text-red-400" />
-          {newCount > 0 && (
-            <span className="
-              absolute -top-1.5 -right-1.5 min-w-[18px] h-[18px]
-              flex items-center justify-center
-              rounded-full bg-red-500 text-white text-[10px] font-bold px-1
-            ">
-              {newCount > 99 ? '99+' : newCount}
-            </span>
-          )}
-        </button>
-      )}
-
-      {/* 展开态：详情面板 */}
+      {/* 展开的面板 */}
       {isPanelOpen && (
-        <div className="animate-slide-up">
-          <div className="
-            bg-[#1a1a1a] border border-red-500/30 rounded-lg
-            shadow-2xl shadow-black/50
-            w-[400px] max-w-[calc(100vw-2rem)]
-            overflow-hidden
-          ">
-            {/* 标题栏 */}
-            <div className="
-              flex items-center justify-between px-4 py-3
-              bg-red-500/10 border-b border-red-500/20
-            ">
+        <div className="mb-2 animate-slide-up">
+          <div className="bg-[#1a1a1a] border border-red-500/30 rounded-lg shadow-2xl shadow-black/50 w-[400px] max-w-[calc(100vw-2rem)] overflow-hidden">
+            <div className="flex items-center justify-between px-4 py-3 bg-red-500/10 border-b border-red-500/20">
               <div className="flex items-center gap-2">
                 <AlertCircle size={18} className="text-red-400" />
                 <span className="text-sm font-semibold text-white">错误通知</span>
-                <span className="px-1.5 py-0.5 rounded text-xs font-medium bg-[#2a2a2a] text-[#666]">
+                <span className="px-1.5 py-0.5 rounded text-xs font-medium bg-[#2a2a2a] text-[#666666]">
                   {errorLogs.length} 条
                 </span>
               </div>
@@ -142,7 +109,7 @@ const ErrorNotification: React.FC<ErrorNotificationProps> = ({
                 {errorLogs.length > 1 && (
                   <button
                     onClick={() => setIsExpanded(!isExpanded)}
-                    className="p-1 rounded text-[#666] hover:text-white hover:bg-[#252525] transition-colors"
+                    className="p-1 rounded text-[#666666] hover:text-white hover:bg-[#252525] transition-colors"
                     title={isExpanded ? '收起' : '展开'}
                   >
                     {isExpanded ? <ChevronDown size={16} /> : <ChevronUp size={16} />}
@@ -150,14 +117,14 @@ const ErrorNotification: React.FC<ErrorNotificationProps> = ({
                 )}
                 <button
                   onClick={copyAllErrors}
-                  className="p-1 rounded text-[#666] hover:text-white hover:bg-[#252525] transition-colors"
+                  className="p-1 rounded text-[#666666] hover:text-white hover:bg-[#252525] transition-colors"
                   title="复制所有错误"
                 >
                   <Copy size={16} />
                 </button>
                 <button
                   onClick={() => setIsPanelOpen(false)}
-                  className="p-1 rounded text-[#666] hover:text-white hover:bg-[#252525] transition-colors"
+                  className="p-1 rounded text-[#666666] hover:text-white hover:bg-[#252525] transition-colors"
                   title="关闭"
                 >
                   <X size={16} />
@@ -165,27 +132,23 @@ const ErrorNotification: React.FC<ErrorNotificationProps> = ({
               </div>
             </div>
 
-            {/* 错误列表 */}
             <div className="overflow-y-auto" style={{ maxHeight: isExpanded ? `${maxHeight}px` : 'auto' }}>
               {displayErrors.map((log) => (
                 <div
                   key={log.id}
-                  className={`
-                    px-4 py-3 border-b border-[#2a2a2a] last:border-b-0
-                    ${log.type === 'error' ? 'bg-red-500/5' : 'bg-yellow-500/5'}
-                    hover:bg-[#252525] transition-colors
-                  `}
+                  className={`px-4 py-3 border-b border-[#2a2a2a] last:border-b-0 ${
+                    log.type === 'error' ? 'bg-red-500/5' : 'bg-yellow-500/5'
+                  } hover:bg-[#252525] transition-colors`}
                 >
                   <div className="flex items-start justify-between gap-2">
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 mb-1">
-                        <span className={`
-                          text-xs font-medium px-1.5 py-0.5 rounded
-                          ${log.type === 'error' ? 'bg-red-500/20 text-red-400' : 'bg-yellow-500/20 text-yellow-400'}
-                        `}>
+                        <span className={`text-xs font-medium px-1.5 py-0.5 rounded ${
+                          log.type === 'error' ? 'bg-red-500/20 text-red-400' : 'bg-yellow-500/20 text-yellow-400'
+                        }`}>
                           {log.type === 'error' ? 'ERROR' : 'WARN'}
                         </span>
-                        <span className="text-xs text-[#666]">
+                        <span className="text-xs text-[#666666]">
                           {new Date(log.timestamp).toLocaleTimeString('zh-CN', {
                             hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit',
                           })}
@@ -197,7 +160,7 @@ const ErrorNotification: React.FC<ErrorNotificationProps> = ({
                     </div>
                     <button
                       onClick={() => copyError(log)}
-                      className="p-1 rounded text-[#666] hover:text-white hover:bg-[#252525] transition-colors shrink-0"
+                      className="p-1 rounded text-[#666666] hover:text-white hover:bg-[#252525] transition-colors shrink-0"
                       title="复制此错误"
                     >
                       <Copy size={14} />
@@ -207,16 +170,14 @@ const ErrorNotification: React.FC<ErrorNotificationProps> = ({
               ))}
             </div>
 
-            {/* 底部 */}
             {errorLogs.length > 1 && (
               <div className="px-4 py-2 border-t border-[#2a2a2a] bg-[#151515] flex items-center justify-between">
-                <span className="text-xs text-[#666]">
+                <span className="text-xs text-[#666666]">
                   显示 {displayErrors.length} / {errorLogs.length} 条错误
                 </span>
                 <button
                   onClick={() => {
                     window.dispatchEvent(new CustomEvent('open-console'));
-                    setIsPanelOpen(false);
                   }}
                   className="text-xs text-blue-400 hover:text-blue-300 transition-colors"
                 >
@@ -227,6 +188,24 @@ const ErrorNotification: React.FC<ErrorNotificationProps> = ({
           </div>
         </div>
       )}
+
+      {/* 小图标按钮（始终显示） */}
+      <button
+        onClick={handleTogglePanel}
+        className={`ml-auto flex items-center gap-1.5 px-3 py-2 rounded-full shadow-lg transition-all ${
+          isPanelOpen
+            ? 'bg-red-500/20 border border-red-500/40'
+            : 'bg-[#1a1a1a] border border-[#333] hover:border-red-500/30 hover:bg-[#222]'
+        }`}
+        title="查看错误日志"
+      >
+        <AlertCircle size={16} className="text-red-400" />
+        {newCount > 0 && !isPanelOpen && (
+          <span className="min-w-[18px] h-[18px] flex items-center justify-center rounded-full bg-red-500 text-white text-[10px] font-bold">
+            {newCount > 99 ? '99+' : newCount}
+          </span>
+        )}
+      </button>
     </div>
   );
 };
