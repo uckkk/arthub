@@ -220,7 +220,10 @@ class LogCollectorService {
     let line = `  [${t}] [${tag}] ${entry.message}`;
     if (entry.args && entry.args.length > 0) {
       for (const arg of entry.args) {
-        if (arg && typeof arg === 'object') {
+        if (arg == null) continue;
+        if (typeof arg === 'string') {
+          line += `\n    ${arg}`;
+        } else if (typeof arg === 'object') {
           if (arg._stackTrace) {
             line += `\n    stack: ${arg._stackTrace}`;
           } else if (arg._context) {
@@ -228,6 +231,8 @@ class LogCollectorService {
           } else {
             try { line += `\n    ${JSON.stringify(arg)}`; } catch { /* skip */ }
           }
+        } else {
+          line += `\n    ${String(arg)}`;
         }
       }
     }

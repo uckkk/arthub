@@ -855,11 +855,19 @@ class ConsoleService {
     let message = '';
     const logArgs: any[] = [];
 
+    const serializeArg = (arg: any): any => {
+      if (arg instanceof Error) {
+        return { message: arg.message, name: arg.name, stack: arg.stack?.split('\n').slice(0, 5).join('\n') };
+      }
+      return arg;
+    };
+
     args.forEach((arg, index) => {
       if (index === 0) {
-        // 第一个参数作为主消息
         if (typeof arg === 'string') {
           message = arg;
+        } else if (arg instanceof Error) {
+          message = `${arg.name}: ${arg.message}`;
         } else {
           try {
             message = JSON.stringify(arg);
@@ -868,8 +876,7 @@ class ConsoleService {
           }
         }
       } else {
-        // 其他参数作为附加参数
-        logArgs.push(arg);
+        logArgs.push(serializeArg(arg));
       }
     });
 

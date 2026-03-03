@@ -1150,11 +1150,11 @@ const Whiteboard: React.FC = () => {
                     if (!editorRef.current) return;
                     try {
                       const snapshot = editorRef.current.getSnapshot();
-                      saveCanvasData(projectId, snapshot).catch((error) => {
-                        console.error('自动保存失败:', error);
+                      saveCanvasData(projectId, snapshot).catch((error: unknown) => {
+                        console.error('[Whiteboard] 自动保存失败:', error);
                       });
-                    } catch (error) {
-                      console.error('自动保存失败:', error);
+                    } catch (error: unknown) {
+                      console.error('[Whiteboard] 自动保存(同步)失败:', error);
                     }
                   };
                   if (typeof requestIdleCallback !== 'undefined') {
@@ -1172,10 +1172,10 @@ const Whiteboard: React.FC = () => {
                   if (editorRef.current) {
                     try {
                       const snapshot = editorRef.current.getSnapshot();
-                      saveCanvasData(projectId, snapshot).catch((e) =>
-                        console.error('[Whiteboard] 卸载前保存失败:', e)
-                      );
-                    } catch (e) {
+                      saveCanvasData(projectId, snapshot).catch((e: unknown) => {
+                        console.error('[Whiteboard] 卸载前保存失败:', e);
+                      });
+                    } catch (e: unknown) {
                       console.error('[Whiteboard] 获取快照失败:', e);
                     }
                   }

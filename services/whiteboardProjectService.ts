@@ -23,15 +23,29 @@ async function createDirWithPath(dirPath: string, recursive: boolean = true): Pr
 // 统一错误消息提取
 function getErrorMessage(error: unknown): string {
   if (error instanceof Error) {
-    return error.message;
+    return error.message || error.name || '未知 Error';
   }
   if (typeof error === 'string') {
-    return error;
+    return error || '空错误字符串';
   }
-  if (error && typeof error === 'object' && 'message' in error) {
-    return String((error as { message: unknown }).message);
+  if (typeof error === 'number' || typeof error === 'boolean') {
+    return String(error);
   }
-  return JSON.stringify(error) || '未知错误';
+  if (error && typeof error === 'object') {
+    const obj = error as Record<string, unknown>;
+    if (typeof obj.message === 'string' && obj.message) return obj.message;
+    if (typeof obj.msg === 'string' && obj.msg) return obj.msg;
+    if (typeof obj.description === 'string' && obj.description) return obj.description;
+    const str = String(error);
+    if (str !== '[object Object]') return str;
+    try {
+      const json = JSON.stringify(error);
+      if (json && json !== '{}' && json !== '[]') return json;
+    } catch {}
+    const ctor = (error as any).constructor?.name;
+    if (ctor && ctor !== 'Object') return `[${ctor}]`;
+  }
+  return '未知错误';
 }
 
 export interface WhiteboardProject {
@@ -411,8 +425,9 @@ export async function saveCanvasData(projectId: string, data: unknown): Promise<
 
     console.log('画布数据已保存到:', filePath);
   } catch (error) {
-    console.error('保存画布数据失败:', error);
-    throw new Error(getErrorMessage(error));
+    const msg = getErrorMessage(error);
+    console.error('保存画布数据失败:', msg, error);
+    throw new Error(msg || '保存时发生未知错误');
   }
 }
 
