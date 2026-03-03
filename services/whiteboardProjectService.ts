@@ -394,7 +394,7 @@ export async function saveCanvasData(projectId: string, data: unknown): Promise<
     // 将数据序列化为 JSON（防止循环引用或不可序列化值导致崩溃）
     let jsonContent: string;
     try {
-      jsonContent = JSON.stringify(data, null, 2);
+      jsonContent = JSON.stringify(data);
     } catch (stringifyError) {
       const msg = stringifyError instanceof Error ? stringifyError.message : String(stringifyError);
       if (/circular|cyclic/i.test(msg)) {
@@ -407,23 +407,7 @@ export async function saveCanvasData(projectId: string, data: unknown): Promise<
     }
 
     const { invoke } = await import('@tauri-apps/api/tauri');
-    const dataSize = new Blob([jsonContent]).size;
-
-    if (dataSize <= 50 * 1024 * 1024) {
-      await invoke('write_file_with_path', { filePath, content: jsonContent });
-    } else {
-      const CHUNK = 8 * 1024 * 1024;
-      const encoder = new TextEncoder();
-      const bytes = encoder.encode(jsonContent);
-      for (let offset = 0; offset < bytes.length; offset += CHUNK) {
-        const slice = bytes.slice(offset, offset + CHUNK);
-        await invoke('append_binary_file', {
-          filePath,
-          content: Array.from(slice),
-          truncate: offset === 0,
-        });
-      }
-    }
+    await invoke('write_file_with_path', { filePath, content: jsonContent });
 
     project.updatedAt = Date.now();
     saveProjects(projects);
