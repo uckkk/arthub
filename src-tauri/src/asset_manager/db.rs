@@ -761,23 +761,39 @@ pub fn set_custom_paths(conn: &Connection, asset_id: i64, source_path: &str, sli
 
 pub fn get_asset_detail(conn: &Connection, asset_id: i64) -> Result<AssetDetail, String> {
     let asset = conn.query_row(
-        "SELECT id, folder_id, file_path, file_name, file_ext, file_size, width, height, thumb_path, modified_at
-         FROM assets WHERE id = ?1",
+        "SELECT a.id, a.folder_id, a.file_path, a.file_name, a.file_ext, a.file_size,
+                a.width, a.height, a.thumb_path, a.modified_at,
+                COALESCE(r.rating, 0),
+                COALESCE(n.note, ''),
+                COALESCE(cp.source_path, ''),
+                COALESCE(cp.slice_path, ''),
+                COALESCE(cp.effect_path, '')
+         FROM assets a
+         LEFT JOIN asset_ratings r ON a.id = r.asset_id
+         LEFT JOIN asset_notes n ON a.id = n.asset_id
+         LEFT JOIN asset_custom_paths cp ON a.id = cp.asset_id
+         WHERE a.id = ?1",
         params![asset_id],
-        |row| Ok(AssetInfo {
-            id: row.get(0)?, folder_id: row.get(1)?, file_path: row.get(2)?,
-            file_name: row.get(3)?, file_ext: row.get(4)?, file_size: row.get(5)?,
-            width: row.get::<_, u32>(6).unwrap_or(0), height: row.get::<_, u32>(7).unwrap_or(0),
-            thumb_path: row.get(8)?, modified_at: row.get(9)?,
-        }),
+        |row| Ok((
+            AssetInfo {
+                id: row.get(0)?, folder_id: row.get(1)?, file_path: row.get(2)?,
+                file_name: row.get(3)?, file_ext: row.get(4)?, file_size: row.get(5)?,
+                width: row.get::<_, u32>(6).unwrap_or(0), height: row.get::<_, u32>(7).unwrap_or(0),
+                thumb_path: row.get(8)?, modified_at: row.get(9)?,
+            },
+            row.get::<_, i32>(10).unwrap_or(0),
+            row.get::<_, String>(11).unwrap_or_default(),
+            CustomPaths {
+                source_path: row.get::<_, String>(12).unwrap_or_default(),
+                slice_path: row.get::<_, String>(13).unwrap_or_default(),
+                effect_path: row.get::<_, String>(14).unwrap_or_default(),
+            },
+        )),
     ).map_err(|e| format!("查询资产失败: {}", e))?;
 
     let tags = get_asset_tags(conn, asset_id)?;
-    let rating = get_rating(conn, asset_id);
-    let note = get_note(conn, asset_id);
-    let custom_paths = get_custom_paths(conn, asset_id);
 
-    Ok(AssetDetail { asset, tags, rating, note, custom_paths })
+    Ok(AssetDetail { asset: asset.0, tags, rating: asset.1, note: asset.2, custom_paths: asset.3 })
 }
 
 // ---- Smart Folder CRUD ----
@@ -975,6 +991,44 @@ pub fn upsert_asset_hash(conn: &Connection, asset_id: i64, md5: &str, phash: &st
         params![asset_id, md5, phash],
     ).map_err(|e| e.to_string())?;
     Ok(())
+}
+
+pub fn batch_upsert_hashes(conn: &Connection, results: &[(i64, String)]) -> Result<u32, String> {
+    conn.execute_batch("BEGIN").map_err(|e| e.to_string())?;
+    let mut count = 0u32;
+    for (asset_id, md5) in results {
+        if conn.execute(
+            "INSERT OR REPLACE INTO asset_hashes (asset_id, md5, phash) VALUES (?1, ?2, ?3)",
+            params![asset_id, md5, ""],
+        ).is_ok() {
+            count += 1;
+        }
+    }
+    conn.execute_batch("COMMIT").map_err(|e| {
+        let _ = conn.execute_batch("ROLLBACK");
+        e.to_string()
+    })?;
+    Ok(count)
+}
+
+pub fn batch_upsert_colors(conn: &Connection, results: &[(i64, Vec<AssetColor>)]) -> Result<u32, String> {
+    conn.execute_batch("BEGIN").map_err(|e| e.to_string())?;
+    let mut count = 0u32;
+    for (asset_id, colors) in results {
+        let _ = conn.execute("DELETE FROM asset_colors WHERE asset_id = ?1", params![asset_id]);
+        for c in colors {
+            let _ = conn.execute(
+                "INSERT INTO asset_colors (asset_id, hex, ratio, r, g, b, h, s, l) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9)",
+                params![asset_id, c.hex, c.ratio, c.r, c.g, c.b, c.h, c.s, c.l],
+            );
+        }
+        count += 1;
+    }
+    conn.execute_batch("COMMIT").map_err(|e| {
+        let _ = conn.execute_batch("ROLLBACK");
+        e.to_string()
+    })?;
+    Ok(count)
 }
 
 pub fn find_duplicate_md5(conn: &Connection) -> Result<Vec<(String, Vec<i64>)>, String> {

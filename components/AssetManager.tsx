@@ -879,22 +879,62 @@ const AssetDetailSidebar: React.FC<{
           <div key={key} className="mb-2 last:mb-0">
             <span className="text-[10px] text-[#555] block mb-0.5">{label}</span>
             {editingPaths ? (
-              <input
-                type="text"
-                value={customPaths[key]}
-                onChange={e => setCustomPaths(prev => ({ ...prev, [key]: e.target.value }))}
-                onBlur={() => { onSetCustomPaths(customPaths); }}
-                className="w-full bg-[#111] border border-[#2a2a2a] rounded px-2 py-1 text-xs text-[#ccc] placeholder-[#555] outline-none focus:border-[#3b82f6]"
-                placeholder={`输入${label}...`}
-              />
+              <div className="flex gap-1">
+                <input
+                  type="text"
+                  value={customPaths[key]}
+                  onChange={e => setCustomPaths(prev => ({ ...prev, [key]: e.target.value }))}
+                  onBlur={() => { onSetCustomPaths(customPaths); }}
+                  className="flex-1 min-w-0 bg-[#111] border border-[#2a2a2a] rounded px-2 py-1 text-xs text-[#ccc] placeholder-[#555] outline-none focus:border-[#3b82f6]"
+                  placeholder={`输入${label}...`}
+                />
+                <button
+                  type="button"
+                  onClick={async () => {
+                    try {
+                      const { open } = await import('@tauri-apps/api/dialog');
+                      const selected = await open({ directory: key !== 'source_path', title: `选择${label}` });
+                      if (selected && typeof selected === 'string') {
+                        const next = { ...customPaths, [key]: selected };
+                        setCustomPaths(next);
+                        onSetCustomPaths(next);
+                      }
+                    } catch {}
+                  }}
+                  className="px-1.5 py-1 bg-[#1a1a1a] hover:bg-[#222] rounded text-[#555] hover:text-[#aaa]"
+                  title="浏览..."
+                >
+                  <FolderOpen size={12} />
+                </button>
+              </div>
             ) : (
-              <p
-                className={`text-xs cursor-pointer rounded px-1 py-0.5 -mx-1 hover:bg-[#1a1a1a] truncate ${customPaths[key] ? 'text-[#aaa]' : 'text-[#444] italic'}`}
-                title={customPaths[key] || undefined}
-                onClick={() => setEditingPaths(true)}
-              >
-                {customPaths[key] || `点击添加${label}`}
-              </p>
+              customPaths[key] ? (
+                <p
+                  className="text-xs cursor-pointer rounded px-1 py-0.5 -mx-1 hover:bg-[#1a1a1a] truncate text-[#3b82f6] hover:text-[#60a5fa] hover:underline"
+                  title={`点击打开: ${customPaths[key]}`}
+                  onClick={async () => {
+                    try {
+                      const { invoke: inv } = await import('@tauri-apps/api/tauri');
+                      const p = customPaths[key];
+                      const isFile = /\.[a-zA-Z0-9]+$/.test(p);
+                      if (isFile) {
+                        await inv('open_folder', { path: p.replace(/[\\/][^\\/]+$/, '') });
+                      } else {
+                        await inv('open_folder', { path: p });
+                      }
+                    } catch {}
+                  }}
+                >
+                  {customPaths[key]}
+                </p>
+              ) : (
+                <p
+                  className="text-xs cursor-pointer rounded px-1 py-0.5 -mx-1 hover:bg-[#1a1a1a] truncate text-[#444] italic"
+                  onClick={() => setEditingPaths(true)}
+                >
+                  点击添加{label}
+                </p>
+              )
             )}
           </div>
         ))}
@@ -3641,12 +3681,12 @@ export default function AssetManager() {
 
   useEffect(() => { loadFavorites(); }, [loadFavorites]);
 
-  // Background color/hash index on startup (silent)
+  // Background color/hash index on startup (delayed to avoid lock contention with initial queries)
   useEffect(() => {
     const timer = setTimeout(() => {
       invoke('asset_index_colors').catch(() => {});
       invoke('asset_index_hashes').catch(() => {});
-    }, 3000);
+    }, 8000);
     return () => clearTimeout(timer);
   }, []);
 

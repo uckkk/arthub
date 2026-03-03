@@ -619,12 +619,8 @@ pub async fn asset_index_colors(
     })
     .await
     .map_err(|e| format!("颜色索引线程失败: {}", e))?;
-    let mut count = 0u32;
-    for (asset_id, db_colors) in results {
-        let conn = state.db.lock().map_err(|e| e.to_string())?;
-        let _ = db::upsert_asset_colors(&conn, asset_id, &db_colors);
-        count += 1;
-    }
+    let conn = state.db.lock().map_err(|e| e.to_string())?;
+    let count = db::batch_upsert_colors(&conn, &results)?;
     Ok(count)
 }
 
@@ -719,12 +715,8 @@ pub async fn asset_index_hashes(
     })
     .await
     .map_err(|e| format!("哈希索引线程失败: {}", e))?;
-    let mut count = 0u32;
-    for (asset_id, md5) in results {
-        let conn = state.db.lock().map_err(|e| e.to_string())?;
-        let _ = db::upsert_asset_hash(&conn, asset_id, &md5, "");
-        count += 1;
-    }
+    let conn = state.db.lock().map_err(|e| e.to_string())?;
+    let count = db::batch_upsert_hashes(&conn, &results)?;
     Ok(count)
 }
 
