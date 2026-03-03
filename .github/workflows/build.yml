@@ -50,10 +50,9 @@ jobs:
             name: macOS-Intel
           
           # macOS Apple Silicon 构建（ARM64）
-          # 如果需要 ARM 版本，取消下面的注释
-          # - platform: macos-latest
-          #   target: aarch64-apple-darwin
-          #   name: macOS-ARM
+          - platform: macos-latest
+            target: aarch64-apple-darwin
+            name: macOS-ARM
 
     runs-on: ${{ matrix.platform }}
     
