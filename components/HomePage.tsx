@@ -125,19 +125,92 @@ const HomePage: React.FC = () => {
     }
   };
 
-  // 处理AI工作流打开
+  // 处理AI工作流打开（与AITool.tsx的handleOpenAI逻辑一致）
   const handleWorkflowOpen = async (workflow: FavoriteItem['aiWorkflow']) => {
     if (!workflow) return;
-    
+
     try {
       const isTauri = typeof window !== 'undefined' && (window as any).__TAURI__;
-      
+
+      // 从 localStorage 查找完整配置（包含 jsonFile）
+      let jsonFile: string | undefined;
+      let jsonFileName: string | undefined;
+      try {
+        const raw = localStorage.getItem('arthub_ai_configs');
+        if (raw) {
+          const configs: { id: string; jsonFile?: string; jsonFileName?: string }[] = JSON.parse(raw);
+          const match = configs.find(c => c.id === workflow.id);
+          if (match) {
+            jsonFile = match.jsonFile;
+            jsonFileName = match.jsonFileName;
+          }
+        }
+      } catch { /* ignore */ }
+
       if (isTauri && workflow.url) {
         try {
           const { invoke } = await import('@tauri-apps/api/tauri');
-          
-          // 这里可以添加JSON工作流注入逻辑（如果需要）
-          await openUrlWithShell(workflow.url);
+
+          let jsonContent: string | null = null;
+
+          if (jsonFile) {
+            try {
+              if (jsonFile.startsWith('data:application/json;base64,')) {
+                const base64 = jsonFile.replace('data:application/json;base64,', '');
+                jsonContent = decodeURIComponent(escape(atob(base64)));
+              } else {
+                const { readTextFile, BaseDirectory } = await import('@tauri-apps/api/fs');
+                const { appDataDir, join } = await import('@tauri-apps/api/path');
+                try {
+                  jsonContent = await readTextFile(jsonFile);
+                } catch {
+                  const appDataDirPath = await appDataDir();
+                  const workflowDir = await join(appDataDirPath, 'comfyui工作流');
+                  const fileName = jsonFile.split(/[/\\]/).pop() || '';
+                  const fallbackPath = await join(workflowDir, fileName);
+                  try {
+                    jsonContent = await readTextFile(`comfyui工作流/${fileName}`, { dir: BaseDirectory.AppData });
+                  } catch {
+                    jsonContent = await readTextFile(fallbackPath);
+                  }
+                }
+              }
+            } catch (error) {
+              console.error('Failed to read JSON file:', error);
+            }
+          }
+
+          if (jsonContent) {
+            try { JSON.parse(jsonContent); } catch { jsonContent = null; }
+          }
+
+          let clipboardSuccess = false;
+          if (jsonContent) {
+            try {
+              await navigator.clipboard.writeText(jsonContent);
+              clipboardSuccess = true;
+            } catch { /* ignore */ }
+          }
+
+          if (jsonContent && workflow.url) {
+            try {
+              const comfyuiBaseUrl = new URL(workflow.url).origin;
+              invoke('send_workflow_to_comfyui', {
+                comfyUrl: comfyuiBaseUrl,
+                workflowJson: jsonContent,
+              }).catch(() => {});
+            } catch { /* ignore */ }
+          }
+
+          try {
+            await openUrlWithShell(workflow.url);
+          } catch {
+            await openUrl(workflow.url, '_blank');
+          }
+
+          if (clipboardSuccess && jsonContent) {
+            invoke('simulate_paste', { delayMs: 4000 }).catch(() => {});
+          }
         } catch (error) {
           console.error('Tauri error:', error);
           await openUrl(workflow.url, '_blank');
