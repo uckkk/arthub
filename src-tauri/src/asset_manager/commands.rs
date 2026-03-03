@@ -1093,8 +1093,16 @@ pub async fn ai_index_embeddings(
             let model = ai::load_model(&ai_state.get_models_dir())?;
             let mut lock = ai_state.model.lock().map_err(|e| e.to_string())?;
             *lock = Some(model);
+            *ai_state.model_broken.lock().unwrap() = false;
         }
         Ok(())
+    }
+
+    {
+        let broken = ai_state.model_broken.lock().map_err(|e| e.to_string())?;
+        if *broken {
+            return Err("AI 模型不可用，请重启应用后重试".to_string());
+        }
     }
 
     ensure_model(&ai_state)?;
@@ -1146,6 +1154,7 @@ pub async fn ai_index_embeddings(
                         *lock = None;
                     }
                     if ensure_model(&ai_state).is_err() {
+                        *ai_state.model_broken.lock().unwrap() = true;
                         break;
                     }
                     consecutive_failures = 0;

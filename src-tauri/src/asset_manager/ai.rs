@@ -1,4 +1,4 @@
-﻿use std::path::{Path, PathBuf};
+use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
 // ort 不支�?macOS Intel (x86_64-apple-darwin)
@@ -39,6 +39,7 @@ pub struct AiState {
     pub models_dir: Mutex<PathBuf>,
     pub default_models_dir: PathBuf,
     pub config_path: PathBuf,
+    pub model_broken: Mutex<bool>,
 }
 
 impl AiState {
@@ -53,6 +54,7 @@ impl AiState {
             models_dir: Mutex::new(saved_dir),
             default_models_dir: default_dir,
             config_path,
+            model_broken: Mutex::new(false),
         }
     }
 
@@ -72,6 +74,7 @@ impl AiState {
         std::fs::write(&self.config_path, json.to_string()).map_err(|e| format!("保存配置失败: {}", e))?;
         *self.models_dir.lock().unwrap() = new_dir;
         *self.model.lock().unwrap() = None;
+        *self.model_broken.lock().unwrap() = false;
         Ok(())
     }
 }
