@@ -1118,6 +1118,8 @@ pub async fn ai_index_embeddings(
     let mut indexed = 0u32;
     let mut failed = 0u32;
     let mut consecutive_failures = 0u32;
+    let mut reload_attempts = 0u32;
+    const MAX_RELOADS: u32 = 2;
 
     for (i, (asset_id, file_path)) in assets.iter().enumerate() {
         if !std::path::Path::new(file_path).exists() {
@@ -1148,7 +1150,11 @@ pub async fn ai_index_embeddings(
                 consecutive_failures += 1;
 
                 if consecutive_failures >= 3 {
-                    // Model likely crashed — drop and reload
+                    reload_attempts += 1;
+                    if reload_attempts > MAX_RELOADS {
+                        *ai_state.model_broken.lock().unwrap() = true;
+                        break;
+                    }
                     {
                         let mut lock = ai_state.model.lock().map_err(|e| e.to_string())?;
                         *lock = None;
