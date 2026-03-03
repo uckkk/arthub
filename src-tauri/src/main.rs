@@ -1707,6 +1707,28 @@ fn write_file_with_path(app: tauri::AppHandle, file_path: String, content: Strin
     Ok(())
 }
 
+#[tauri::command]
+fn append_binary_file(app: tauri::AppHandle, file_path: String, content: Vec<u8>, truncate: bool) -> Result<(), String> {
+    require_auth(&app.state::<AppState>())?;
+    use std::fs::{self, OpenOptions};
+    use std::io::Write;
+    use std::path::Path;
+
+    let path = Path::new(&file_path);
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent).map_err(|e| format!("创建目录失败: {}", e))?;
+    }
+
+    let mut file = if truncate {
+        OpenOptions::new().write(true).create(true).truncate(true).open(path)
+    } else {
+        OpenOptions::new().append(true).create(true).open(path)
+    }.map_err(|e| format!("打开文件失败: {}", e))?;
+
+    file.write_all(&content).map_err(|e| format!("写入文件失败: {}", e))?;
+    Ok(())
+}
+
 // Tauri 命令：重命名文件或目录（绕过文件系统作用域限制）
 #[tauri::command]
 fn rename_file_with_path(app: tauri::AppHandle, old_path: String, new_path: String) -> Result<(), String> {
@@ -2614,6 +2636,7 @@ fn main() {
             get_app_icon,
             write_file_with_path,
             write_binary_file_with_path,
+            append_binary_file,
             rename_directory_with_path,
             read_file_with_path,
             read_binary_file_with_path,

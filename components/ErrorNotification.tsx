@@ -1,165 +1,135 @@
 /**
  * 错误通知组件
- * 在右下角自动弹出显示错误信息，支持一键复制
+ * 右下角显示小图标徽标，点击后展开错误面板
  */
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { X, Copy, AlertCircle, ChevronDown, ChevronUp } from 'lucide-react';
 import { consoleService } from '../services/consoleService';
 import { LogEntry } from './Console';
 
 interface ErrorNotificationProps {
   maxHeight?: number;
-  autoHideDelay?: number; // 自动隐藏延迟（毫秒），0 表示不自动隐藏
 }
 
 const ErrorNotification: React.FC<ErrorNotificationProps> = ({
   maxHeight = 400,
-  autoHideDelay = 0, // 默认不自动隐藏
 }) => {
-  const [isVisible, setIsVisible] = useState(false);
+  const [isPanelOpen, setIsPanelOpen] = useState(false);
   const [isExpanded, setIsExpanded] = useState(false);
   const [errorLogs, setErrorLogs] = useState<LogEntry[]>([]);
-  const [newErrorCount, setNewErrorCount] = useState(0);
-  const autoHideTimeoutRef = React.useRef<NodeJS.Timeout | null>(null);
+  const [seenCount, setSeenCount] = useState(0);
+  const panelRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    // 订阅日志更新
     const unsubscribe = consoleService.subscribe((logs) => {
-      // 只显示错误和警告日志
       const errors = logs.filter(log => log.type === 'error' || log.type === 'warn');
-      
-      if (errors.length > 0) {
-        setErrorLogs(errors);
-        setIsVisible(true);
-        
-        // 如果有新错误，增加计数
-        if (errors.length > errorLogs.length) {
-          setNewErrorCount(errors.length - errorLogs.length);
-        }
-        
-        // 如果设置了自动隐藏延迟，重置定时器
-        if (autoHideDelay > 0) {
-          if (autoHideTimeoutRef.current) {
-            clearTimeout(autoHideTimeoutRef.current);
-          }
-          autoHideTimeoutRef.current = setTimeout(() => {
-            setIsVisible(false);
-          }, autoHideDelay);
-        }
-      }
+      setErrorLogs(errors);
     });
+    return () => unsubscribe();
+  }, []);
 
-    return () => {
-      unsubscribe();
-      if (autoHideTimeoutRef.current) {
-        clearTimeout(autoHideTimeoutRef.current);
+  useEffect(() => {
+    if (!isPanelOpen) return;
+    const handleClickOutside = (e: MouseEvent) => {
+      if (panelRef.current && !panelRef.current.contains(e.target as Node)) {
+        setIsPanelOpen(false);
+        setSeenCount(errorLogs.length);
       }
     };
-  }, [errorLogs.length, autoHideDelay]);
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [isPanelOpen, errorLogs.length]);
 
-  // 格式化错误消息
   const formatError = (log: LogEntry): string => {
     let message = log.message;
     if (log.args && log.args.length > 0) {
       try {
         const argsStr = log.args.map(arg => {
-          if (typeof arg === 'object') {
-            return JSON.stringify(arg, null, 2);
-          }
+          if (typeof arg === 'object') return JSON.stringify(arg, null, 2);
           return String(arg);
         }).join(' ');
         message += ' ' + argsStr;
-      } catch (e) {
+      } catch {
         message += ' [无法序列化参数]';
       }
     }
     return message;
   };
 
-  // 复制单个错误
   const copyError = (log: LogEntry) => {
     const time = new Date(log.timestamp).toLocaleTimeString('zh-CN', {
-      hour12: false,
-      hour: '2-digit',
-      minute: '2-digit',
-      second: '2-digit',
+      hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit',
       fractionalSecondDigits: 3,
     });
     const typeLabel = log.type === 'error' ? 'ERROR' : 'WARN';
-    const errorText = `[${time}] [${typeLabel}] ${formatError(log)}`;
-    
-    navigator.clipboard.writeText(errorText).then(() => {
-      // 可以添加一个短暂的提示
-    }).catch(err => {
-      console.error('复制失败:', err);
-    });
+    navigator.clipboard.writeText(`[${time}] [${typeLabel}] ${formatError(log)}`).catch(() => {});
   };
 
-  // 复制所有错误
   const copyAllErrors = () => {
-    const errorText = errorLogs.map(log => {
+    const text = errorLogs.map(log => {
       const time = new Date(log.timestamp).toLocaleTimeString('zh-CN', {
-        hour12: false,
-        hour: '2-digit',
-        minute: '2-digit',
-        second: '2-digit',
+        hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit',
         fractionalSecondDigits: 3,
       });
       const typeLabel = log.type === 'error' ? 'ERROR' : 'WARN';
       return `[${time}] [${typeLabel}] ${formatError(log)}`;
     }).join('\n');
-    
-    navigator.clipboard.writeText(errorText).then(() => {
-      // 可以添加一个短暂的提示
-    }).catch(err => {
-      console.error('复制失败:', err);
-    });
+    navigator.clipboard.writeText(text).catch(() => {});
   };
 
-  // 关闭通知
-  const handleClose = () => {
-    setIsVisible(false);
-    setNewErrorCount(0);
-  };
+  if (errorLogs.length === 0) return null;
 
-  if (!isVisible || errorLogs.length === 0) {
-    return null;
+  const unreadCount = Math.max(0, errorLogs.length - seenCount);
+  const latestError = errorLogs[errorLogs.length - 1];
+  const displayErrors = isExpanded ? errorLogs.slice(-5) : [latestError];
+
+  if (!isPanelOpen) {
+    return (
+      <div className="fixed bottom-4 right-4 z-[9999]">
+        <button
+          onClick={() => { setIsPanelOpen(true); setSeenCount(errorLogs.length); }}
+          className="
+            relative w-10 h-10 rounded-full
+            bg-[#1a1a1a] border border-red-500/30
+            shadow-lg shadow-black/40
+            flex items-center justify-center
+            hover:bg-[#252525] hover:border-red-500/50 transition-colors
+          "
+          title={`${errorLogs.length} 条错误/警告`}
+        >
+          <AlertCircle size={18} className="text-red-400" />
+          {unreadCount > 0 && (
+            <span className="
+              absolute -top-1 -right-1
+              min-w-[18px] h-[18px] px-1
+              rounded-full bg-red-500 text-white
+              text-[10px] font-bold leading-[18px] text-center
+            ">
+              {unreadCount > 99 ? '99+' : unreadCount}
+            </span>
+          )}
+        </button>
+      </div>
+    );
   }
 
-  const latestError = errorLogs[errorLogs.length - 1];
-  const displayErrors = isExpanded ? errorLogs.slice(-5) : [latestError]; // 展开时显示最近5条
-
   return (
-    <div className="fixed bottom-4 right-4 z-[9999] animate-slide-up">
+    <div className="fixed bottom-4 right-4 z-[9999]" ref={panelRef}>
       <div className="
         bg-[#1a1a1a] border border-red-500/30 rounded-lg
         shadow-2xl shadow-black/50
         w-[400px] max-w-[calc(100vw-2rem)]
-        overflow-hidden
+        overflow-hidden animate-slide-up
       ">
-        {/* 标题栏 */}
         <div className="
           flex items-center justify-between px-4 py-3
           bg-red-500/10 border-b border-red-500/20
         ">
           <div className="flex items-center gap-2">
             <AlertCircle size={18} className="text-red-400" />
-            <span className="text-sm font-semibold text-white">
-              错误通知
-            </span>
-            {newErrorCount > 0 && (
-              <span className="
-                px-1.5 py-0.5 rounded text-xs font-medium
-                bg-red-500/20 text-red-400
-              ">
-                +{newErrorCount}
-              </span>
-            )}
-            <span className="
-              px-1.5 py-0.5 rounded text-xs font-medium
-              bg-[#2a2a2a] text-[#666666]
-            ">
+            <span className="text-sm font-semibold text-white">错误通知</span>
+            <span className="px-1.5 py-0.5 rounded text-xs font-medium bg-[#2a2a2a] text-[#666666]">
               {errorLogs.length} 条
             </span>
           </div>
@@ -167,10 +137,7 @@ const ErrorNotification: React.FC<ErrorNotificationProps> = ({
             {errorLogs.length > 1 && (
               <button
                 onClick={() => setIsExpanded(!isExpanded)}
-                className="
-                  p-1 rounded text-[#666666] hover:text-white hover:bg-[#252525]
-                  transition-colors
-                "
+                className="p-1 rounded text-[#666666] hover:text-white hover:bg-[#252525] transition-colors"
                 title={isExpanded ? '收起' : '展开'}
               >
                 {isExpanded ? <ChevronDown size={16} /> : <ChevronUp size={16} />}
@@ -178,20 +145,14 @@ const ErrorNotification: React.FC<ErrorNotificationProps> = ({
             )}
             <button
               onClick={copyAllErrors}
-              className="
-                p-1 rounded text-[#666666] hover:text-white hover:bg-[#252525]
-                transition-colors
-              "
+              className="p-1 rounded text-[#666666] hover:text-white hover:bg-[#252525] transition-colors"
               title="复制所有错误"
             >
               <Copy size={16} />
             </button>
             <button
-              onClick={handleClose}
-              className="
-                p-1 rounded text-[#666666] hover:text-white hover:bg-[#252525]
-                transition-colors
-              "
+              onClick={() => { setIsPanelOpen(false); setSeenCount(errorLogs.length); }}
+              className="p-1 rounded text-[#666666] hover:text-white hover:bg-[#252525] transition-colors"
               title="关闭"
             >
               <X size={16} />
@@ -199,12 +160,8 @@ const ErrorNotification: React.FC<ErrorNotificationProps> = ({
           </div>
         </div>
 
-        {/* 错误列表 */}
-        <div
-          className="overflow-y-auto"
-          style={{ maxHeight: isExpanded ? `${maxHeight}px` : 'auto' }}
-        >
-          {displayErrors.map((log, index) => (
+        <div className="overflow-y-auto" style={{ maxHeight: isExpanded ? `${maxHeight}px` : 'auto' }}>
+          {displayErrors.map((log) => (
             <div
               key={log.id}
               className={`
@@ -218,18 +175,13 @@ const ErrorNotification: React.FC<ErrorNotificationProps> = ({
                   <div className="flex items-center gap-2 mb-1">
                     <span className={`
                       text-xs font-medium px-1.5 py-0.5 rounded
-                      ${log.type === 'error' 
-                        ? 'bg-red-500/20 text-red-400' 
-                        : 'bg-yellow-500/20 text-yellow-400'}
+                      ${log.type === 'error' ? 'bg-red-500/20 text-red-400' : 'bg-yellow-500/20 text-yellow-400'}
                     `}>
                       {log.type === 'error' ? 'ERROR' : 'WARN'}
                     </span>
                     <span className="text-xs text-[#666666]">
                       {new Date(log.timestamp).toLocaleTimeString('zh-CN', {
-                        hour12: false,
-                        hour: '2-digit',
-                        minute: '2-digit',
-                        second: '2-digit',
+                        hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit',
                       })}
                     </span>
                   </div>
@@ -239,10 +191,7 @@ const ErrorNotification: React.FC<ErrorNotificationProps> = ({
                 </div>
                 <button
                   onClick={() => copyError(log)}
-                  className="
-                    p-1 rounded text-[#666666] hover:text-white hover:bg-[#252525]
-                    transition-colors shrink-0
-                  "
+                  className="p-1 rounded text-[#666666] hover:text-white hover:bg-[#252525] transition-colors shrink-0"
                   title="复制此错误"
                 >
                   <Copy size={14} />
@@ -252,25 +201,16 @@ const ErrorNotification: React.FC<ErrorNotificationProps> = ({
           ))}
         </div>
 
-        {/* 底部操作栏 */}
         {errorLogs.length > 1 && (
-          <div className="
-            px-4 py-2 border-t border-[#2a2a2a]
-            bg-[#151515] flex items-center justify-between
-          ">
+          <div className="px-4 py-2 border-t border-[#2a2a2a] bg-[#151515] flex items-center justify-between">
             <span className="text-xs text-[#666666]">
               显示 {displayErrors.length} / {errorLogs.length} 条错误
             </span>
             <button
               onClick={() => {
-                // 打开完整控制台（如果可用）
-                const event = new CustomEvent('open-console');
-                window.dispatchEvent(event);
+                window.dispatchEvent(new CustomEvent('open-console'));
               }}
-              className="
-                text-xs text-blue-400 hover:text-blue-300
-                transition-colors
-              "
+              className="text-xs text-blue-400 hover:text-blue-300 transition-colors"
             >
               查看全部
             </button>

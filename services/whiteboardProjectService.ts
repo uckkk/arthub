@@ -406,19 +406,24 @@ export async function saveCanvasData(projectId: string, data: unknown): Promise<
       throw new Error(`序列化画布数据失败: ${msg}`);
     }
 
-    const encoder = new TextEncoder();
-    const uint8Array = encoder.encode(jsonContent);
-    const content = Array.from(uint8Array);
-    const MAX_SIZE = 15 * 1024 * 1024; // 15MB，避免过大 payload 导致 IPC/崩溃
-    if (content.length > MAX_SIZE) {
-      throw new Error(`画布数据过大（${(content.length / 1024 / 1024).toFixed(1)}MB），请减少内容或分批保存后重试`);
-    }
-
     const { invoke } = await import('@tauri-apps/api/tauri');
-    await invoke('write_binary_file_with_path', {
-      filePath,
-      content,
-    });
+    const dataSize = new Blob([jsonContent]).size;
+
+    if (dataSize <= 50 * 1024 * 1024) {
+      await invoke('write_file_with_path', { filePath, content: jsonContent });
+    } else {
+      const CHUNK = 8 * 1024 * 1024;
+      const encoder = new TextEncoder();
+      const bytes = encoder.encode(jsonContent);
+      for (let offset = 0; offset < bytes.length; offset += CHUNK) {
+        const slice = bytes.slice(offset, offset + CHUNK);
+        await invoke('append_binary_file', {
+          filePath,
+          content: Array.from(slice),
+          truncate: offset === 0,
+        });
+      }
+    }
 
     project.updatedAt = Date.now();
     saveProjects(projects);
