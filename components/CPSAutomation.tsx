@@ -99,6 +99,12 @@ const CPSAutomation: React.FC = () => {
   const [tags, setTags] = useState<[string, string, string, string]>(['', '', '', '']);
   const TAG_COLORS = ['#FF6B6B', '#4ECDC4', '#FFD93D', '#6C5CE7'] as const;
 
+  // ---- 输入校验 ----
+  const nameError = customName !== '' && !/^\d{0,4}$/.test(customName) ? '序号仅限4位数字' : '';
+  const descError = Array.from(productDesc).length > 10 ? `产品介绍最多10个字（当前${Array.from(productDesc).length}个）` : '';
+  const tagErrors = tags.map((t, i) => Array.from(t).length > 4 ? `标签${i + 1}最多4个字` : '');
+  const hasValidationError = !!(nameError || descError || tagErrors.some(e => e));
+
   // ---- 模板系统 ----
   const [templates, setTemplates] = useState<CPSTemplate[]>(() => {
     try {
@@ -903,6 +909,9 @@ canvas{display:none}
 .extra-row input:focus{border-color:#3b82f6}
 .tag-input{width:72px!important;text-align:center}
 .desc-input{width:160px!important}
+.input-error{border-color:#ef4444!important}
+.validation-msg{font-size:11px;color:#ef4444;margin-top:6px;display:none}
+.validation-msg.show{display:block}
 </style>
 <script src="https://cdn.jsdelivr.net/npm/pako@2.1.0/dist/pako.min.js"><\/script>
 <script src="https://cdn.jsdelivr.net/npm/upng-js@2.1.0/UPNG.js"><\/script>
@@ -930,6 +939,7 @@ canvas{display:none}
     <input id="tag2" class="tag-input" placeholder="标签3" maxlength="4" style="color:#FFD93D">
     <input id="tag3" class="tag-input" placeholder="标签4" maxlength="4" style="color:#6C5CE7">
   </div>
+  <div class="validation-msg" id="validationMsg"></div>
   <div style="margin-top:12px;text-align:center">
     <button class="btn btn-primary" id="exportBtn" disabled onclick="doExport()">生成并下载</button>
   </div>
@@ -1007,9 +1017,25 @@ document.getElementById('fileInput').onchange=function(e){
 // 阻止页面级拖拽打开文件
 document.addEventListener('dragover',function(e){e.preventDefault()});
 document.addEventListener('drop',function(e){e.preventDefault()});
+function charLen(s){return Array.from(s).length}
 function checkReady(){
-  var v=document.getElementById('customName').value.replace(/\\D/g,'');
-  var ok=files.portrait&&files.popup&&files.appIcon&&v.length>=1&&v.length<=4;
+  var nameInp=document.getElementById('customName');
+  var descInp=document.getElementById('productDesc');
+  var v=nameInp.value;
+  var errors=[];
+  // 序号校验
+  var nameOk=/^\\d{0,4}$/.test(v);
+  if(v&&!nameOk){errors.push('序号仅限4位数字');nameInp.classList.add('input-error')}else{nameInp.classList.remove('input-error')}
+  // 产品介绍校验
+  var dLen=charLen(descInp.value);
+  if(dLen>10){errors.push('产品介绍最多10个字（当前'+dLen+'个）');descInp.classList.add('input-error')}else{descInp.classList.remove('input-error')}
+  // 标签校验
+  for(var i=0;i<4;i++){var ti=document.getElementById('tag'+i);var tl=charLen(ti.value);
+    if(tl>4){errors.push('标签'+(i+1)+'最多4个字');ti.classList.add('input-error')}else{ti.classList.remove('input-error')}}
+  var vm=document.getElementById('validationMsg');
+  if(errors.length>0){vm.textContent=errors.join('；');vm.classList.add('show')}else{vm.textContent='';vm.classList.remove('show')}
+  var digits=v.replace(/\\D/g,'');
+  var ok=files.portrait&&files.popup&&files.appIcon&&digits.length>=1&&digits.length<=4&&errors.length===0;
   document.getElementById('exportBtn').disabled=!ok;
 }
 // 标签/介绍输入触发 checkReady + 预览刷新
@@ -1184,7 +1210,7 @@ async function doExport(){
     }
   }, [shareTemplateId, templates, isTauri, generateSharePage, showToast]);
 
-  const canExport = portraitImage && popupImage && appIconImage;
+  const canExport = portraitImage && popupImage && appIconImage && !hasValidationError;
 
   // ---- 参数禁用状态 ----
   const paramDisabled = !customMode;
@@ -1454,31 +1480,40 @@ async function doExport(){
         </div>
 
         {/* ---- 产品介绍 & 标签输入 ---- */}
-        <div className="flex flex-wrap items-end gap-x-5 gap-y-3 mb-5">
+        <div className="flex flex-wrap items-end gap-x-5 gap-y-3 mb-2">
           <div>
             <div className="text-xs text-[#888888] mb-1">序号</div>
-            <input type="text" value={customName} onChange={e => setCustomName(e.target.value)}
-              placeholder="输入四位数字" maxLength={4}
-              className="w-36 px-2 py-1.5 bg-[#2a2a2a] border border-[#3a3a3a] rounded text-white text-sm" />
+            <input type="text" value={customName}
+              onChange={e => setCustomName(e.target.value)}
+              placeholder="输入四位数字"
+              className={`w-36 px-2 py-1.5 bg-[#2a2a2a] border rounded text-white text-sm transition-colors ${nameError ? 'border-red-500' : 'border-[#3a3a3a]'}`} />
           </div>
           <div>
-            <div className="text-xs text-[#888888] mb-1">产品介绍</div>
+            <div className="text-xs text-[#888888] mb-1">产品介绍 <span className="text-[#555]">({Array.from(productDesc).length}/10)</span></div>
             <input type="text" value={productDesc}
-              onChange={e => setProductDesc(Array.from(e.target.value).slice(0, 10).join(''))}
-              placeholder="输入十个汉字" maxLength={10}
-              className="w-44 px-2 py-1.5 bg-[#2a2a2a] border border-[#3a3a3a] rounded text-white text-sm" />
+              onChange={e => setProductDesc(e.target.value)}
+              placeholder="输入十个汉字"
+              className={`w-44 px-2 py-1.5 bg-[#2a2a2a] border rounded text-white text-sm transition-colors ${descError ? 'border-red-500' : 'border-[#3a3a3a]'}`} />
           </div>
           <div className="flex items-end gap-2">
             <div className="text-xs text-[#888888] mb-1.5 self-center">标签</div>
             {tags.map((tag, i) => (
               <input key={i} type="text" value={tag}
-                onChange={e => { const next = [...tags] as [string, string, string, string]; next[i] = Array.from(e.target.value).slice(0, 4).join(''); setTags(next); }}
-                placeholder={`标签${i + 1}`} maxLength={4}
-                className="w-20 px-2 py-1.5 bg-[#2a2a2a] border border-[#3a3a3a] rounded text-sm"
+                onChange={e => { const next = [...tags] as [string, string, string, string]; next[i] = e.target.value; setTags(next); }}
+                placeholder={`标签${i + 1}`}
+                className={`w-20 px-2 py-1.5 bg-[#2a2a2a] border rounded text-sm transition-colors ${tagErrors[i] ? 'border-red-500' : 'border-[#3a3a3a]'}`}
                 style={{ color: TAG_COLORS[i] }} />
             ))}
           </div>
         </div>
+        {/* 校验错误提示 */}
+        {hasValidationError && (
+          <div className="text-xs text-red-400 mb-3 flex flex-wrap gap-x-4 gap-y-1">
+            {nameError && <span>{nameError}</span>}
+            {descError && <span>{descError}</span>}
+            {tagErrors.map((err, i) => err ? <span key={i}>{err}</span> : null)}
+          </div>
+        )}
 
         {/* 分割线 */}
         <div className="h-px bg-[#2a2a2a] mb-8"></div>
