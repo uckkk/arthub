@@ -578,20 +578,20 @@ const CPSAutomation: React.FC = () => {
       ctx.drawImage(img, params.sx, params.sy, params.sw, params.sh, drawX, drawY, params.dw, params.dh);
       ctx.restore();
 
-      // 3. 绘制标签和产品介绍文字叠加层
-      const scale = size.width / config.portrait.sizes.big.width; // 相对 big 的缩放比
+      // 3. 绘制标签和产品介绍文字叠加层（按高度缩放，big/mid 同高所以文字等大）
+      const hScale = size.height / config.portrait.sizes.big.height;
 
       // 标签：big / mid 显示，small 不显示
       if (sizeType !== 'small') {
         const filledTags = tags.filter(t => t.trim());
         if (filledTags.length > 0) {
-          const tagFontSize = Math.round(18 * scale);
-          const tagH = Math.round(28 * scale);
-          const tagPadX = Math.round(12 * scale);
-          const tagGap = Math.round(8 * scale);
-          const tagR = Math.round(6 * scale);
-          const startX = contentX + Math.round(18 * scale);
-          let curY = contentY + Math.round(18 * scale);
+          const tagFontSize = Math.round(22 * hScale);
+          const tagH = Math.round(34 * hScale);
+          const tagPadX = Math.round(14 * hScale);
+          const tagGap = Math.round(10 * hScale);
+          const tagR = Math.round(6 * hScale);
+          const startX = contentX + Math.round(16 * hScale);
+          let curY = contentY + Math.round(24 * hScale);
 
           ctx.save();
           ctx.textBaseline = 'middle';
@@ -603,13 +603,11 @@ const CPSAutomation: React.FC = () => {
             const tw = ctx.measureText(text).width;
             const boxW = tw + tagPadX * 2;
 
-            // 黑色背景圆角矩形
-            ctx.fillStyle = 'rgba(0, 0, 0, 0.75)';
+            ctx.fillStyle = 'rgba(0, 0, 0, 0.65)';
             ctx.beginPath();
             ctx.roundRect(startX, curY, boxW, tagH, tagR);
             ctx.fill();
 
-            // 彩色文字
             ctx.fillStyle = TAG_COLORS[i];
             ctx.textAlign = 'left';
             ctx.fillText(text, startX + tagPadX, curY + tagH / 2);
@@ -620,14 +618,14 @@ const CPSAutomation: React.FC = () => {
         }
       }
 
-      // 产品介绍：全部三种尺寸都显示
+      // 产品介绍：big/mid/small 都显示，白字 + 半透明黑底
       if (productDesc.trim()) {
-        const descFontSize = Math.round(16 * scale);
-        const descH = Math.round(26 * scale);
-        const descPadX = Math.round(10 * scale);
-        const descR = Math.round(5 * scale);
-        const descX = contentX + Math.round(18 * scale);
-        const descY = contentY + size.height - Math.round(18 * scale) - descH;
+        const descFontSize = Math.round(20 * hScale);
+        const descH = Math.round(32 * hScale);
+        const descPadX = Math.round(12 * hScale);
+        const descR = Math.round(6 * hScale);
+        const descX = contentX + Math.round(16 * hScale);
+        const descY = contentY + size.height - Math.round(24 * hScale) - descH;
 
         ctx.save();
         ctx.textBaseline = 'middle';
@@ -635,7 +633,7 @@ const CPSAutomation: React.FC = () => {
         const tw = ctx.measureText(productDesc).width;
         const boxW = tw + descPadX * 2;
 
-        ctx.fillStyle = 'rgba(34, 197, 94, 0.85)';
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.55)';
         ctx.beginPath();
         ctx.roundRect(descX, descY, boxW, descH, descR);
         ctx.fill();
@@ -914,7 +912,7 @@ canvas{display:none}
 <div class="header"><h1>边锋掼蛋CPS图片处理</h1><a href="https://rcn6u2y4zn7a.feishu.cn/wiki/RDF1wn74riHdzYkEMViccVxtnfl?from=from_copylink" target="_blank" style="font-size:13px;color:#3b82f6;text-decoration:none;margin-left:12px">规范要求</a></div>
 <div class="upload-section">
   <div class="upload-grid">
-    <div class="upload-box" id="box-portrait" onclick="triggerUpload('portrait')"><span class="plus">+</span><span class="label">通用立绘</span></div>
+    <div class="upload-box" id="box-portrait" onclick="triggerUpload('portrait')"><canvas id="previewCvs" style="display:none;width:100%;height:100%;position:absolute;inset:0"></canvas><span class="plus">+</span><span class="label">通用立绘</span></div>
     <div class="upload-box" id="box-popup" onclick="triggerUpload('popup')"><span class="plus">+</span><span class="label">弹窗</span></div>
     <div class="upload-box" id="box-appIcon" onclick="triggerUpload('appIcon')"><span class="plus">+</span><span class="label">APP图标</span></div>
   </div>
@@ -982,7 +980,12 @@ function handleFile(type,f){
   files[type]=f;
   var box=document.getElementById('box-'+type);
   box.classList.add('has-image');
-  box.innerHTML='<img src="'+URL.createObjectURL(f)+'"><span class="file-size">'+fmtSize(f.size)+'</span>';
+  if(type==='portrait'){
+    box.innerHTML='<canvas id="previewCvs" style="width:100%;height:100%;position:absolute;inset:0"></canvas><span class="file-size">'+fmtSize(f.size)+'</span>';
+    updatePreview();
+  }else{
+    box.innerHTML='<img src="'+URL.createObjectURL(f)+'"><span class="file-size">'+fmtSize(f.size)+'</span>';
+  }
   checkReady();
 }
 document.getElementById('fileInput').onchange=function(e){
@@ -1009,10 +1012,23 @@ function checkReady(){
   var ok=files.portrait&&files.popup&&files.appIcon&&v.length>=1&&v.length<=4;
   document.getElementById('exportBtn').disabled=!ok;
 }
-// 标签/介绍输入也触发 checkReady
+// 标签/介绍输入触发 checkReady + 预览刷新
 ['productDesc','tag0','tag1','tag2','tag3'].forEach(function(id){
-  document.getElementById(id).addEventListener('input',checkReady);
+  document.getElementById(id).addEventListener('input',function(){checkReady();updatePreview()});
 });
+var _previewImg=null;
+function updatePreview(){
+  if(!files.portrait)return;
+  var pc=document.getElementById('previewCvs');
+  if(!pc)return;
+  var midSize=CFG.portrait.sizes.mid,midOut=CFG.portrait.outputSizes.mid;
+  pc.width=midOut.width;pc.height=midOut.height;pc.style.display='block';
+  loadImg(files.portrait).then(function(img){
+    _previewImg=img;
+    var ctx=pc.getContext('2d');ctx.clearRect(0,0,pc.width,pc.height);
+    drawPortrait(ctx,img,midOut.width,midOut.height,midSize,'mid');
+  });
+}
 function loadImg(file){return new Promise((r,j)=>{const i=new Image();i.onload=()=>r(i);i.onerror=j;i.src=URL.createObjectURL(file)})}
 function drawRoundedRect(ctx,x,y,w,h,radius,sp){
   const maxR=Math.min(w,h)/2;if(radius<=0){ctx.beginPath();ctx.rect(x,y,w,h);return}
@@ -1043,18 +1059,18 @@ function drawPortrait(ctx,img,outW,outH,size,type){
   ctx.fillStyle='#1b1b1b';drawRoundedRect(ctx,m.left,m.top,size.width,size.height,CFG.portrait.borderRadius,CFG.portrait.smoothBorderRadius);ctx.fill();ctx.restore();
   ctx.save();drawRoundedRect(ctx,m.left,m.top,size.width,size.height,CFG.portrait.borderRadius,CFG.portrait.smoothBorderRadius);ctx.clip();
   ctx.drawImage(img,p.sx,p.sy,p.sw,p.sh,m.left+p.dx,m.top+p.dy,p.dw,p.dh);ctx.restore();
-  var scale=size.width/CFG.portrait.sizes.big.width;
+  var hs=size.height/CFG.portrait.sizes.big.height;
   if(type!=='small'){
     var tvs=getTagValues().filter(function(t){return t});
     if(tvs.length>0){
-      var tFs=Math.round(18*scale),tH=Math.round(28*scale),tPx=Math.round(12*scale),tGap=Math.round(8*scale),tR=Math.round(6*scale);
-      var sX=m.left+Math.round(18*scale),cY=m.top+Math.round(18*scale);
+      var tFs=Math.round(22*hs),tH=Math.round(34*hs),tPx=Math.round(14*hs),tGap=Math.round(10*hs),tR=Math.round(6*hs);
+      var sX=m.left+Math.round(16*hs),cY=m.top+Math.round(24*hs);
       ctx.save();ctx.textBaseline='middle';ctx.font='bold '+tFs+'px -apple-system,BlinkMacSystemFont,sans-serif';
       var allTags=getTagValues();
       for(var ti=0;ti<allTags.length;ti++){
         if(!allTags[ti])continue;
         var tw=ctx.measureText(allTags[ti]).width,bW=tw+tPx*2;
-        ctx.fillStyle='rgba(0,0,0,0.75)';ctx.beginPath();ctx.roundRect(sX,cY,bW,tH,tR);ctx.fill();
+        ctx.fillStyle='rgba(0,0,0,0.65)';ctx.beginPath();ctx.roundRect(sX,cY,bW,tH,tR);ctx.fill();
         ctx.fillStyle=TAG_COLORS[ti];ctx.textAlign='left';ctx.fillText(allTags[ti],sX+tPx,cY+tH/2);
         cY+=tH+tGap;
       }
@@ -1063,11 +1079,11 @@ function drawPortrait(ctx,img,outW,outH,size,type){
   }
   var desc=getDescValue();
   if(desc){
-    var dFs=Math.round(16*scale),dH=Math.round(26*scale),dPx=Math.round(10*scale),dR=Math.round(5*scale);
-    var dX=m.left+Math.round(18*scale),dY=m.top+size.height-Math.round(18*scale)-dH;
+    var dFs=Math.round(20*hs),dH=Math.round(32*hs),dPx=Math.round(12*hs),dR=Math.round(6*hs);
+    var dX=m.left+Math.round(16*hs),dY=m.top+size.height-Math.round(24*hs)-dH;
     ctx.save();ctx.textBaseline='middle';ctx.font='bold '+dFs+'px -apple-system,BlinkMacSystemFont,sans-serif';
     var dtw=ctx.measureText(desc).width,dbW=dtw+dPx*2;
-    ctx.fillStyle='rgba(34,197,94,0.85)';ctx.beginPath();ctx.roundRect(dX,dY,dbW,dH,dR);ctx.fill();
+    ctx.fillStyle='rgba(0,0,0,0.55)';ctx.beginPath();ctx.roundRect(dX,dY,dbW,dH,dR);ctx.fill();
     ctx.fillStyle='#ffffff';ctx.textAlign='left';ctx.fillText(desc,dX+dPx,dY+dH/2);
     ctx.restore();
   }
@@ -1447,7 +1463,8 @@ async function doExport(){
           </div>
           <div>
             <div className="text-xs text-[#888888] mb-1">产品介绍</div>
-            <input type="text" value={productDesc} onChange={e => { if (e.target.value.length <= 10) setProductDesc(e.target.value); }}
+            <input type="text" value={productDesc}
+              onChange={e => setProductDesc(Array.from(e.target.value).slice(0, 10).join(''))}
               placeholder="输入十个汉字" maxLength={10}
               className="w-44 px-2 py-1.5 bg-[#2a2a2a] border border-[#3a3a3a] rounded text-white text-sm" />
           </div>
@@ -1455,7 +1472,7 @@ async function doExport(){
             <div className="text-xs text-[#888888] mb-1.5 self-center">标签</div>
             {tags.map((tag, i) => (
               <input key={i} type="text" value={tag}
-                onChange={e => { if (e.target.value.length <= 4) { const next = [...tags] as [string, string, string, string]; next[i] = e.target.value; setTags(next); } }}
+                onChange={e => { const next = [...tags] as [string, string, string, string]; next[i] = Array.from(e.target.value).slice(0, 4).join(''); setTags(next); }}
                 placeholder={`标签${i + 1}`} maxLength={4}
                 className="w-20 px-2 py-1.5 bg-[#2a2a2a] border border-[#3a3a3a] rounded text-sm"
                 style={{ color: TAG_COLORS[i] }} />
