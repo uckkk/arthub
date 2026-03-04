@@ -794,11 +794,15 @@ const CPSAutomation: React.FC = () => {
   const handleExport = async () => {
     if (!portraitImage || !popupImage || !appIconImage) { showToast('error', '请先上传所有三张图片'); return; }
     try {
-      await new Promise(r => setTimeout(r, 100));
+      // 导出前强制重新渲染立绘（确保标签和介绍文字已绘制到 canvas 上）
+      await renderPortrait(portraitBigCanvasRef, config.portrait.sizes.big, config.portrait.outputSizes.big, 'big');
+      await renderPortrait(portraitMidCanvasRef, config.portrait.sizes.mid, config.portrait.outputSizes.mid, 'mid');
+      await renderPortrait(portraitSmallCanvasRef, config.portrait.sizes.small, config.portrait.outputSizes.small, 'small');
+      await renderPopup();
+      await renderAppIcon();
 
       const zip = new JSZip();
 
-      // 无损 PNG 导出
       const refs: [React.RefObject<HTMLCanvasElement>, string][] = [
         [portraitBigCanvasRef, generateFileName(config.portrait.namePrefix, 'big')],
         [portraitMidCanvasRef, generateFileName(config.portrait.namePrefix, 'mid')],
