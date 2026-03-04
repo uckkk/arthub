@@ -62,36 +62,28 @@ export async function compressImage(
         
         // 获取压缩后的 base64
         let compressedBase64 = canvas.toDataURL('image/jpeg', quality);
+        const maxSizeBytes = maxSizeKB * 1024;
         
         // 如果仍然太大，逐步降低质量
         let currentQuality = quality;
         const minQuality = 0.3;
-        const maxSizeBytes = maxSizeKB * 1024;
         
-        // 计算 base64 字符串的实际大小（base64 编码会增加约 33% 的大小）
-        const base64Size = (compressedBase64.length * 3) / 4;
-        
-        while (base64Size > maxSizeBytes && currentQuality > minQuality) {
+        while ((compressedBase64.length * 3) / 4 > maxSizeBytes && currentQuality > minQuality) {
           currentQuality = Math.max(minQuality, currentQuality - 0.1);
           compressedBase64 = canvas.toDataURL('image/jpeg', currentQuality);
-          
-          // 重新计算大小
-          const newBase64Size = (compressedBase64.length * 3) / 4;
-          if (newBase64Size <= maxSizeBytes) {
-            break;
-          }
         }
         
-        // 如果还是太大，进一步缩小尺寸
+        // 如果还是太大，进一步缩小尺寸后重试
         if ((compressedBase64.length * 3) / 4 > maxSizeBytes) {
-          const scaleFactor = Math.sqrt(maxSizeBytes / ((compressedBase64.length * 3) / 4));
-          const newWidth = Math.floor(width * scaleFactor);
-          const newHeight = Math.floor(height * scaleFactor);
+          const currentSize = (compressedBase64.length * 3) / 4;
+          const scaleFactor = Math.sqrt(maxSizeBytes / currentSize);
+          const newWidth = Math.max(100, Math.floor(width * scaleFactor));
+          const newHeight = Math.max(100, Math.floor(height * scaleFactor));
           
           canvas.width = newWidth;
           canvas.height = newHeight;
           ctx.drawImage(img, 0, 0, newWidth, newHeight);
-          compressedBase64 = canvas.toDataURL('image/jpeg', 0.7);
+          compressedBase64 = canvas.toDataURL('image/jpeg', 0.6);
         }
         
         resolve(compressedBase64);
