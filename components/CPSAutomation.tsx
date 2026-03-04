@@ -6,6 +6,7 @@ import { open } from '@tauri-apps/api/dialog';
 import { listen } from '@tauri-apps/api/event';
 import { appWindow } from '@tauri-apps/api/window';
 import UPNG from 'upng-js';
+import JSZip from 'jszip';
 
 // ---- 无损 PNG 压缩（UPNG 多滤波策略，0 = 不量化）----
 function canvasToBlob(canvas: HTMLCanvasElement): Blob {
@@ -92,6 +93,11 @@ const CPSAutomation: React.FC = () => {
   const [config, setConfig] = useState(DEFAULT_CONFIG);
   const [customName, setCustomName] = useState('');
   const [customMode, setCustomMode] = useState(false); // 自定义开关，默认关闭
+
+  // ---- 产品介绍 & 标签 ----
+  const [productDesc, setProductDesc] = useState('');
+  const [tags, setTags] = useState<[string, string, string, string]>(['', '', '', '']);
+  const TAG_COLORS = ['#FF6B6B', '#4ECDC4', '#FFD93D', '#6C5CE7'] as const;
 
   // ---- 模板系统 ----
   const [templates, setTemplates] = useState<CPSTemplate[]>(() => {
@@ -571,10 +577,78 @@ const CPSAutomation: React.FC = () => {
       ctx.clip();
       ctx.drawImage(img, params.sx, params.sy, params.sw, params.sh, drawX, drawY, params.dw, params.dh);
       ctx.restore();
+
+      // 3. 绘制标签和产品介绍文字叠加层
+      const scale = size.width / config.portrait.sizes.big.width; // 相对 big 的缩放比
+
+      // 标签：big / mid 显示，small 不显示
+      if (sizeType !== 'small') {
+        const filledTags = tags.filter(t => t.trim());
+        if (filledTags.length > 0) {
+          const tagFontSize = Math.round(18 * scale);
+          const tagH = Math.round(28 * scale);
+          const tagPadX = Math.round(12 * scale);
+          const tagGap = Math.round(8 * scale);
+          const tagR = Math.round(6 * scale);
+          const startX = contentX + Math.round(18 * scale);
+          let curY = contentY + Math.round(18 * scale);
+
+          ctx.save();
+          ctx.textBaseline = 'middle';
+          ctx.font = `bold ${tagFontSize}px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif`;
+
+          for (let i = 0; i < tags.length; i++) {
+            if (!tags[i].trim()) continue;
+            const text = tags[i].trim();
+            const tw = ctx.measureText(text).width;
+            const boxW = tw + tagPadX * 2;
+
+            // 黑色背景圆角矩形
+            ctx.fillStyle = 'rgba(0, 0, 0, 0.75)';
+            ctx.beginPath();
+            ctx.roundRect(startX, curY, boxW, tagH, tagR);
+            ctx.fill();
+
+            // 彩色文字
+            ctx.fillStyle = TAG_COLORS[i];
+            ctx.textAlign = 'left';
+            ctx.fillText(text, startX + tagPadX, curY + tagH / 2);
+
+            curY += tagH + tagGap;
+          }
+          ctx.restore();
+        }
+      }
+
+      // 产品介绍：全部三种尺寸都显示
+      if (productDesc.trim()) {
+        const descFontSize = Math.round(16 * scale);
+        const descH = Math.round(26 * scale);
+        const descPadX = Math.round(10 * scale);
+        const descR = Math.round(5 * scale);
+        const descX = contentX + Math.round(18 * scale);
+        const descY = contentY + size.height - Math.round(18 * scale) - descH;
+
+        ctx.save();
+        ctx.textBaseline = 'middle';
+        ctx.font = `bold ${descFontSize}px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif`;
+        const tw = ctx.measureText(productDesc).width;
+        const boxW = tw + descPadX * 2;
+
+        ctx.fillStyle = 'rgba(34, 197, 94, 0.85)';
+        ctx.beginPath();
+        ctx.roundRect(descX, descY, boxW, descH, descR);
+        ctx.fill();
+
+        ctx.fillStyle = '#ffffff';
+        ctx.textAlign = 'left';
+        ctx.fillText(productDesc, descX + descPadX, descY + descH / 2);
+        ctx.restore();
+      }
     } catch (e) {
       console.error('渲染预览失败:', e);
     }
-  }, [portraitImage, config.portrait, margin]);
+  }, [portraitImage, config.portrait, margin, tags, productDesc]);
 
   // 弹窗渲染（无投影，平滑圆角裁剪，最长边撑满）
   const renderPopup = useCallback(async () => {
@@ -653,7 +727,7 @@ const CPSAutomation: React.FC = () => {
     e.target.value = '';
   };
 
-  const handleReset = () => { setConfig(DEFAULT_CONFIG); setCustomName(''); showToast('success', '已恢复默认设置'); };
+  const handleReset = () => { setConfig(DEFAULT_CONFIG); setCustomName(''); setProductDesc(''); setTags(['', '', '', '']); showToast('success', '已恢复默认设置'); };
 
   // 自定义命名：输入为多位数字，取后3位并去除前导0作为实际命名值
   // 示例：1008 → 后3位 008 → 去前导0 → 8；1012 → 012 → 12；1108 → 108 → 108
@@ -698,13 +772,27 @@ const CPSAutomation: React.FC = () => {
     );
   };
 
-  // ---- 导出 ----
+  // ---- 生成产品信息 .txt 内容 ----
+  const generateInfoTxt = (): string | null => {
+    const hasDesc = productDesc.trim();
+    const filledTags = tags.filter(t => t.trim());
+    if (!hasDesc && filledTags.length === 0) return null;
+    const lines: string[] = [];
+    if (hasDesc) lines.push(`产品介绍：${productDesc.trim()}`);
+    if (filledTags.length > 0) {
+      lines.push(`标签：${filledTags.join('、')}`);
+    }
+    return lines.join('\n');
+  };
+
+  // ---- 导出（zip 打包）----
 
   const handleExport = async () => {
     if (!portraitImage || !popupImage || !appIconImage) { showToast('error', '请先上传所有三张图片'); return; }
     try {
       await new Promise(r => setTimeout(r, 100));
-      const images: GeneratedImage[] = [];
+
+      const zip = new JSZip();
 
       // 无损 PNG 导出
       const refs: [React.RefObject<HTMLCanvasElement>, string][] = [
@@ -717,11 +805,21 @@ const CPSAutomation: React.FC = () => {
       for (const [ref, name] of refs) {
         if (!ref.current) continue;
         const blob = canvasToBlob(ref.current);
-        images.push({ name, blob });
+        zip.file(name, blob);
       }
 
+      // 产品信息 .txt
+      const infoTxt = generateInfoTxt();
+      if (infoTxt) {
+        const nameVal = extractNameFromInput(customName || '');
+        zip.file(`产品信息_${nameVal || 'cps'}.txt`, infoTxt);
+      }
+
+      const zipBlob = await zip.generateAsync({ type: 'blob' });
+      const nameVal = extractNameFromInput(customName || '');
+      const zipFileName = `CPS素材_${nameVal || 'export'}.zip`;
+
       if (isTauri) {
-        // Tauri 环境：优先使用自定义导出目录，否则弹出选择目录
         let selectedDir: string | null = exportDirectory.trim() || null;
         if (!selectedDir) {
           const chosen = await open({ directory: true, multiple: false, title: '选择导出目录' });
@@ -731,15 +829,13 @@ const CPSAutomation: React.FC = () => {
         const dir = selectedDir.replace(/[/\\]+$/, '');
         const sep = dir.includes('/') ? '/' : '\\';
         try {
-          for (const img of images) {
-            const buf = await img.blob.arrayBuffer();
-            const filePath = `${dir}${sep}${img.name}`;
-            await invoke('write_binary_file_with_path', {
-              filePath,
-              content: Array.from(new Uint8Array(buf)),
-            });
-          }
-          showToast('success', `已导出 ${images.length} 张图片`);
+          const buf = await zipBlob.arrayBuffer();
+          const filePath = `${dir}${sep}${zipFileName}`;
+          await invoke('write_binary_file_with_path', {
+            filePath,
+            content: Array.from(new Uint8Array(buf)),
+          });
+          showToast('success', `已导出 ${zipFileName}`);
           try { await invoke('open_folder', { path: dir }); } catch (_) { /* 静默 */ }
         } catch (err: any) {
           const msg = err?.message || String(err);
@@ -752,18 +848,13 @@ const CPSAutomation: React.FC = () => {
           return;
         }
       } else {
-        // 浏览器环境：逐张下载 PNG
-        for (let i = 0; i < images.length; i++) {
-          const img = images[i];
-          const url = URL.createObjectURL(img.blob);
-          const a = document.createElement('a');
-          a.href = url;
-          a.download = img.name;
-          a.click();
-          URL.revokeObjectURL(url);
-          if (i < images.length - 1) await new Promise(r => setTimeout(r, 300));
-        }
-        showToast('success', `已导出 ${images.length} 张图片`);
+        const url = URL.createObjectURL(zipBlob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = zipFileName;
+        a.click();
+        URL.revokeObjectURL(url);
+        showToast('success', `已导出 ${zipFileName}`);
       }
     } catch (error) {
       console.error('导出失败:', error);
@@ -808,9 +899,16 @@ canvas{display:none}
 .input-hint.show{display:block}
 @keyframes shake{0%,100%{transform:translateX(0)}20%,60%{transform:translateX(-6px)}40%,80%{transform:translateX(6px)}}
 .shake{animation:shake .4s ease}
+.extra-row{display:flex;gap:10px;align-items:center;margin-top:10px;flex-wrap:wrap}
+.extra-row label{font-size:13px;color:#888;white-space:nowrap}
+.extra-row input{padding:9px 12px;background:#1a1a1a;border:1px solid #333;border-radius:8px;color:#fff;font-size:14px;outline:none}
+.extra-row input:focus{border-color:#3b82f6}
+.tag-input{width:72px!important;text-align:center}
+.desc-input{width:160px!important}
 </style>
 <script src="https://cdn.jsdelivr.net/npm/pako@2.1.0/dist/pako.min.js"><\/script>
 <script src="https://cdn.jsdelivr.net/npm/upng-js@2.1.0/UPNG.js"><\/script>
+<script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"><\/script>
 </head>
 <body>
 <div class="header"><h1>边锋掼蛋CPS图片处理</h1><a href="https://rcn6u2y4zn7a.feishu.cn/wiki/RDF1wn74riHdzYkEMViccVxtnfl?from=from_copylink" target="_blank" style="font-size:13px;color:#3b82f6;text-decoration:none;margin-left:12px">规范要求</a></div>
@@ -822,8 +920,19 @@ canvas{display:none}
   </div>
   <input type="file" id="fileInput" accept="image/*" style="display:none">
   <div class="ctrl-row">
-    <label>命名</label>
-    <input id="customName" placeholder="输入4位数字，取后3位并去前导0作为命名（如1008→8）" maxlength="4">
+    <label>序号</label>
+    <input id="customName" placeholder="输入四位数字" maxlength="4" style="max-width:120px">
+    <label style="margin-left:8px">产品介绍</label>
+    <input id="productDesc" placeholder="输入十个汉字" maxlength="10" class="desc-input">
+  </div>
+  <div class="extra-row">
+    <label>标签</label>
+    <input id="tag0" class="tag-input" placeholder="标签1" maxlength="4" style="color:#FF6B6B">
+    <input id="tag1" class="tag-input" placeholder="标签2" maxlength="4" style="color:#4ECDC4">
+    <input id="tag2" class="tag-input" placeholder="标签3" maxlength="4" style="color:#FFD93D">
+    <input id="tag3" class="tag-input" placeholder="标签4" maxlength="4" style="color:#6C5CE7">
+  </div>
+  <div style="margin-top:12px;text-align:center">
     <button class="btn btn-primary" id="exportBtn" disabled onclick="doExport()">生成并下载</button>
   </div>
   <div class="input-hint" id="inputHint">请输入数字，4位时取后3位并去前导0</div>
@@ -900,6 +1009,10 @@ function checkReady(){
   var ok=files.portrait&&files.popup&&files.appIcon&&v.length>=1&&v.length<=4;
   document.getElementById('exportBtn').disabled=!ok;
 }
+// 标签/介绍输入也触发 checkReady
+['productDesc','tag0','tag1','tag2','tag3'].forEach(function(id){
+  document.getElementById(id).addEventListener('input',checkReady);
+});
 function loadImg(file){return new Promise((r,j)=>{const i=new Image();i.onload=()=>r(i);i.onerror=j;i.src=URL.createObjectURL(file)})}
 function drawRoundedRect(ctx,x,y,w,h,radius,sp){
   const maxR=Math.min(w,h)/2;if(radius<=0){ctx.beginPath();ctx.rect(x,y,w,h);return}
@@ -919,6 +1032,9 @@ function fitBig(img,cw,ch){const ia=img.width/img.height,ca=cw/ch;let dw,dh,dx,d
 function fitMid(img,cw,ch){const ca=cw/ch,ia=img.width/img.height;if(ia>ca){const w=img.height*ca,x=(img.width-w)/2;return{sx:x,sy:0,sw:w,sh:img.height,dx:0,dy:0,dw:cw,dh:ch}}else{const h=img.width/ca,y=(img.height-h)/2;return{sx:0,sy:y,sw:img.width,sh:h,dx:0,dy:0,dw:cw,dh:ch}}}
 function fitSmall(img,cw,ch){const ms=CFG.portrait.sizes.mid,ma=ms.width/ms.height,ia=img.width/img.height;let msx,msy,msw,msh;if(ia>ma){msw=img.height*ma;msx=(img.width-msw)/2;msy=0;msh=img.height}else{msw=img.width;msx=0;msh=img.width/ma;msy=(img.height-msh)/2}const sc=msh/ms.height,hr=ch/ms.height;return{sx:msx,sy:msy+83*sc,sw:msw,sh:msh*hr,dx:0,dy:0,dw:cw,dh:ch}}
 function fitShortest(img,cw,ch){const ia=img.width/img.height,ca=cw/ch;if(ia>ca){const w=img.height*ca,x=(img.width-w)/2;return{sx:x,sy:0,sw:w,sh:img.height,dx:0,dy:0,dw:cw,dh:ch}}else{const h=img.width/ca,y=(img.height-h)/2;return{sx:0,sy:y,sw:img.width,sh:h,dx:0,dy:0,dw:cw,dh:ch}}}
+const TAG_COLORS=['#FF6B6B','#4ECDC4','#FFD93D','#6C5CE7'];
+function getTagValues(){return [0,1,2,3].map(function(i){return document.getElementById('tag'+i).value.trim()})}
+function getDescValue(){return (document.getElementById('productDesc').value||'').trim()}
 function drawPortrait(ctx,img,outW,outH,size,type){
   const m=CFG.portrait.margin;
   const p=type==='big'?fitBig(img,size.width,size.height):type==='mid'?fitMid(img,size.width,size.height):fitSmall(img,size.width,size.height);
@@ -927,6 +1043,34 @@ function drawPortrait(ctx,img,outW,outH,size,type){
   ctx.fillStyle='#1b1b1b';drawRoundedRect(ctx,m.left,m.top,size.width,size.height,CFG.portrait.borderRadius,CFG.portrait.smoothBorderRadius);ctx.fill();ctx.restore();
   ctx.save();drawRoundedRect(ctx,m.left,m.top,size.width,size.height,CFG.portrait.borderRadius,CFG.portrait.smoothBorderRadius);ctx.clip();
   ctx.drawImage(img,p.sx,p.sy,p.sw,p.sh,m.left+p.dx,m.top+p.dy,p.dw,p.dh);ctx.restore();
+  var scale=size.width/CFG.portrait.sizes.big.width;
+  if(type!=='small'){
+    var tvs=getTagValues().filter(function(t){return t});
+    if(tvs.length>0){
+      var tFs=Math.round(18*scale),tH=Math.round(28*scale),tPx=Math.round(12*scale),tGap=Math.round(8*scale),tR=Math.round(6*scale);
+      var sX=m.left+Math.round(18*scale),cY=m.top+Math.round(18*scale);
+      ctx.save();ctx.textBaseline='middle';ctx.font='bold '+tFs+'px -apple-system,BlinkMacSystemFont,sans-serif';
+      var allTags=getTagValues();
+      for(var ti=0;ti<allTags.length;ti++){
+        if(!allTags[ti])continue;
+        var tw=ctx.measureText(allTags[ti]).width,bW=tw+tPx*2;
+        ctx.fillStyle='rgba(0,0,0,0.75)';ctx.beginPath();ctx.roundRect(sX,cY,bW,tH,tR);ctx.fill();
+        ctx.fillStyle=TAG_COLORS[ti];ctx.textAlign='left';ctx.fillText(allTags[ti],sX+tPx,cY+tH/2);
+        cY+=tH+tGap;
+      }
+      ctx.restore();
+    }
+  }
+  var desc=getDescValue();
+  if(desc){
+    var dFs=Math.round(16*scale),dH=Math.round(26*scale),dPx=Math.round(10*scale),dR=Math.round(5*scale);
+    var dX=m.left+Math.round(18*scale),dY=m.top+size.height-Math.round(18*scale)-dH;
+    ctx.save();ctx.textBaseline='middle';ctx.font='bold '+dFs+'px -apple-system,BlinkMacSystemFont,sans-serif';
+    var dtw=ctx.measureText(desc).width,dbW=dtw+dPx*2;
+    ctx.fillStyle='rgba(34,197,94,0.85)';ctx.beginPath();ctx.roundRect(dX,dY,dbW,dH,dR);ctx.fill();
+    ctx.fillStyle='#ffffff';ctx.textAlign='left';ctx.fillText(desc,dX+dPx,dY+dH/2);
+    ctx.restore();
+  }
 }
 function genName(prefix,suffix){const raw=document.getElementById('customName').value||'';const n=extractNameFromInput(raw);let fn=prefix.replace('@',n);if(suffix)fn+='_'+suffix;return fn+'.png'}
 async function doExport(){
@@ -941,7 +1085,7 @@ async function doExport(){
       {outSize:{width:CFG.popup.width,height:CFG.popup.height},type:'popup',prefix:CFG.popup.namePrefix,suffix:null},
       {outSize:{width:CFG.appIcon.width,height:CFG.appIcon.height},type:'icon',prefix:CFG.appIcon.namePrefix,suffix:null},
     ];
-    var dlList=[];
+    var zip=new JSZip();
     for(var ti=0;ti<tasks.length;ti++){
       var t=tasks[ti];
       st.textContent='正在处理 ('+(ti+1)+'/'+tasks.length+')...';
@@ -956,20 +1100,23 @@ async function doExport(){
       }else{
         drawPortrait(ctx,pImg,cvs.width,cvs.height,t.size,t.type);
       }
-      var blob=await canvasToPNG(cvs);
+      var blob=canvasToPNG(cvs);
       var name=genName(t.prefix,t.suffix);
-      dlList.push({blob:blob,name:name});
+      zip.file(name,blob);
     }
-    st.textContent='正在下载...';
-    for(var di=0;di<dlList.length;di++){
-      var item=dlList[di];
-      var a=document.createElement('a');
-      a.href=URL.createObjectURL(item.blob);
-      a.download=item.name;
-      a.click();
-      URL.revokeObjectURL(a.href);
-      if(di<dlList.length-1) await new Promise(function(r){setTimeout(r,300)});
+    var desc=getDescValue(),tvs=getTagValues().filter(function(t){return t});
+    if(desc||tvs.length>0){
+      var lines=[];
+      if(desc) lines.push('产品介绍：'+desc);
+      if(tvs.length>0) lines.push('标签：'+tvs.join('、'));
+      var nv=extractNameFromInput(document.getElementById('customName').value||'');
+      zip.file('产品信息_'+(nv||'cps')+'.txt',lines.join('\\n'));
     }
+    st.textContent='正在打包...';
+    var zipBlob=await zip.generateAsync({type:'blob'});
+    var nv2=extractNameFromInput(document.getElementById('customName').value||'');
+    var zipName='CPS素材_'+(nv2||'export')+'.zip';
+    var a=document.createElement('a');a.href=URL.createObjectURL(zipBlob);a.download=zipName;a.click();URL.revokeObjectURL(a.href);
     st.textContent='';
   }catch(e){st.textContent='处理失败: '+e.message;console.error(e)}
   document.getElementById('exportBtn').disabled=false;
@@ -1275,22 +1422,44 @@ async function doExport(){
           </div>
 
           {/* 命名区域 */}
-          <div className="ml-auto">
+          <div className={`ml-auto transition-opacity ${paramDisabled ? 'opacity-40 pointer-events-none' : ''}`}>
             <div className="text-xs text-[#888888] mb-1">默认资产名称</div>
             {customMode ? (
               <input type="text" 
                 value={config.portrait.namePrefix} 
                 onChange={e => setConfig({ ...config, portrait: { ...config.portrait, namePrefix: e.target.value } })}
-                className="w-40 px-2 py-1 bg-[#2a2a2a] border border-[#3a3a3a] rounded text-white text-xs mb-1.5" />
+                className="w-40 px-2 py-1 bg-[#2a2a2a] border border-[#3a3a3a] rounded text-white text-xs" />
             ) : (
-              <div className="text-xs text-white bg-[#2a2a2a] border border-[#3a3a3a] rounded px-2 py-1 mb-1.5 opacity-40">
+              <div className="text-xs text-white bg-[#2a2a2a] border border-[#3a3a3a] rounded px-2 py-1 opacity-40">
                 {renderDefaultName(config.portrait.namePrefix, '_mid')}
               </div>
             )}
-            <div className="text-xs text-[#888888] mb-1">自定义命名</div>
+          </div>
+        </div>
+
+        {/* ---- 产品介绍 & 标签输入 ---- */}
+        <div className="flex flex-wrap items-end gap-x-5 gap-y-3 mb-5">
+          <div>
+            <div className="text-xs text-[#888888] mb-1">序号</div>
             <input type="text" value={customName} onChange={e => setCustomName(e.target.value)}
-              placeholder="输入4位数字（取后3位）" maxLength={4}
-              className="w-40 px-2 py-1 bg-[#2a2a2a] border border-[#3a3a3a] rounded text-white text-xs" />
+              placeholder="输入四位数字" maxLength={4}
+              className="w-36 px-2 py-1.5 bg-[#2a2a2a] border border-[#3a3a3a] rounded text-white text-sm" />
+          </div>
+          <div>
+            <div className="text-xs text-[#888888] mb-1">产品介绍</div>
+            <input type="text" value={productDesc} onChange={e => { if (e.target.value.length <= 10) setProductDesc(e.target.value); }}
+              placeholder="输入十个汉字" maxLength={10}
+              className="w-44 px-2 py-1.5 bg-[#2a2a2a] border border-[#3a3a3a] rounded text-white text-sm" />
+          </div>
+          <div className="flex items-end gap-2">
+            <div className="text-xs text-[#888888] mb-1.5 self-center">标签</div>
+            {tags.map((tag, i) => (
+              <input key={i} type="text" value={tag}
+                onChange={e => { if (e.target.value.length <= 4) { const next = [...tags] as [string, string, string, string]; next[i] = e.target.value; setTags(next); } }}
+                placeholder={`标签${i + 1}`} maxLength={4}
+                className="w-20 px-2 py-1.5 bg-[#2a2a2a] border border-[#3a3a3a] rounded text-sm"
+                style={{ color: TAG_COLORS[i] }} />
+            ))}
           </div>
         </div>
 
@@ -1462,7 +1631,7 @@ async function doExport(){
           className={`px-6 py-2.5 rounded-lg font-medium transition-colors flex items-center gap-2 text-sm shrink-0 ${isTauri ? '' : 'ml-auto'} ${
             canExport ? 'bg-blue-600 hover:bg-blue-700 text-white' : 'bg-[#2a2a2a] text-[#555555] cursor-not-allowed'
           }`}>
-          <Download size={16} /> 打包导出
+          <Download size={16} /> 导出 ZIP
         </button>
       </div>
 
