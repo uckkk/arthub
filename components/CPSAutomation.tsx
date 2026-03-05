@@ -1024,36 +1024,40 @@ function extractNameFromInput(val){
   var value=lastThree.replace(/^0+/,'');
   return value||'0';
 }
-var _iqMod=null,_iqFailed=false;
-async function _loadIQ(){
-  if(_iqMod) return _iqMod;
-  if(_iqFailed) return null;
-  try{_iqMod=await import('https://esm.sh/imagequant@0.4.4');return _iqMod}
-  catch(e){console.warn('imagequant CDN 加载失败，使用原生 PNG:',e);_iqFailed=true;return null}
-}
-function _fsDither(px,w,h,levels){
-  var step=255/(levels-1),err=new Float32Array(w*h);
-  for(var y=0;y<h;y++)for(var x=0;x<w;x++){
-    var idx=y*w+x,i=idx*4+3,o=px[i];if(o<=2||o>=253)continue;
-    var a=o+err[idx],q=Math.round(a/step)*step,c=Math.max(0,Math.min(255,Math.round(q)));
-    px[i]=c;var e=a-c;
-    if(x+1<w)err[idx+1]+=e*7/16;
-    if(y+1<h){if(x>0)err[idx+w-1]+=e*3/16;err[idx+w]+=e*5/16;if(x+1<w)err[idx+w+1]+=e/16}
-  }
-}
-async function canvasToPNG(canvas){
-  var ctx=canvas.getContext('2d'),imgData=ctx.getImageData(0,0,canvas.width,canvas.height);
-  var mod=await _loadIQ();
-  if(mod&&mod.Imagequant&&mod.ImagequantImage){
-    try{
-      var px=new Uint8Array(imgData.data.length);px.set(imgData.data);
-      _fsDither(px,canvas.width,canvas.height,32);
-      var inst=new mod.Imagequant(),img=new mod.ImagequantImage(new Uint8Array(px),canvas.width,canvas.height,0);
-      try{inst.set_quality(0,75);inst.set_speed(1);var out=inst.process(img);return new Blob([out],{type:'image/png'})}
-      finally{try{img.free()}catch(e){}try{inst.free()}catch(e){}}
-    }catch(e){console.warn('imagequant 量化失败，fallback:',e)}
-  }
+function canvasToPNG(canvas){
   return new Promise(function(r){canvas.toBlob(function(b){r(b)},'image/png')});
+}
+// 纯内联极简 ZIP 构建器（STORE 方法，无外部依赖，不触发杀毒）
+function _u16(v){return [v&0xff,(v>>8)&0xff]}
+function _u32(v){return [v&0xff,(v>>8)&0xff,(v>>16)&0xff,(v>>24)&0xff]}
+function _crc32(buf){
+  var t=new Uint32Array(256);for(var i=0;i<256;i++){var c=i;for(var j=0;j<8;j++)c=c&1?0xEDB88320^(c>>>1):c>>>1;t[i]=c}
+  var crc=0xFFFFFFFF;for(var k=0;k<buf.length;k++)crc=t[(crc^buf[k])&0xFF]^(crc>>>8);return (crc^0xFFFFFFFF)>>>0;
+}
+async function buildZip(entries){
+  var localParts=[],centralParts=[],offset=0;
+  var enc=new TextEncoder();
+  for(var i=0;i<entries.length;i++){
+    var e=entries[i],nameBytes=enc.encode(e.name),data=new Uint8Array(await e.blob.arrayBuffer());
+    var crc=_crc32(data),sz=data.length;
+    var local=new Uint8Array([].concat(
+      [0x50,0x4b,0x03,0x04],_u16(20),_u16(0),_u16(0),_u16(0),_u16(0),
+      _u32(crc),_u32(sz),_u32(sz),_u16(nameBytes.length),_u16(0)
+    ));
+    localParts.push(local,nameBytes,data);
+    var central=new Uint8Array([].concat(
+      [0x50,0x4b,0x01,0x02],_u16(20),_u16(20),_u16(0),_u16(0),_u16(0),_u16(0),
+      _u32(crc),_u32(sz),_u32(sz),_u16(nameBytes.length),_u16(0),_u16(0),_u16(0),_u16(0),_u32(0),_u32(offset)
+    ));
+    centralParts.push(central,nameBytes);
+    offset+=local.length+nameBytes.length+data.length;
+  }
+  var cdSize=centralParts.reduce(function(s,p){return s+p.length},0);
+  var eocd=new Uint8Array([].concat(
+    [0x50,0x4b,0x05,0x06],_u16(0),_u16(0),_u16(entries.length),_u16(entries.length),
+    _u32(cdSize),_u32(offset),_u16(0)
+  ));
+  return new Blob([].concat(localParts,centralParts,[eocd]),{type:'application/zip'});
 }
 function fmtSize(bytes){if(bytes<1024)return bytes+'B';if(bytes<1048576)return (bytes/1024).toFixed(1)+'KB';return (bytes/1048576).toFixed(1)+'MB'}
 function handleFile(type,f){
@@ -1227,12 +1231,10 @@ async function doExport(){
       var txtBlob=new Blob([lines.join('\\n')],{type:'text/plain'});
       dlList.push({blob:txtBlob,name:'产品信息_'+(nv||'cps')+'.txt'});
     }
-    st.textContent='正在下载...';
-    for(var di=0;di<dlList.length;di++){
-      var item=dlList[di];
-      var a=document.createElement('a');a.href=URL.createObjectURL(item.blob);a.download=item.name;a.click();URL.revokeObjectURL(a.href);
-      if(di<dlList.length-1) await new Promise(function(r){setTimeout(r,400)});
-    }
+    st.textContent='正在打包 ZIP...';
+    var zipBlob=await buildZip(dlList);
+    var nv2=extractNameFromInput(document.getElementById('customName').value||'');
+    var a=document.createElement('a');a.href=URL.createObjectURL(zipBlob);a.download='CPS_'+(nv2||'export')+'.zip';a.click();URL.revokeObjectURL(a.href);
     st.textContent='';
   }catch(e){st.textContent='处理失败: '+e.message;console.error(e)}
   document.getElementById('exportBtn').disabled=false;
