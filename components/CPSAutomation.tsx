@@ -146,10 +146,34 @@ const CPSAutomation: React.FC = () => {
   const TAG_COLORS = ['#FF6B6B', '#4ECDC4', '#FFD93D', '#6C5CE7'] as const;
 
   // ---- 输入校验 ----
+  const composingRef = useRef(false);
   const nameError = customName !== '' && !/^\d{0,4}$/.test(customName) ? '序号仅限4位数字' : '';
-  const descError = Array.from(productDesc).length > 10 ? `产品介绍最多10个字（当前${Array.from(productDesc).length}个）` : '';
-  const tagErrors = tags.map((t, i) => Array.from(t).length > 4 ? `标签${i + 1}最多4个字` : '');
-  const hasValidationError = !!(nameError || descError || tagErrors.some(e => e));
+
+  const clampChars = (val: string, max: number) => {
+    const chars = Array.from(val);
+    return chars.length > max ? chars.slice(0, max).join('') : val;
+  };
+
+  const handleDescChange = (v: string) => {
+    if (composingRef.current) { setProductDesc(v); return; }
+    setProductDesc(clampChars(v, 10));
+  };
+  const handleDescCompositionEnd = (e: React.CompositionEvent<HTMLInputElement>) => {
+    composingRef.current = false;
+    setProductDesc(clampChars(e.currentTarget.value, 10));
+  };
+
+  const handleTagChange = (i: number, v: string) => {
+    const next = [...tags] as [string, string, string, string];
+    next[i] = composingRef.current ? v : clampChars(v, 4);
+    setTags(next);
+  };
+  const handleTagCompositionEnd = (i: number, e: React.CompositionEvent<HTMLInputElement>) => {
+    composingRef.current = false;
+    const next = [...tags] as [string, string, string, string];
+    next[i] = clampChars(e.currentTarget.value, 4);
+    setTags(next);
+  };
 
   // ---- 模板系统 ----
   const [templates, setTemplates] = useState<CPSTemplate[]>(() => {
@@ -838,28 +862,43 @@ const CPSAutomation: React.FC = () => {
 
   // ---- 导出（zip 打包）----
 
+  const renderPortraitOffscreen = useCallback(async (
+    size: { width: number; height: number },
+    outputSize: { width: number; height: number },
+    sizeType: 'big' | 'mid' | 'small'
+  ): Promise<HTMLCanvasElement | null> => {
+    if (!portraitImage) return null;
+    const canvas = document.createElement('canvas');
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return null;
+    const ref = { current: canvas } as React.RefObject<HTMLCanvasElement>;
+    await renderPortrait(ref, size, outputSize, sizeType, true);
+    return canvas;
+  }, [portraitImage, renderPortrait]);
+
   const handleExport = async () => {
     if (!portraitImage || !popupImage || !appIconImage) { showToast('error', '请先上传所有三张图片'); return; }
     try {
-      // 导出前强制重新渲染立绘（确保标签和介绍文字已绘制到 canvas 上）
-      await renderPortrait(portraitBigCanvasRef, config.portrait.sizes.big, config.portrait.outputSizes.big, 'big');
-      await renderPortrait(portraitMidCanvasRef, config.portrait.sizes.mid, config.portrait.outputSizes.mid, 'mid');
-      await renderPortrait(portraitSmallCanvasRef, config.portrait.sizes.small, config.portrait.outputSizes.small, 'small');
+      const [bigCvs, midCvs, smallCvs] = await Promise.all([
+        renderPortraitOffscreen(config.portrait.sizes.big, config.portrait.outputSizes.big, 'big'),
+        renderPortraitOffscreen(config.portrait.sizes.mid, config.portrait.outputSizes.mid, 'mid'),
+        renderPortraitOffscreen(config.portrait.sizes.small, config.portrait.outputSizes.small, 'small'),
+      ]);
       await renderPopup();
       await renderAppIcon();
 
       const zip = new JSZip();
 
-      const refs: [React.RefObject<HTMLCanvasElement>, string][] = [
-        [portraitBigCanvasRef, generateFileName(config.portrait.namePrefix, 'big')],
-        [portraitMidCanvasRef, generateFileName(config.portrait.namePrefix, 'mid')],
-        [portraitSmallCanvasRef, generateFileName(config.portrait.namePrefix, 'small')],
-        [popupCanvasRef, generateFileName(config.popup.namePrefix)],
-        [appIconCanvasRef, generateFileName(config.appIcon.namePrefix)],
+      const canvasList: [HTMLCanvasElement | null, string][] = [
+        [bigCvs, generateFileName(config.portrait.namePrefix, 'big')],
+        [midCvs, generateFileName(config.portrait.namePrefix, 'mid')],
+        [smallCvs, generateFileName(config.portrait.namePrefix, 'small')],
+        [popupCanvasRef.current, generateFileName(config.popup.namePrefix)],
+        [appIconCanvasRef.current, generateFileName(config.appIcon.namePrefix)],
       ];
-      for (const [ref, name] of refs) {
-        if (!ref.current) continue;
-        const blob = await canvasToBlob(ref.current);
+      for (const [cvs, name] of canvasList) {
+        if (!cvs) continue;
+        const blob = await canvasToBlob(cvs);
         zip.file(name, blob);
       }
 
@@ -1025,51 +1064,100 @@ function extractNameFromInput(val){
   var value=lastThree.replace(/^0+/,'');
   return value||'0';
 }
-function canvasToPNG(canvas){
-  return new Promise(function(r){canvas.toBlob(function(b){r(b)},'image/png')});
-}
-// 纯内联 ZIP 构建器（DEFLATE 压缩，使用浏览器原生 CompressionStream，零外部依赖）
-function _u16(v){return [v&0xff,(v>>8)&0xff]}
-function _u32(v){return [v&0xff,(v>>8)&0xff,(v>>16)&0xff,(v>>24)&0xff]}
+// ---- 内联 PNG 智能量化压缩（median-cut + Floyd-Steinberg + indexed PNG，零外部依赖）----
+var _crc32t=null;
 function _crc32(buf){
-  var t=new Uint32Array(256);for(var i=0;i<256;i++){var c=i;for(var j=0;j<8;j++)c=c&1?0xEDB88320^(c>>>1):c>>>1;t[i]=c}
-  var crc=0xFFFFFFFF;for(var k=0;k<buf.length;k++)crc=t[(crc^buf[k])&0xFF]^(crc>>>8);return (crc^0xFFFFFFFF)>>>0;
+  if(!_crc32t){_crc32t=new Uint32Array(256);for(var i=0;i<256;i++){var c=i;for(var j=0;j<8;j++)c=c&1?0xEDB88320^(c>>>1):c>>>1;_crc32t[i]=c}}
+  var crc=0xFFFFFFFF;for(var k=0;k<buf.length;k++)crc=_crc32t[(crc^buf[k])&0xFF]^(crc>>>8);return(crc^0xFFFFFFFF)>>>0;
 }
-async function _deflate(raw){
-  var cs=new CompressionStream('deflate-raw');
-  var w=cs.writable.getWriter();w.write(raw);w.close();
-  var rd=cs.readable.getReader(),chunks=[],len=0;
-  for(;;){var r=await rd.read();if(r.done)break;chunks.push(r.value);len+=r.value.length}
+function _pngU32BE(v){return[(v>>24)&0xff,(v>>16)&0xff,(v>>8)&0xff,v&0xff]}
+function _pngChunk(type,data){
+  var len=data.length,buf=new Uint8Array(4+4+len+4);
+  buf[0]=(len>>24)&0xff;buf[1]=(len>>16)&0xff;buf[2]=(len>>8)&0xff;buf[3]=len&0xff;
+  for(var i=0;i<4;i++)buf[4+i]=type.charCodeAt(i);
+  buf.set(data,8);
+  var td=new Uint8Array(4+len);for(var i=0;i<4;i++)td[i]=type.charCodeAt(i);td.set(data,4);
+  var c=_crc32(td);buf[8+len]=(c>>24)&0xff;buf[9+len]=(c>>16)&0xff;buf[10+len]=(c>>8)&0xff;buf[11+len]=c&0xff;
+  return buf;
+}
+async function _zlib(raw){
+  var cs=new CompressionStream('deflate');
+  var wr=cs.writable.getWriter();wr.write(raw);wr.close();
+  var rd=cs.readable.getReader(),parts=[],len=0;
+  for(;;){var r=await rd.read();if(r.done)break;parts.push(r.value);len+=r.value.length}
   var out=new Uint8Array(len),off=0;
-  for(var i=0;i<chunks.length;i++){out.set(chunks[i],off);off+=chunks[i].length}
+  for(var i=0;i<parts.length;i++){out.set(parts[i],off);off+=parts[i].length}
   return out;
 }
-async function buildZip(entries){
-  var localParts=[],centralParts=[],offset=0;
-  var enc=new TextEncoder();
-  for(var i=0;i<entries.length;i++){
-    var e=entries[i],nameBytes=enc.encode(e.name),raw=new Uint8Array(await e.blob.arrayBuffer());
-    var crc=_crc32(raw),rawSz=raw.length;
-    var cmp=await _deflate(raw),cmpSz=cmp.length;
-    var useDeflate=cmpSz<rawSz,method=useDeflate?8:0,finalData=useDeflate?cmp:raw,finalSz=finalData.length;
-    var local=new Uint8Array([].concat(
-      [0x50,0x4b,0x03,0x04],_u16(20),_u16(0),_u16(method),_u16(0),_u16(0),
-      _u32(crc),_u32(finalSz),_u32(rawSz),_u16(nameBytes.length),_u16(0)
-    ));
-    localParts.push(local,nameBytes,finalData);
-    var central=new Uint8Array([].concat(
-      [0x50,0x4b,0x01,0x02],_u16(20),_u16(20),_u16(0),_u16(method),_u16(0),_u16(0),
-      _u32(crc),_u32(finalSz),_u32(rawSz),_u16(nameBytes.length),_u16(0),_u16(0),_u16(0),_u16(0),_u32(0),_u32(offset)
-    ));
-    centralParts.push(central,nameBytes);
-    offset+=local.length+nameBytes.length+finalData.length;
+function _medianCut(px,N,maxC){
+  var hist=new Map();
+  for(var i=0;i<N;i++){
+    var o=i*4,r=px[o],g=px[o+1],b=px[o+2],a=px[o+3];
+    var k=((r>>3)<<15)|((g>>3)<<10)|((b>>3)<<5)|(a>>3);
+    var e=hist.get(k);
+    if(e){e[0]+=r;e[1]+=g;e[2]+=b;e[3]+=a;e[4]++}else{hist.set(k,[r,g,b,a,1])}
   }
-  var cdSize=centralParts.reduce(function(s,p){return s+p.length},0);
-  var eocd=new Uint8Array([].concat(
-    [0x50,0x4b,0x05,0x06],_u16(0),_u16(0),_u16(entries.length),_u16(entries.length),
-    _u32(cdSize),_u32(offset),_u16(0)
-  ));
-  return new Blob([].concat(localParts,centralParts,[eocd]),{type:'application/zip'});
+  var entries=[];hist.forEach(function(v){entries.push({r:v[0]/v[4],g:v[1]/v[4],b:v[2]/v[4],a:v[3]/v[4],n:v[4]})});
+  var buckets=[{e:entries,n:entries.reduce(function(s,c){return s+c.n},0)}];
+  while(buckets.length<maxC){
+    var mi=-1,mn=0;
+    for(var bi=0;bi<buckets.length;bi++){if(buckets[bi].e.length>1&&buckets[bi].n>mn){mn=buckets[bi].n;mi=bi}}
+    if(mi<0)break;
+    var bk=buckets[mi].e,rng=[0,0,0,0],lo=[255,255,255,255],hi=[0,0,0,0];
+    for(var ci=0;ci<bk.length;ci++){var c=bk[ci];
+      if(c.r<lo[0])lo[0]=c.r;if(c.r>hi[0])hi[0]=c.r;
+      if(c.g<lo[1])lo[1]=c.g;if(c.g>hi[1])hi[1]=c.g;
+      if(c.b<lo[2])lo[2]=c.b;if(c.b>hi[2])hi[2]=c.b;
+      if(c.a<lo[3])lo[3]=c.a;if(c.a>hi[3])hi[3]=c.a;
+    }
+    for(var d=0;d<4;d++)rng[d]=hi[d]-lo[d];
+    var sd=0;for(var d=1;d<4;d++)if(rng[d]>rng[sd])sd=d;
+    var dk=['r','g','b','a'][sd];
+    bk.sort(function(a,b){return a[dk]-b[dk]});
+    var half=buckets[mi].n/2,acc=0,sp=1;
+    for(var ci=0;ci<bk.length;ci++){acc+=bk[ci].n;if(acc>=half){sp=ci+1;break}}
+    if(sp>=bk.length)sp=bk.length-1;
+    var L=bk.slice(0,sp),R=bk.slice(sp);
+    buckets[mi]={e:L,n:L.reduce(function(s,c){return s+c.n},0)};
+    buckets.push({e:R,n:R.reduce(function(s,c){return s+c.n},0)});
+  }
+  var pal=[];
+  for(var bi=0;bi<buckets.length;bi++){
+    var bk=buckets[bi].e,sr=0,sg=0,sb=0,sa=0,tn=0;
+    for(var ci=0;ci<bk.length;ci++){var c=bk[ci];sr+=c.r*c.n;sg+=c.g*c.n;sb+=c.b*c.n;sa+=c.a*c.n;tn+=c.n}
+    pal.push([Math.round(sr/tn),Math.round(sg/tn),Math.round(sb/tn),Math.round(sa/tn)]);
+  }
+  return pal;
+}
+async function canvasToPNG(canvas){
+  var ctx=canvas.getContext('2d'),w=canvas.width,h=canvas.height;
+  var imgData=ctx.getImageData(0,0,w,h),px=imgData.data,N=w*h;
+  var pal=_medianCut(px,N,256);
+  var indices=new Uint8Array(N);
+  var eR=new Float32Array(N),eG=new Float32Array(N),eB=new Float32Array(N),eA=new Float32Array(N);
+  for(var y=0;y<h;y++){for(var x=0;x<w;x++){
+    var idx=y*w+x,o=idx*4;
+    var cr=Math.max(0,Math.min(255,px[o]+eR[idx])),cg=Math.max(0,Math.min(255,px[o+1]+eG[idx]));
+    var cb=Math.max(0,Math.min(255,px[o+2]+eB[idx])),ca=Math.max(0,Math.min(255,px[o+3]+eA[idx]));
+    var best=0,bd=1e9;
+    for(var p=0;p<pal.length;p++){var dr=cr-pal[p][0],dg=cg-pal[p][1],db=cb-pal[p][2],da=ca-pal[p][3];var dd=dr*dr+dg*dg+db*db+da*da;if(dd<bd){bd=dd;best=p}}
+    indices[idx]=best;
+    var er=cr-pal[best][0],eg=cg-pal[best][1],eb=cb-pal[best][2],ea=ca-pal[best][3];
+    if(x+1<w){var j=idx+1;eR[j]+=er*7/16;eG[j]+=eg*7/16;eB[j]+=eb*7/16;eA[j]+=ea*7/16}
+    if(y+1<h){
+      if(x>0){var j=idx+w-1;eR[j]+=er*3/16;eG[j]+=eg*3/16;eB[j]+=eb*3/16;eA[j]+=ea*3/16}
+      var j=idx+w;eR[j]+=er*5/16;eG[j]+=eg*5/16;eB[j]+=eb*5/16;eA[j]+=ea*5/16;
+      if(x+1<w){var j=idx+w+1;eR[j]+=er/16;eG[j]+=eg/16;eB[j]+=eb/16;eA[j]+=ea/16}
+    }
+  }}
+  var rawRows=new Uint8Array(h*(1+w));
+  for(var y=0;y<h;y++){rawRows[y*(1+w)]=0;for(var x=0;x<w;x++)rawRows[y*(1+w)+1+x]=indices[y*w+x]}
+  var compressed=await _zlib(rawRows);
+  var ihdr=new Uint8Array([].concat(_pngU32BE(w),_pngU32BE(h),[8,3,0,0,0]));
+  var plte=new Uint8Array(pal.length*3);for(var i=0;i<pal.length;i++){plte[i*3]=pal[i][0];plte[i*3+1]=pal[i][1];plte[i*3+2]=pal[i][2]}
+  var trns=new Uint8Array(pal.length);for(var i=0;i<pal.length;i++)trns[i]=pal[i][3];
+  var sig=new Uint8Array([137,80,78,71,13,10,26,10]);
+  return new Blob([sig,_pngChunk('IHDR',ihdr),_pngChunk('PLTE',plte),_pngChunk('tRNS',trns),_pngChunk('IDAT',compressed),_pngChunk('IEND',new Uint8Array(0))],{type:'image/png'});
 }
 function fmtSize(bytes){if(bytes<1024)return bytes+'B';if(bytes<1048576)return (bytes/1024).toFixed(1)+'KB';return (bytes/1048576).toFixed(1)+'MB'}
 function handleFile(type,f){
@@ -1105,30 +1193,31 @@ document.getElementById('fileInput').onchange=function(e){
 document.addEventListener('dragover',function(e){e.preventDefault()});
 document.addEventListener('drop',function(e){e.preventDefault()});
 function charLen(s){return Array.from(s).length}
+function clampInput(el,max){
+  var chars=Array.from(el.value);
+  if(chars.length>max) el.value=chars.slice(0,max).join('');
+}
+var _composing=false;
 function checkReady(){
   var nameInp=document.getElementById('customName');
-  var descInp=document.getElementById('productDesc');
   var v=nameInp.value;
-  var errors=[];
-  // 序号校验
   var nameOk=/^\\d{0,4}$/.test(v);
-  if(v&&!nameOk){errors.push('序号仅限4位数字');nameInp.classList.add('input-error')}else{nameInp.classList.remove('input-error')}
-  // 产品介绍校验
-  var dLen=charLen(descInp.value);
-  if(dLen>10){errors.push('产品介绍最多10个字（当前'+dLen+'个）');descInp.classList.add('input-error')}else{descInp.classList.remove('input-error')}
-  // 标签校验
-  for(var i=0;i<4;i++){var ti=document.getElementById('tag'+i);var tl=charLen(ti.value);
-    if(tl>4){errors.push('标签'+(i+1)+'最多4个字');ti.classList.add('input-error')}else{ti.classList.remove('input-error')}}
-  var vm=document.getElementById('validationMsg');
-  if(errors.length>0){vm.textContent=errors.join('；');vm.classList.add('show')}else{vm.textContent='';vm.classList.remove('show')}
+  if(v&&!nameOk){nameInp.classList.add('input-error')}else{nameInp.classList.remove('input-error')}
   var digits=v.replace(/\\D/g,'');
-  var ok=files.portrait&&files.popup&&files.appIcon&&digits.length>=1&&digits.length<=4&&errors.length===0;
+  var ok=files.portrait&&files.popup&&files.appIcon&&digits.length>=1&&digits.length<=4;
   document.getElementById('exportBtn').disabled=!ok;
 }
-// 标签/介绍输入触发 checkReady + 预览刷新
-['productDesc','tag0','tag1','tag2','tag3'].forEach(function(id){
-  document.getElementById(id).addEventListener('input',function(){checkReady();updatePreview()});
-});
+// 产品介绍和标签：超限直接截断（IME兼容）
+var descEl=document.getElementById('productDesc');
+descEl.addEventListener('input',function(){if(!_composing)clampInput(descEl,10);checkReady();updatePreview()});
+descEl.addEventListener('compositionstart',function(){_composing=true});
+descEl.addEventListener('compositionend',function(){_composing=false;clampInput(descEl,10);checkReady();updatePreview()});
+for(var _ti=0;_ti<4;_ti++){(function(i){
+  var el=document.getElementById('tag'+i);
+  el.addEventListener('input',function(){if(!_composing)clampInput(el,4);checkReady();updatePreview()});
+  el.addEventListener('compositionstart',function(){_composing=true});
+  el.addEventListener('compositionend',function(){_composing=false;clampInput(el,4);checkReady();updatePreview()});
+})(_ti)}
 var _previewImg=null;
 function updatePreview(){
   if(!files.portrait)return;
@@ -1243,10 +1332,12 @@ async function doExport(){
       var txtBlob=new Blob([lines.join('\\n')],{type:'text/plain'});
       dlList.push({blob:txtBlob,name:'产品信息_'+(nv||'cps')+'.txt'});
     }
-    st.textContent='正在打包 ZIP...';
-    var zipBlob=await buildZip(dlList);
-    var nv2=extractNameFromInput(document.getElementById('customName').value||'');
-    var a=document.createElement('a');a.href=URL.createObjectURL(zipBlob);a.download='CPS_'+(nv2||'export')+'.zip';a.click();URL.revokeObjectURL(a.href);
+    st.textContent='正在下载...';
+    for(var di=0;di<dlList.length;di++){
+      var item=dlList[di];
+      var a=document.createElement('a');a.href=URL.createObjectURL(item.blob);a.download=item.name;a.click();URL.revokeObjectURL(a.href);
+      if(di<dlList.length-1) await new Promise(function(r){setTimeout(r,500)});
+    }
     st.textContent='';
   }catch(e){st.textContent='处理失败: '+e.message;console.error(e)}
   document.getElementById('exportBtn').disabled=false;
@@ -1298,7 +1389,7 @@ async function doExport(){
     }
   }, [shareTemplateId, templates, isTauri, generateSharePage, showToast]);
 
-  const canExport = portraitImage && popupImage && appIconImage && !hasValidationError;
+  const canExport = portraitImage && popupImage && appIconImage && !nameError;
 
   // ---- 参数禁用状态 ----
   const paramDisabled = !customMode;
@@ -1579,28 +1670,28 @@ async function doExport(){
           <div>
             <div className="text-xs text-[#888888] mb-1">产品介绍 <span className="text-[#555]">({Array.from(productDesc).length}/10)</span></div>
             <input type="text" value={productDesc}
-              onChange={e => setProductDesc(e.target.value)}
+              onChange={e => handleDescChange(e.target.value)}
+              onCompositionStart={() => { composingRef.current = true; }}
+              onCompositionEnd={handleDescCompositionEnd}
               placeholder="输入十个汉字"
-              className={`w-44 px-2 py-1.5 bg-[#2a2a2a] border rounded text-white text-sm transition-colors ${descError ? 'border-red-500' : 'border-[#3a3a3a]'}`} />
+              className="w-44 px-2 py-1.5 bg-[#2a2a2a] border border-[#3a3a3a] rounded text-white text-sm" />
           </div>
           <div className="flex items-end gap-2">
             <div className="text-xs text-[#888888] mb-1.5 self-center">标签</div>
             {tags.map((tag, i) => (
               <input key={i} type="text" value={tag}
-                onChange={e => { const next = [...tags] as [string, string, string, string]; next[i] = e.target.value; setTags(next); }}
+                onChange={e => handleTagChange(i, e.target.value)}
+                onCompositionStart={() => { composingRef.current = true; }}
+                onCompositionEnd={e => handleTagCompositionEnd(i, e)}
                 placeholder={`标签${i + 1}`}
-                className={`w-20 px-2 py-1.5 bg-[#2a2a2a] border rounded text-sm transition-colors ${tagErrors[i] ? 'border-red-500' : 'border-[#3a3a3a]'}`}
+                className="w-20 px-2 py-1.5 bg-[#2a2a2a] border border-[#3a3a3a] rounded text-sm"
                 style={{ color: TAG_COLORS[i] }} />
             ))}
           </div>
         </div>
-        {/* 校验错误提示 */}
-        {hasValidationError && (
-          <div className="text-xs text-red-400 mb-3 flex flex-wrap gap-x-4 gap-y-1">
-            {nameError && <span>{nameError}</span>}
-            {descError && <span>{descError}</span>}
-            {tagErrors.map((err, i) => err ? <span key={i}>{err}</span> : null)}
-          </div>
+        {/* 序号格式错误提示 */}
+        {nameError && (
+          <div className="text-xs text-red-400 mb-3">{nameError}</div>
         )}
 
         {/* 分割线 */}
