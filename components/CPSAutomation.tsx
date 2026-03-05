@@ -583,7 +583,8 @@ const CPSAutomation: React.FC = () => {
     canvasRef: React.RefObject<HTMLCanvasElement>,
     size: { width: number; height: number },
     outputSize: { width: number; height: number },
-    sizeType: 'big' | 'mid' | 'small'
+    sizeType: 'big' | 'mid' | 'small',
+    showOverlay = true
   ) => {
     if (!canvasRef.current || !portraitImage) return;
     const canvas = canvasRef.current;
@@ -633,8 +634,8 @@ const CPSAutomation: React.FC = () => {
       // 3. 绘制标签和产品介绍文字叠加层（按高度缩放，big/mid 同高所以文字等大）
       const hScale = size.height / config.portrait.sizes.big.height;
 
-      // 标签：big / mid 显示，small 不显示
-      if (sizeType !== 'small') {
+      // 标签：big / mid 显示，small 不显示；预览时仅 mid 卡片绘制叠加层
+      if (showOverlay && sizeType !== 'small') {
         const filledTags = tags.filter(t => t.trim());
         if (filledTags.length > 0) {
           const tagFontSize = Math.round(22 * hScale);
@@ -671,7 +672,7 @@ const CPSAutomation: React.FC = () => {
       }
 
       // 产品介绍：big/mid/small 都显示，白字 + 半透明黑底
-      if (productDesc.trim()) {
+      if (showOverlay && productDesc.trim()) {
         const descFontSize = Math.round(20 * hScale);
         const descH = Math.round(32 * hScale);
         const descPadX = Math.round(12 * hScale);
@@ -752,9 +753,9 @@ const CPSAutomation: React.FC = () => {
 
   useEffect(() => {
     if (portraitImage) {
-      renderPortrait(portraitBigCanvasRef, config.portrait.sizes.big, config.portrait.outputSizes.big, 'big');
-      renderPortrait(portraitMidCanvasRef, config.portrait.sizes.mid, config.portrait.outputSizes.mid, 'mid');
-      renderPortrait(portraitSmallCanvasRef, config.portrait.sizes.small, config.portrait.outputSizes.small, 'small');
+      renderPortrait(portraitBigCanvasRef, config.portrait.sizes.big, config.portrait.outputSizes.big, 'big', false);
+      renderPortrait(portraitMidCanvasRef, config.portrait.sizes.mid, config.portrait.outputSizes.mid, 'mid', true);
+      renderPortrait(portraitSmallCanvasRef, config.portrait.sizes.small, config.portrait.outputSizes.small, 'small', false);
     }
   }, [portraitImage, config.portrait, renderPortrait]);
 
