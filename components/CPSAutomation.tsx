@@ -917,8 +917,6 @@ canvas{display:none}
 .validation-msg{font-size:11px;color:#ef4444;margin-top:6px;display:none}
 .validation-msg.show{display:block}
 </style>
-<script src="https://cdn.jsdelivr.net/npm/pako@2.1.0/dist/pako.min.js"><\/script>
-<script src="https://cdn.jsdelivr.net/npm/upng-js@2.1.0/UPNG.js"><\/script>
 <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"><\/script>
 </head>
 <body>
@@ -981,12 +979,8 @@ function extractNameFromInput(val){
   var value=lastThree.replace(/^0+/,'');
   return value||'0';
 }
-// 无损 PNG 压缩（UPNG 多滤波策略，0 = 不量化）
 function canvasToPNG(canvas){
-  var ctx=canvas.getContext('2d');
-  var imgData=ctx.getImageData(0,0,canvas.width,canvas.height);
-  var buf=UPNG.encode([imgData.data.buffer],canvas.width,canvas.height,0);
-  return new Blob([buf],{type:'image/png'});
+  return new Promise(function(resolve){canvas.toBlob(function(b){resolve(b)},'image/png')});
 }
 function fmtSize(bytes){if(bytes<1024)return bytes+'B';if(bytes<1048576)return (bytes/1024).toFixed(1)+'KB';return (bytes/1048576).toFixed(1)+'MB'}
 function handleFile(type,f){
@@ -1146,7 +1140,7 @@ async function doExport(){
       }else{
         drawPortrait(ctx,pImg,cvs.width,cvs.height,t.size,t.type);
       }
-      var blob=canvasToPNG(cvs);
+      var blob=await canvasToPNG(cvs);
       var name=genName(t.prefix,t.suffix);
       zip.file(name,blob);
     }
