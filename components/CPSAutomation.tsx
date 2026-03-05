@@ -963,7 +963,6 @@ canvas{display:none}
 .validation-msg{font-size:11px;color:#ef4444;margin-top:6px;display:none}
 .validation-msg.show{display:block}
 </style>
-<script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"><\/script>
 </head>
 <body>
 <div class="header"><h1>边锋掼蛋CPS图片处理</h1><a href="https://rcn6u2y4zn7a.feishu.cn/wiki/RDF1wn74riHdzYkEMViccVxtnfl?from=from_copylink" target="_blank" style="font-size:13px;color:#3b82f6;text-decoration:none;margin-left:12px">规范要求</a></div>
@@ -1199,7 +1198,7 @@ async function doExport(){
       {outSize:{width:CFG.popup.width,height:CFG.popup.height},type:'popup',prefix:CFG.popup.namePrefix,suffix:null},
       {outSize:{width:CFG.appIcon.width,height:CFG.appIcon.height},type:'icon',prefix:CFG.appIcon.namePrefix,suffix:null},
     ];
-    var zip=new JSZip();
+    var dlList=[];
     for(var ti=0;ti<tasks.length;ti++){
       var t=tasks[ti];
       st.textContent='正在处理 ('+(ti+1)+'/'+tasks.length+')...';
@@ -1216,21 +1215,24 @@ async function doExport(){
       }
       var blob=await canvasToPNG(cvs);
       var name=genName(t.prefix,t.suffix);
-      zip.file(name,blob);
+      dlList.push({blob:blob,name:name});
     }
+    // 产品信息 .txt
     var desc=getDescValue(),tvs=getTagValues().filter(function(t){return t});
     if(desc||tvs.length>0){
       var lines=[];
       if(desc) lines.push('产品介绍：'+desc);
       if(tvs.length>0) lines.push('标签：'+tvs.join('、'));
       var nv=extractNameFromInput(document.getElementById('customName').value||'');
-      zip.file('产品信息_'+(nv||'cps')+'.txt',lines.join('\\n'));
+      var txtBlob=new Blob([lines.join('\\n')],{type:'text/plain'});
+      dlList.push({blob:txtBlob,name:'产品信息_'+(nv||'cps')+'.txt'});
     }
-    st.textContent='正在打包...';
-    var zipBlob=await zip.generateAsync({type:'blob'});
-    var nv2=extractNameFromInput(document.getElementById('customName').value||'');
-    var zipName='CPS素材_'+(nv2||'export')+'.zip';
-    var a=document.createElement('a');a.href=URL.createObjectURL(zipBlob);a.download=zipName;a.click();URL.revokeObjectURL(a.href);
+    st.textContent='正在下载...';
+    for(var di=0;di<dlList.length;di++){
+      var item=dlList[di];
+      var a=document.createElement('a');a.href=URL.createObjectURL(item.blob);a.download=item.name;a.click();URL.revokeObjectURL(a.href);
+      if(di<dlList.length-1) await new Promise(function(r){setTimeout(r,400)});
+    }
     st.textContent='';
   }catch(e){st.textContent='处理失败: '+e.message;console.error(e)}
   document.getElementById('exportBtn').disabled=false;
