@@ -872,7 +872,7 @@ const CPSAutomation: React.FC = () => {
     const ctx = canvas.getContext('2d');
     if (!ctx) return null;
     const ref = { current: canvas } as React.RefObject<HTMLCanvasElement>;
-    await renderPortrait(ref, size, outputSize, sizeType, true);
+    await renderPortrait(ref, size, outputSize, sizeType, false);
     return canvas;
   }, [portraitImage, renderPortrait]);
 
@@ -1228,7 +1228,7 @@ function updatePreview(){
   loadImg(files.portrait).then(function(img){
     _previewImg=img;
     var ctx=pc.getContext('2d');ctx.clearRect(0,0,pc.width,pc.height);
-    drawPortrait(ctx,img,midOut.width,midOut.height,midSize,'mid');
+    drawPortrait(ctx,img,midOut.width,midOut.height,midSize,'mid',true);
   });
 }
 function loadImg(file){return new Promise((r,j)=>{const i=new Image();i.onload=()=>r(i);i.onerror=j;i.src=URL.createObjectURL(file)})}
@@ -1253,7 +1253,7 @@ function fitShortest(img,cw,ch){const ia=img.width/img.height,ca=cw/ch;if(ia>ca)
 const TAG_COLORS=['#FF6B6B','#4ECDC4','#FFD93D','#6C5CE7'];
 function getTagValues(){return [0,1,2,3].map(function(i){return document.getElementById('tag'+i).value.trim()})}
 function getDescValue(){return (document.getElementById('productDesc').value||'').trim()}
-function drawPortrait(ctx,img,outW,outH,size,type){
+function drawPortrait(ctx,img,outW,outH,size,type,showOverlay){
   const m=CFG.portrait.margin;
   const p=type==='big'?fitBig(img,size.width,size.height):type==='mid'?fitMid(img,size.width,size.height):fitSmall(img,size.width,size.height);
   ctx.save();ctx.shadowOffsetX=CFG.portrait.shadow.offsetX;ctx.shadowOffsetY=CFG.portrait.shadow.offsetY;
@@ -1261,6 +1261,7 @@ function drawPortrait(ctx,img,outW,outH,size,type){
   ctx.fillStyle='#1b1b1b';drawRoundedRect(ctx,m.left,m.top,size.width,size.height,CFG.portrait.borderRadius,CFG.portrait.smoothBorderRadius);ctx.fill();ctx.restore();
   ctx.save();drawRoundedRect(ctx,m.left,m.top,size.width,size.height,CFG.portrait.borderRadius,CFG.portrait.smoothBorderRadius);ctx.clip();
   ctx.drawImage(img,p.sx,p.sy,p.sw,p.sh,m.left+p.dx,m.top+p.dy,p.dw,p.dh);ctx.restore();
+  if(!showOverlay) return;
   var hs=size.height/CFG.portrait.sizes.big.height;
   if(type!=='small'){
     var tvs=getTagValues().filter(function(t){return t});
@@ -1316,7 +1317,7 @@ async function doExport(){
         ctx.save();drawRoundedRect(ctx,0,0,cvs.width,cvs.height,CFG.appIcon.borderRadius,CFG.appIcon.smoothBorderRadius);ctx.clip();
         const p=fitShortest(iconImg,cvs.width,cvs.height);ctx.drawImage(iconImg,p.sx,p.sy,p.sw,p.sh,p.dx,p.dy,p.dw,p.dh);ctx.restore();
       }else{
-        drawPortrait(ctx,pImg,cvs.width,cvs.height,t.size,t.type);
+        drawPortrait(ctx,pImg,cvs.width,cvs.height,t.size,t.type,false);
       }
       var blob=await canvasToPNG(cvs);
       var name=genName(t.prefix,t.suffix);
