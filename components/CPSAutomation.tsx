@@ -8,14 +8,60 @@ import { appWindow } from '@tauri-apps/api/window';
 import UPNG from 'upng-js';
 import JSZip from 'jszip';
 
-// ---- 无损 PNG 压缩（UPNG 多滤波策略，0 = 不量化）----
-function canvasToBlob(canvas: HTMLCanvasElement): Blob {
+// ---- Alpha 通道 Floyd-Steinberg 预抖动（与压缩工具一致）----
+function fsAlphaDither(pixels: Uint8Array, width: number, height: number, levels: number) {
+  const step = 255 / (levels - 1);
+  const err = new Float32Array(width * height);
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      const idx = y * width + x;
+      const i = idx * 4 + 3;
+      const orig = pixels[i];
+      if (orig <= 2 || orig >= 253) continue;
+      const adjusted = orig + err[idx];
+      const quantized = Math.round(adjusted / step) * step;
+      const clamped = Math.max(0, Math.min(255, Math.round(quantized)));
+      pixels[i] = clamped;
+      const error = adjusted - clamped;
+      if (x + 1 < width)   err[idx + 1] += error * (7 / 16);
+      if (y + 1 < height) {
+        if (x > 0)          err[idx + width - 1] += error * (3 / 16);
+                             err[idx + width] += error * (5 / 16);
+        if (x + 1 < width)  err[idx + width + 1] += error * (1 / 16);
+      }
+    }
+  }
+}
+
+// ---- 智能量化压缩（imagequant WASM，与压缩工具相同方案）----
+async function canvasToBlob(canvas: HTMLCanvasElement): Promise<Blob> {
   const ctx = canvas.getContext('2d');
   if (!ctx) throw new Error('Canvas context unavailable');
   const { width, height } = canvas;
   const imageData = ctx.getImageData(0, 0, width, height);
-  const buf = UPNG.encode([imageData.data.buffer], width, height, 0);
-  return new Blob([buf], { type: 'image/png' });
+
+  try {
+    const mod = await import('imagequant');
+    const pixels = new Uint8Array(imageData.data.length);
+    pixels.set(imageData.data);
+    fsAlphaDither(pixels, width, height, 32);
+
+    const instance = new mod.Imagequant();
+    const image = new mod.ImagequantImage(new Uint8Array(pixels), width, height, 0);
+    try {
+      instance.set_quality(0, 75);
+      instance.set_speed(1);
+      const output = instance.process(image);
+      return new Blob([output], { type: 'image/png' });
+    } finally {
+      try { image.free(); } catch {}
+      try { instance.free(); } catch {}
+    }
+  } catch {
+    // fallback: UPNG 无损编码
+    const buf = UPNG.encode([imageData.data.buffer], width, height, 0);
+    return new Blob([buf], { type: 'image/png' });
+  }
 }
 
 // 默认参数配置
@@ -812,7 +858,7 @@ const CPSAutomation: React.FC = () => {
       ];
       for (const [ref, name] of refs) {
         if (!ref.current) continue;
-        const blob = canvasToBlob(ref.current);
+        const blob = await canvasToBlob(ref.current);
         zip.file(name, blob);
       }
 
@@ -979,8 +1025,36 @@ function extractNameFromInput(val){
   var value=lastThree.replace(/^0+/,'');
   return value||'0';
 }
-function canvasToPNG(canvas){
-  return new Promise(function(resolve){canvas.toBlob(function(b){resolve(b)},'image/png')});
+var _iqMod=null,_iqFailed=false;
+async function _loadIQ(){
+  if(_iqMod) return _iqMod;
+  if(_iqFailed) return null;
+  try{_iqMod=await import('https://esm.sh/imagequant@0.4.4');return _iqMod}
+  catch(e){console.warn('imagequant CDN 加载失败，使用原生 PNG:',e);_iqFailed=true;return null}
+}
+function _fsDither(px,w,h,levels){
+  var step=255/(levels-1),err=new Float32Array(w*h);
+  for(var y=0;y<h;y++)for(var x=0;x<w;x++){
+    var idx=y*w+x,i=idx*4+3,o=px[i];if(o<=2||o>=253)continue;
+    var a=o+err[idx],q=Math.round(a/step)*step,c=Math.max(0,Math.min(255,Math.round(q)));
+    px[i]=c;var e=a-c;
+    if(x+1<w)err[idx+1]+=e*7/16;
+    if(y+1<h){if(x>0)err[idx+w-1]+=e*3/16;err[idx+w]+=e*5/16;if(x+1<w)err[idx+w+1]+=e/16}
+  }
+}
+async function canvasToPNG(canvas){
+  var ctx=canvas.getContext('2d'),imgData=ctx.getImageData(0,0,canvas.width,canvas.height);
+  var mod=await _loadIQ();
+  if(mod&&mod.Imagequant&&mod.ImagequantImage){
+    try{
+      var px=new Uint8Array(imgData.data.length);px.set(imgData.data);
+      _fsDither(px,canvas.width,canvas.height,32);
+      var inst=new mod.Imagequant(),img=new mod.ImagequantImage(new Uint8Array(px),canvas.width,canvas.height,0);
+      try{inst.set_quality(0,75);inst.set_speed(1);var out=inst.process(img);return new Blob([out],{type:'image/png'})}
+      finally{try{img.free()}catch(e){}try{inst.free()}catch(e){}}
+    }catch(e){console.warn('imagequant 量化失败，fallback:',e)}
+  }
+  return new Promise(function(r){canvas.toBlob(function(b){r(b)},'image/png')});
 }
 function fmtSize(bytes){if(bytes<1024)return bytes+'B';if(bytes<1048576)return (bytes/1024).toFixed(1)+'KB';return (bytes/1048576).toFixed(1)+'MB'}
 function handleFile(type,f){
