@@ -1027,30 +1027,41 @@ function extractNameFromInput(val){
 function canvasToPNG(canvas){
   return new Promise(function(r){canvas.toBlob(function(b){r(b)},'image/png')});
 }
-// 纯内联极简 ZIP 构建器（STORE 方法，无外部依赖，不触发杀毒）
+// 纯内联 ZIP 构建器（DEFLATE 压缩，使用浏览器原生 CompressionStream，零外部依赖）
 function _u16(v){return [v&0xff,(v>>8)&0xff]}
 function _u32(v){return [v&0xff,(v>>8)&0xff,(v>>16)&0xff,(v>>24)&0xff]}
 function _crc32(buf){
   var t=new Uint32Array(256);for(var i=0;i<256;i++){var c=i;for(var j=0;j<8;j++)c=c&1?0xEDB88320^(c>>>1):c>>>1;t[i]=c}
   var crc=0xFFFFFFFF;for(var k=0;k<buf.length;k++)crc=t[(crc^buf[k])&0xFF]^(crc>>>8);return (crc^0xFFFFFFFF)>>>0;
 }
+async function _deflate(raw){
+  var cs=new CompressionStream('deflate-raw');
+  var w=cs.writable.getWriter();w.write(raw);w.close();
+  var rd=cs.readable.getReader(),chunks=[],len=0;
+  for(;;){var r=await rd.read();if(r.done)break;chunks.push(r.value);len+=r.value.length}
+  var out=new Uint8Array(len),off=0;
+  for(var i=0;i<chunks.length;i++){out.set(chunks[i],off);off+=chunks[i].length}
+  return out;
+}
 async function buildZip(entries){
   var localParts=[],centralParts=[],offset=0;
   var enc=new TextEncoder();
   for(var i=0;i<entries.length;i++){
-    var e=entries[i],nameBytes=enc.encode(e.name),data=new Uint8Array(await e.blob.arrayBuffer());
-    var crc=_crc32(data),sz=data.length;
+    var e=entries[i],nameBytes=enc.encode(e.name),raw=new Uint8Array(await e.blob.arrayBuffer());
+    var crc=_crc32(raw),rawSz=raw.length;
+    var cmp=await _deflate(raw),cmpSz=cmp.length;
+    var useDeflate=cmpSz<rawSz,method=useDeflate?8:0,finalData=useDeflate?cmp:raw,finalSz=finalData.length;
     var local=new Uint8Array([].concat(
-      [0x50,0x4b,0x03,0x04],_u16(20),_u16(0),_u16(0),_u16(0),_u16(0),
-      _u32(crc),_u32(sz),_u32(sz),_u16(nameBytes.length),_u16(0)
+      [0x50,0x4b,0x03,0x04],_u16(20),_u16(0),_u16(method),_u16(0),_u16(0),
+      _u32(crc),_u32(finalSz),_u32(rawSz),_u16(nameBytes.length),_u16(0)
     ));
-    localParts.push(local,nameBytes,data);
+    localParts.push(local,nameBytes,finalData);
     var central=new Uint8Array([].concat(
-      [0x50,0x4b,0x01,0x02],_u16(20),_u16(20),_u16(0),_u16(0),_u16(0),_u16(0),
-      _u32(crc),_u32(sz),_u32(sz),_u16(nameBytes.length),_u16(0),_u16(0),_u16(0),_u16(0),_u32(0),_u32(offset)
+      [0x50,0x4b,0x01,0x02],_u16(20),_u16(20),_u16(0),_u16(method),_u16(0),_u16(0),
+      _u32(crc),_u32(finalSz),_u32(rawSz),_u16(nameBytes.length),_u16(0),_u16(0),_u16(0),_u16(0),_u32(0),_u32(offset)
     ));
     centralParts.push(central,nameBytes);
-    offset+=local.length+nameBytes.length+data.length;
+    offset+=local.length+nameBytes.length+finalData.length;
   }
   var cdSize=centralParts.reduce(function(s,p){return s+p.length},0);
   var eocd=new Uint8Array([].concat(
