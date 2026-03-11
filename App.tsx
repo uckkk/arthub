@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, lazy, Suspense } from 'react';
 import { 
   Type, Menu, User, Settings, 
-  Sparkles, Home, CheckSquare, Grid3X3, PenTool, Zap, ScanLine, Minimize2, Library
+  Sparkles, Home, CheckSquare, PenTool, Zap, ScanLine, Minimize2, Library
 } from 'lucide-react';
 import { getStorageConfig, formatSyncTime } from './services/fileStorageService';
 import { getUserInfo, clearUserInfo, UserInfo, verifyUser, rustLogout } from './services/userAuthService';
@@ -27,7 +27,6 @@ const AITool = lazy(() => import('./components/AITool'));
 const UpdateNotification = lazy(() => import('./components/UpdateNotification'));
 const HomePage = lazy(() => import('./components/HomePage'));
 const QuadrantTodo = lazy(() => import('./components/QuadrantTodo'));
-const AppLauncher = lazy(() => import('./components/AppLauncher'));
 const Whiteboard = lazy(() => import('./components/Whiteboard'));
 const CPSAutomation = lazy(() => import('./components/CPSAutomation'));
 const UIAudit = lazy(() => import('./components/UIAudit'));
@@ -110,7 +109,6 @@ const createMenuGroups = (): MenuGroup[] => [
       { id: 'naming', label: '资产命名', icon: Type },
       { id: 'paths', label: '常用入口', icon: Menu },
       { id: 'todo', label: '待办工作', icon: CheckSquare },
-      { id: 'apps', label: '常用应用', icon: Grid3X3 },
       { id: 'whiteboard', label: '无限画布', icon: PenTool },
       { id: 'cps', label: 'CPS自动化', icon: Zap },
       { id: 'uiaudit', label: '图像分析', icon: ScanLine },
@@ -440,7 +438,6 @@ const AppContent: React.FC = () => {
       'paths': 'paths',
       'api': 'ai',
       'todo': 'todo',
-      'apps': 'apps',
       'whiteboard': 'whiteboard',
       'cps': 'cps',
       'uiaudit': 'uiaudit',
@@ -487,7 +484,6 @@ const AppContent: React.FC = () => {
                   ), skeleton: 'naming' },
     paths:      { node: <PathManager />,    skeleton: 'paths' },
     todo:       { node: <QuadrantTodo />,   skeleton: 'todo' },
-    apps:       { node: <AppLauncher />,    skeleton: 'apps' },
     whiteboard: { node: <Whiteboard />,     skeleton: 'whiteboard' },
     cps:        { node: <CPSAutomation />,  skeleton: 'default' },
     uiaudit:    { node: <UIAudit />,        skeleton: 'default' },

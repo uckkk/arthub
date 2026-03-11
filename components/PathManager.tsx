@@ -149,14 +149,45 @@ const PathManager: React.FC = () => {
   useEffect(() => {
     const saved = localStorage.getItem('arthub_paths');
     const savedOrder = localStorage.getItem('arthub_group_order');
+    let loadedPaths: PathItem[] = [];
     if (saved) {
-      setPaths(JSON.parse(saved));
+      loadedPaths = JSON.parse(saved);
     } else {
-      setPaths([...MOCK_PATHS]);
+      loadedPaths = [...MOCK_PATHS];
     }
+
+    const savedApps = localStorage.getItem('arthub_apps');
+    if (savedApps) {
+      try {
+        const apps: { id: string; name: string; path: string; icon?: string }[] = JSON.parse(savedApps);
+        const existingAppPaths = new Set(loadedPaths.filter(p => p.type === 'app').map(p => p.path.toLowerCase()));
+        const migratedApps: PathItem[] = apps
+          .filter(app => !existingAppPaths.has(app.path.toLowerCase()))
+          .map(app => ({
+            id: 'app_' + app.id,
+            name: app.name,
+            path: app.path,
+            type: 'app' as PathType,
+            group: '常用应用',
+            icon: app.icon,
+          }));
+        if (migratedApps.length > 0) {
+          loadedPaths = [...loadedPaths, ...migratedApps];
+        }
+      } catch (e) {
+        console.warn('Failed to migrate apps:', e);
+      }
+    }
+
+    setPaths(loadedPaths);
+
     if (savedOrder) {
       try {
-        setGroupOrder(JSON.parse(savedOrder));
+        const order: string[] = JSON.parse(savedOrder);
+        if (!order.includes('常用应用')) {
+          order.push('常用应用');
+        }
+        setGroupOrder(order);
       } catch (e) {
         console.warn('Failed to parse group order:', e);
       }
@@ -403,16 +434,19 @@ const PathManager: React.FC = () => {
       const unDrop = await listen<string[]>('tauri://file-drop', async (event) => {
         setIsDraggingOver(false);
         if (!isVisible()) return;
-        const paths = (Array.isArray(event.payload) ? event.payload : []).filter(p => {
-          const lower = p.toLowerCase();
-          return !lower.endsWith('.exe') && !lower.endsWith('.lnk') && !lower.endsWith('.bat');
-        });
-        if (paths.length > 0) {
-          const filePath = paths[0];
-          const parts = filePath.replace(/\\/g, '/').split('/').filter(Boolean);
-          const name = parts[parts.length - 1] || filePath;
-          setDraggedPath({ path: filePath, name, type: 'local' });
-          setShowDragModal(true);
+        const droppedPaths = Array.isArray(event.payload) ? event.payload : [];
+        if (droppedPaths.length > 0) {
+          const filePath = droppedPaths[0];
+          const lower = filePath.toLowerCase();
+          if (lower.endsWith('.exe') || lower.endsWith('.lnk') || lower.endsWith('.bat')) {
+            const appName = extractAppName(filePath);
+            await handleDroppedAppPath(filePath, appName);
+          } else {
+            const parts = filePath.replace(/\\/g, '/').split('/').filter(Boolean);
+            const name = parts[parts.length - 1] || filePath;
+            setDraggedPath({ path: filePath, name, type: 'local' });
+            setShowDragModal(true);
+          }
         }
       });
       const unHover = await listen('tauri://file-drop-hover', () => { if (isVisible()) setIsDraggingOver(true); });
@@ -452,8 +486,10 @@ const PathManager: React.FC = () => {
         const fileName = file.name;
         const lowerFileName = fileName.toLowerCase();
         
-        // 阻止添加应用文件，应用应在"常用应用"中添加
         if (lowerFileName.endsWith('.exe') || lowerFileName.endsWith('.lnk')) {
+          const appPath = filePath;
+          const appName = extractAppName(appPath);
+          await handleDroppedAppPath(appPath, appName);
           return;
         }
         
@@ -480,8 +516,9 @@ const PathManager: React.FC = () => {
           filePath = filePath.replaceAll(S_L, B_L);
           
           const lowerPath = filePath.toLowerCase();
-          // 阻止添加应用文件，应用应在"常用应用"中添加
           if (lowerPath.endsWith('.lnk') || lowerPath.endsWith('.exe')) {
+            const appName = extractAppName(filePath);
+            await handleDroppedAppPath(filePath, appName);
             return;
           }
           
@@ -496,8 +533,9 @@ const PathManager: React.FC = () => {
         
         if (textUriList.includes(B_L) || textUriList.includes(S_L)) {
           const lowerUri = textUriList.toLowerCase();
-          // 阻止添加应用文件，应用应在"常用应用"中添加
           if (lowerUri.endsWith('.lnk') || lowerUri.endsWith('.exe')) {
+            const appName = extractAppName(textUriList);
+            await handleDroppedAppPath(textUriList, appName);
             return;
           }
           await handleDroppedPath(textUriList, 'local');
@@ -507,8 +545,9 @@ const PathManager: React.FC = () => {
       
       if (text) {
         const lowerText = text.toLowerCase();
-        // 阻止添加应用文件，应用应在"常用应用"中添加
         if (lowerText.endsWith('.lnk') || lowerText.endsWith('.exe')) {
+          const appName = extractAppName(text);
+          await handleDroppedAppPath(text, appName);
           return;
         }
 
@@ -571,6 +610,33 @@ const PathManager: React.FC = () => {
 
     setDraggedPath({ path, name, type });
     setShowDragModal(true);
+  };
+
+  const handleDroppedAppPath = async (appPath: string, appName: string) => {
+    setIsDraggingOver(false);
+
+    let icon: string | undefined;
+    if (typeof window !== 'undefined' && (window as any).__TAURI__) {
+      try {
+        const { invoke } = await import('@tauri-apps/api/tauri');
+        icon = await invoke('get_app_icon', { path: appPath }) as string;
+      } catch { /* ignore */ }
+    }
+
+    const item: PathItem = {
+      id: 'app_' + Date.now().toString(),
+      name: appName,
+      path: appPath,
+      type: 'app',
+      group: '常用应用',
+      icon,
+    };
+    setPaths(prev => {
+      const exists = prev.some(p => p.type === 'app' && p.path.toLowerCase() === appPath.toLowerCase());
+      if (exists) return prev;
+      return [...prev, item];
+    });
+    setGroupOrder(prev => prev.includes('常用应用') ? prev : [...prev, '常用应用']);
   };
 
   const handleConfirmDragPath = () => {
@@ -1252,7 +1318,7 @@ const PathManager: React.FC = () => {
           handleDropCreatePath(e);
         }}
         className={[
-          'flex-1 min-h-0 max-h-full overflow-y-auto px-6 py-6',
+          'flex-1 min-h-0 max-h-full overflow-y-auto px-4 py-4',
           'transition-colors duration-200',
           isDraggingOver ? OPACITY_CLASSES.bgBlue50010 + ' border-2 border-dashed border-blue-500' : ''
         ].filter(Boolean).join(' ')}
@@ -1268,7 +1334,7 @@ const PathManager: React.FC = () => {
           </div>
         ) : (
           <div 
-            className="space-y-4"
+            className="space-y-3"
             onDragOver={(e) => {
               const types = Array.from(e.dataTransfer.types);
               const isGroupDrag = draggedGroup || types.includes('application/x-group');
