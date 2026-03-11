@@ -250,7 +250,7 @@ async fn sync_account_to_github(
     );
     let get_file_response = client
         .get(&get_file_url)
-        .header("Authorization", format!("token {}", github_token))
+        .header("Authorization", format!("Bearer {}", github_token.trim()))
         .header("Accept", "application/vnd.github.v3+json")
         .send()
         .await
@@ -281,7 +281,7 @@ async fn sync_account_to_github(
 
     let update_response = client
         .put(&update_file_url)
-        .header("Authorization", format!("token {}", github_token))
+        .header("Authorization", format!("Bearer {}", github_token.trim()))
         .header("Accept", "application/vnd.github.v3+json")
         .header("Content-Type", "application/json")
         .json(&update_payload)
@@ -310,38 +310,46 @@ async fn verify_github_token(github_token: String) -> Result<(bool, String), Str
         .build()
         .map_err(|e| format!("创建 HTTP 客户端失败: {}", e))?;
 
+    // 使用Bearer格式（GitHub推荐）
     let response = client
         .get("https://api.github.com/user")
-        .header("Authorization", format!("token {}", github_token))
+        .header("Authorization", format!("Bearer {}", github_token.trim()))
         .header("Accept", "application/vnd.github.v3+json")
         .send()
         .await
         .map_err(|e| format!("验证请求失败: {}", e))?;
 
-    if response.status() == 401 {
-        return Ok((false, "Token 无效或已过期".to_string()));
+    let status = response.status();
+    
+    if status == 401 {
+        return Ok((false, "Token 无效或已过期，请检查Token是否正确".to_string()));
     }
-    if response.status() == 403 {
-        return Ok((false, "Token 权限不足，需要 repo 权限".to_string()));
+    
+    if !status.is_success() {
+        let error_text = response.text().await.unwrap_or_default();
+        return Ok((false, format!("验证失败: HTTP {} - {}", status, error_text)));
     }
-    if !response.status().is_success() {
-        return Ok((false, format!("验证失败: HTTP {}", response.status())));
-    }
+
+    // 获取用户信息
+    let user: serde_json::Value = response.json().await
+        .map_err(|e| format!("解析用户信息失败: {}", e))?;
+    let login = user["login"].as_str().unwrap_or("未知用户");
 
     // 检查是否有repo权限
     // 对于classic token，可能没有X-OAuth-Scopes头，我们尝试测试repo权限
     let scopes = response.headers().get("X-OAuth-Scopes");
+    let mut has_repo_scope = false;
+    
     if let Some(scopes_header) = scopes {
         let scopes_str = scopes_header.to_str().unwrap_or("");
-        if !scopes_str.contains("repo") {
-            return Ok((false, "Token 缺少 repo 权限，请重新创建Token并勾选repo权限".to_string()));
-        }
-    } else {
-        // 如果没有X-OAuth-Scopes头（classic token），尝试测试repo权限
-        // 通过尝试访问仓库信息来验证
+        has_repo_scope = scopes_str.contains("repo");
+    }
+    
+    // 如果没有X-OAuth-Scopes头（classic token），尝试测试repo权限
+    if !has_repo_scope {
         let test_repo_response = client
             .get("https://api.github.com/repos/uckkk/ArtAssetNamingConfig")
-            .header("Authorization", format!("token {}", github_token))
+            .header("Authorization", format!("Bearer {}", github_token.trim()))
             .header("Accept", "application/vnd.github.v3+json")
             .send()
             .await;
@@ -349,19 +357,25 @@ async fn verify_github_token(github_token: String) -> Result<(bool, String), Str
         match test_repo_response {
             Ok(resp) if resp.status().is_success() => {
                 // 能够访问仓库，说明有repo权限
+                has_repo_scope = true;
             }
             Ok(resp) if resp.status() == 403 => {
-                return Ok((false, "Token 缺少 repo 权限，请重新创建Token并勾选repo权限".to_string()));
+                return Ok((false, "Token 缺少 repo 权限。请重新创建Token，在权限列表中勾选 'repo' 权限（完整仓库访问权限）".to_string()));
+            }
+            Ok(resp) if resp.status() == 404 => {
+                return Ok((false, "无法访问目标仓库，请确认Token有repo权限且仓库存在".to_string()));
             }
             _ => {
-                // 其他情况，假设有权限（可能是网络问题）
+                // 其他情况，给出警告但允许继续
+                return Ok((true, format!("Token 验证成功！用户: {}。注意：无法验证repo权限，请确保Token有repo权限".to_string(), login)));
             }
         }
     }
 
-    let user: serde_json::Value = response.json().await
-        .map_err(|e| format!("解析用户信息失败: {}", e))?;
-    let login = user["login"].as_str().unwrap_or("未知用户");
+    if !has_repo_scope {
+        return Ok((false, "Token 缺少 repo 权限。请重新创建Token，在权限列表中勾选 'repo' 权限（完整仓库访问权限）".to_string()));
+    }
+
     Ok((true, format!("Token 验证成功！用户: {}", login)))
 }
 

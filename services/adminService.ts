@@ -123,7 +123,7 @@ export async function syncAccountToGitHub(
       const getFileUrl = `https://api.github.com/repos/${CSV_REPO_OWNER}/${CSV_REPO_NAME}/contents/${CSV_FILE_PATH}`;
       const getFileResponse = await fetch(getFileUrl, {
         headers: {
-          'Authorization': `token ${githubToken}`,
+          'Authorization': `Bearer ${githubToken.trim()}`,
           'Accept': 'application/vnd.github.v3+json',
         },
       });
@@ -144,7 +144,7 @@ export async function syncAccountToGitHub(
       const updateResponse = await fetch(updateFileUrl, {
         method: 'PUT',
         headers: {
-          'Authorization': `token ${githubToken}`,
+          'Authorization': `Bearer ${githubToken.trim()}`,
           'Accept': 'application/vnd.github.v3+json',
           'Content-Type': 'application/json',
         },
@@ -188,28 +188,61 @@ export async function verifyGitHubToken(githubToken: string): Promise<{ valid: b
       // 浏览器环境：直接调用GitHub API
       const response = await fetch('https://api.github.com/user', {
         headers: {
-          'Authorization': `token ${githubToken.trim()}`,
+          'Authorization': `Bearer ${githubToken.trim()}`,
           'Accept': 'application/vnd.github.v3+json',
         },
       });
 
       if (response.status === 401) {
-        return { valid: false, message: 'Token 无效或已过期' };
+        return { valid: false, message: 'Token 无效或已过期，请检查Token是否正确' };
       }
       if (response.status === 403) {
         return { valid: false, message: 'Token 权限不足，需要 repo 权限' };
       }
       if (!response.ok) {
-        return { valid: false, message: `验证失败: HTTP ${response.status}` };
-      }
-
-      // 检查是否有repo权限
-      const scopes = response.headers.get('X-OAuth-Scopes');
-      if (!scopes || !scopes.includes('repo')) {
-        return { valid: false, message: 'Token 缺少 repo 权限，请重新创建Token并勾选repo权限' };
+        const errorText = await response.text().catch(() => '');
+        return { valid: false, message: `验证失败: HTTP ${response.status}${errorText ? ' - ' + errorText : ''}` };
       }
 
       const user = await response.json();
+      
+      // 检查是否有repo权限
+      const scopes = response.headers.get('X-OAuth-Scopes');
+      let hasRepoScope = false;
+      
+      if (scopes) {
+        hasRepoScope = scopes.includes('repo');
+      }
+      
+      // 如果没有X-OAuth-Scopes头，尝试测试repo权限
+      if (!hasRepoScope) {
+        try {
+          const repoResponse = await fetch('https://api.github.com/repos/uckkk/ArtAssetNamingConfig', {
+            headers: {
+              'Authorization': `Bearer ${githubToken.trim()}`,
+              'Accept': 'application/vnd.github.v3+json',
+            },
+          });
+          
+          if (repoResponse.status === 403) {
+            return { valid: false, message: 'Token 缺少 repo 权限。请重新创建Token，在权限列表中勾选 "repo" 权限（完整仓库访问权限）' };
+          }
+          if (repoResponse.status === 404) {
+            return { valid: false, message: '无法访问目标仓库，请确认Token有repo权限且仓库存在' };
+          }
+          if (repoResponse.ok) {
+            hasRepoScope = true;
+          }
+        } catch (e) {
+          // 测试失败，给出警告但允许继续
+          return { valid: true, message: `Token 验证成功！用户: ${user.login}。注意：无法验证repo权限，请确保Token有repo权限` };
+        }
+      }
+      
+      if (!hasRepoScope) {
+        return { valid: false, message: 'Token 缺少 repo 权限。请重新创建Token，在权限列表中勾选 "repo" 权限（完整仓库访问权限）' };
+      }
+
       return { valid: true, message: `Token 验证成功！用户: ${user.login}` };
     }
   } catch (error: any) {
