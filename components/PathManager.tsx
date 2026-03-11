@@ -378,7 +378,11 @@ const PathManager: React.FC = () => {
   const handleDragEnter = (e: React.DragEvent) => {
     e.preventDefault();
     e.stopPropagation();
-    setIsDraggingOver(true);
+    const types = Array.from(e.dataTransfer.types);
+    const isInternalDrag = draggedGroupRef.current || types.includes('application/x-group') || types.includes('text/plain') || isDragging;
+    if (!isInternalDrag) {
+      setIsDraggingOver(true);
+    }
   };
 
   const handleDragLeave = (e: React.DragEvent) => {
