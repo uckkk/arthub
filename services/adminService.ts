@@ -159,6 +159,55 @@ export async function syncAccountToGitHub(
   }
 }
 
+// 验证GitHub Token
+export async function verifyGitHubToken(githubToken: string): Promise<{ valid: boolean; message: string }> {
+  if (!githubToken.trim()) {
+    return { valid: false, message: 'Token 不能为空' };
+  }
+
+  const isTauri = typeof window !== 'undefined' && !!(window as any).__TAURI_IPC__;
+  
+  try {
+    if (isTauri) {
+      // Tauri环境：通过Rust后端验证
+      const { invoke } = await import('@tauri-apps/api/tauri');
+      const result: { valid: boolean; message: string } = await invoke('verify_github_token', {
+        githubToken: githubToken.trim(),
+      });
+      return result;
+    } else {
+      // 浏览器环境：直接调用GitHub API
+      const response = await fetch('https://api.github.com/user', {
+        headers: {
+          'Authorization': `token ${githubToken.trim()}`,
+          'Accept': 'application/vnd.github.v3+json',
+        },
+      });
+
+      if (response.status === 401) {
+        return { valid: false, message: 'Token 无效或已过期' };
+      }
+      if (response.status === 403) {
+        return { valid: false, message: 'Token 权限不足，需要 repo 权限' };
+      }
+      if (!response.ok) {
+        return { valid: false, message: `验证失败: HTTP ${response.status}` };
+      }
+
+      // 检查是否有repo权限
+      const scopes = response.headers.get('X-OAuth-Scopes');
+      if (!scopes || !scopes.includes('repo')) {
+        return { valid: false, message: 'Token 缺少 repo 权限，请重新创建Token并勾选repo权限' };
+      }
+
+      const user = await response.json();
+      return { valid: true, message: `Token 验证成功！用户: ${user.login}` };
+    }
+  } catch (error: any) {
+    return { valid: false, message: `验证失败: ${error.message || '网络错误'}` };
+  }
+}
+
 // 添加新账号
 export async function addAccount(
   username: string,

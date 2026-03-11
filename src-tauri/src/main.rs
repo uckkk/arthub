@@ -298,6 +298,73 @@ async fn sync_account_to_github(
     Ok(())
 }
 
+// Tauri 命令：验证GitHub Token
+#[tauri::command]
+async fn verify_github_token(github_token: String) -> Result<(bool, String), String> {
+    if github_token.is_empty() {
+        return Ok((false, "Token 不能为空".to_string()));
+    }
+
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(10))
+        .build()
+        .map_err(|e| format!("创建 HTTP 客户端失败: {}", e))?;
+
+    let response = client
+        .get("https://api.github.com/user")
+        .header("Authorization", format!("token {}", github_token))
+        .header("Accept", "application/vnd.github.v3+json")
+        .send()
+        .await
+        .map_err(|e| format!("验证请求失败: {}", e))?;
+
+    if response.status() == 401 {
+        return Ok((false, "Token 无效或已过期".to_string()));
+    }
+    if response.status() == 403 {
+        return Ok((false, "Token 权限不足，需要 repo 权限".to_string()));
+    }
+    if !response.status().is_success() {
+        return Ok((false, format!("验证失败: HTTP {}", response.status())));
+    }
+
+    // 检查是否有repo权限
+    // 对于classic token，可能没有X-OAuth-Scopes头，我们尝试测试repo权限
+    let scopes = response.headers().get("X-OAuth-Scopes");
+    if let Some(scopes_header) = scopes {
+        let scopes_str = scopes_header.to_str().unwrap_or("");
+        if !scopes_str.contains("repo") {
+            return Ok((false, "Token 缺少 repo 权限，请重新创建Token并勾选repo权限".to_string()));
+        }
+    } else {
+        // 如果没有X-OAuth-Scopes头（classic token），尝试测试repo权限
+        // 通过尝试访问仓库信息来验证
+        let test_repo_response = client
+            .get("https://api.github.com/repos/uckkk/ArtAssetNamingConfig")
+            .header("Authorization", format!("token {}", github_token))
+            .header("Accept", "application/vnd.github.v3+json")
+            .send()
+            .await;
+        
+        match test_repo_response {
+            Ok(resp) if resp.status().is_success() => {
+                // 能够访问仓库，说明有repo权限
+            }
+            Ok(resp) if resp.status() == 403 => {
+                return Ok((false, "Token 缺少 repo 权限，请重新创建Token并勾选repo权限".to_string()));
+            }
+            _ => {
+                // 其他情况，假设有权限（可能是网络问题）
+            }
+        }
+    }
+
+    let user: serde_json::Value = response.json().await
+        .map_err(|e| format!("解析用户信息失败: {}", e))?;
+    let login = user["login"].as_str().unwrap_or("未知用户");
+    Ok((true, format!("Token 验证成功！用户: {}", login)))
+}
+
 const ICON_SIZE: i32 = 80; // 增大窗口大小，确保图标完整显示
 const SNAP_THRESHOLD: i32 = 20;
 
@@ -2779,6 +2846,7 @@ fn main() {
             auth_logout,
             fetch_account_list,
             sync_account_to_github,
+            verify_github_token,
             asset_manager::asset_get_folders,
             asset_manager::asset_add_folder,
             asset_manager::asset_remove_folder,
