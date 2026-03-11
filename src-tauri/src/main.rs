@@ -367,7 +367,7 @@ async fn verify_github_token(github_token: String) -> Result<(bool, String), Str
             }
             _ => {
                 // 其他情况，给出警告但允许继续
-                return Ok((true, format!("Token 验证成功！用户: {}。注意：无法验证repo权限，请确保Token有repo权限".to_string(), login)));
+                return Ok((true, format!("Token 验证成功！用户: {}。注意：无法验证repo权限，请确保Token有repo权限", login)));
             }
         }
     }
