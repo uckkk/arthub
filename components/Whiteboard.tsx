@@ -69,7 +69,7 @@ import {
   WhiteboardProject
 } from '../services/whiteboardProjectService';
 import { getSavedStoragePath, openSettingsAndHighlightPath } from '../services/fileStorageService';
-import { Edit2, X, Plus, Folder, Save, Download, Share2, Sun, Moon } from 'lucide-react';
+import { Edit2, X, Plus, Save, Download, Share2, Sun, Moon } from 'lucide-react';
 import { useToast } from './Toast';
 import { invoke } from '@tauri-apps/api/tauri';
 import { getPendingImports, clearPendingImports, addPendingImport } from '../services/whiteboardPendingImport';
@@ -877,148 +877,109 @@ const Whiteboard: React.FC = () => {
 
   return (
     <div ref={whiteboardContainerRef} className="h-full flex flex-col bg-[#0a0a0a] relative">
-      {/* 顶部工具栏 */}
-      <div className="flex items-center justify-between px-3 py-2 sm:px-4 sm:py-3 border-b border-[#1a1a1a] shrink-0">
-        <div className="flex items-center gap-3">
-          {/* 项目选择器 */}
-          <div className="relative">
-            <button
-              onClick={() => setShowProjectSelector(!showProjectSelector)}
-              className="flex items-center gap-2 px-3 py-2 rounded-lg bg-[#1a1a1a] hover:bg-[#2a2a2a] text-white transition-colors"
-            >
-              <Folder size={16} />
-              {isEditingProjectName ? (
+      {/* 悬浮工具栏 */}
+      <div className="absolute top-3 right-3 z-[1000] flex items-center gap-1.5" onPointerDown={(e) => e.stopPropagation()}>
+        {/* 项目选择器 */}
+        <div className="relative">
+          <div className="flex items-center bg-[#1a1a1a]/90 backdrop-blur-sm rounded-lg border border-[#2a2a2a] shadow-lg overflow-hidden">
+            {isEditingProjectName ? (
+              <div className="flex items-center px-3 py-1.5 gap-1">
                 <input
                   type="text"
                   value={projectNameInput}
                   onChange={(e) => setProjectNameInput(e.target.value)}
                   onBlur={handleSaveProjectName}
                   onKeyDown={(e) => {
-                    if (e.key === 'Enter') {
-                      handleSaveProjectName();
-                    } else if (e.key === 'Escape') {
-                      handleCancelEditProjectName();
-                    }
+                    if (e.key === 'Enter') handleSaveProjectName();
+                    else if (e.key === 'Escape') handleCancelEditProjectName();
                   }}
-                  className="bg-transparent border-none outline-none text-white min-w-[200px]"
+                  className="bg-transparent border-none outline-none text-white text-sm min-w-[140px]"
                   autoFocus
+                  onClick={(e) => e.stopPropagation()}
                 />
-              ) : (
-                <>
-                  <span>{currentProject.name}</span>
-                  <Edit2 size={14} className="opacity-50" />
-                </>
-              )}
-            </button>
-
-            {/* 项目列表下拉菜单 */}
-            {showProjectSelector && (
+                <button onClick={handleCancelEditProjectName} className="p-0.5 text-[#666] hover:text-white transition-colors">
+                  <X size={14} />
+                </button>
+              </div>
+            ) : (
               <>
-                <div
-                  className="fixed inset-0 z-40"
-                  onClick={() => setShowProjectSelector(false)}
-                />
-                <div className="absolute top-full left-0 mt-2 w-64 bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg shadow-xl z-50 max-h-96 overflow-y-auto">
-                  <div className="p-2">
-                    {projects.map((project) => (
-                      <button
-                        key={project.id}
-                        onClick={() => handleSelectProject(project.id)}
-                        className={`w-full text-left px-3 py-2 rounded text-sm transition-colors ${
-                          project.id === currentProject.id
-                            ? 'bg-blue-600 text-white'
-                            : 'text-[#a0a0a0] hover:bg-[#2a2a2a] hover:text-white'
-                        }`}
-                      >
-                        {project.name}
-                      </button>
-                    ))}
-                    <button
-                      onClick={() => {
-                        setShowProjectSelector(false);
-                        handleCreateProject();
-                      }}
-                      className="w-full text-left px-3 py-2 rounded text-sm text-blue-400 hover:bg-[#2a2a2a] transition-colors flex items-center gap-2 mt-1"
-                    >
-                      <Plus size={14} />
-                      新建项目
-                    </button>
-                  </div>
-                </div>
+                <button
+                  onClick={() => setShowProjectSelector(!showProjectSelector)}
+                  className="flex items-center gap-1.5 px-2.5 py-1.5 text-white text-sm hover:bg-[#2a2a2a] transition-colors"
+                >
+                  <span className="max-w-[160px] truncate">{currentProject.name}</span>
+                  <svg width="10" height="10" viewBox="0 0 10 10" className="opacity-50 shrink-0"><path d="M2 4l3 3 3-3" stroke="currentColor" fill="none" strokeWidth="1.5" /></svg>
+                </button>
+                <button
+                  onClick={(e) => { e.stopPropagation(); handleStartEditProjectName(); }}
+                  className="px-1.5 py-1.5 text-[#666] hover:text-white hover:bg-[#2a2a2a] transition-colors border-l border-[#2a2a2a]"
+                  title="重命名项目"
+                >
+                  <Edit2 size={13} />
+                </button>
               </>
             )}
           </div>
 
-          {/* 编辑项目名按钮 */}
-          {/* 编辑按钮已集成到项目选择器中，不需要单独的按钮 */}
+          {/* 项目列表下拉菜单 */}
+          {showProjectSelector && (
+            <>
+              <div className="fixed inset-0 z-[999]" onClick={() => setShowProjectSelector(false)} />
+              <div className="absolute top-full right-0 mt-2 w-64 bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg shadow-xl z-[1001] max-h-96 overflow-y-auto">
+                <div className="p-2">
+                  {projects.map((project) => (
+                    <button
+                      key={project.id}
+                      onClick={() => handleSelectProject(project.id)}
+                      className={`w-full text-left px-3 py-2 rounded text-sm transition-colors ${
+                        project.id === currentProject.id
+                          ? 'bg-blue-600 text-white'
+                          : 'text-[#a0a0a0] hover:bg-[#2a2a2a] hover:text-white'
+                      }`}
+                    >
+                      {project.name}
+                    </button>
+                  ))}
+                  <div className="border-t border-[#2a2a2a] mt-1 pt-1">
+                    <button
+                      onClick={() => { setShowProjectSelector(false); handleCreateProject(); }}
+                      className="w-full text-left px-3 py-2 rounded text-sm text-blue-400 hover:bg-[#2a2a2a] transition-colors flex items-center gap-2"
+                    >
+                      <Plus size={14} />
+                      新建项目
+                    </button>
+                    <label
+                      className="w-full text-left px-3 py-2 rounded text-sm text-blue-400 hover:bg-[#2a2a2a] transition-colors flex items-center gap-2 cursor-pointer"
+                      onClick={() => setShowProjectSelector(false)}
+                    >
+                      <Download size={14} />
+                      导入项目
+                      <input type="file" accept=".json" onChange={handleImportJson} className="hidden" />
+                    </label>
+                  </div>
+                </div>
+              </div>
+            </>
+          )}
         </div>
 
-        {/* 工具栏按钮 */}
-        <div className="flex items-center gap-2">
-          {/* 上传文件 */}
-          <label className="px-2.5 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-medium transition-colors cursor-pointer flex items-center gap-1.5 text-sm" title="上传图片或视频">
-            <Plus size={16} />
-            <span className="hidden sm:inline">上传</span>
-            <input
-              type="file"
-              multiple
-              accept="image/*,video/mp4,video/webm,video/ogg"
-              onChange={handleFileSelect}
-              className="hidden"
-            />
+        {/* 操作按钮 */}
+        <div className="flex items-center bg-[#1a1a1a]/90 backdrop-blur-sm rounded-lg border border-[#2a2a2a] shadow-lg overflow-hidden">
+          <label className="p-2 text-white hover:bg-[#2a2a2a] transition-colors cursor-pointer" title="上传图片或视频">
+            <Plus size={15} />
+            <input type="file" multiple accept="image/*,video/mp4,video/webm,video/ogg" onChange={handleFileSelect} className="hidden" />
           </label>
-
-          {/* 保存按钮 */}
-          <button
-            onClick={handleSaveCanvas}
-            className="px-2.5 py-2 rounded-lg bg-green-600 hover:bg-green-700 text-white font-medium transition-colors flex items-center gap-1.5 text-sm"
-            title="保存画布到本地文件"
-          >
-            <Save size={16} />
-            <span className="hidden sm:inline">保存</span>
+          <button onClick={handleSaveCanvas} className="p-2 text-white hover:bg-green-600 transition-colors" title="保存画布">
+            <Save size={15} />
           </button>
-
-          {/* 导出为 PNG */}
-          <button
-            onClick={handleExportPng}
-            className="px-2.5 py-2 rounded-lg bg-[#2a2a2a] hover:bg-[#3a3a3a] text-white font-medium transition-colors flex items-center gap-1.5 text-sm"
-            title="导出为 PNG 图片"
-          >
-            <Download size={16} />
-            <span className="hidden md:inline">导出图片</span>
+          <button onClick={handleExportPng} className="p-2 text-white hover:bg-[#2a2a2a] transition-colors" title="导出为PNG图片">
+            <Download size={15} />
           </button>
-
-          {/* 导出/分享 JSON */}
-          <button
-            onClick={handleExportJson}
-            className="px-2.5 py-2 rounded-lg bg-[#2a2a2a] hover:bg-[#3a3a3a] text-white font-medium transition-colors flex items-center gap-1.5 text-sm"
-            title="导出画布数据，可分享给他人"
-          >
-            <Share2 size={16} />
-            <span className="hidden md:inline">分享</span>
+          <button onClick={handleExportJson} className="p-2 text-white hover:bg-[#2a2a2a] transition-colors" title="分享画布数据">
+            <Share2 size={15} />
           </button>
-
-          {/* 导入 JSON */}
-          <label className="px-2.5 py-2 rounded-lg bg-[#2a2a2a] hover:bg-[#3a3a3a] text-white font-medium transition-colors cursor-pointer flex items-center gap-1.5 text-sm" title="导入他人分享的画布数据">
-            <Folder size={16} />
-            <span className="hidden md:inline">导入</span>
-            <input
-              type="file"
-              accept=".json"
-              onChange={handleImportJson}
-              className="hidden"
-            />
-          </label>
-
-          {/* 主题切换 */}
-          <button
-            onClick={handleToggleTheme}
-            className="px-2.5 py-2 rounded-lg bg-[#2a2a2a] hover:bg-[#3a3a3a] text-white font-medium transition-colors flex items-center gap-1.5 text-sm"
-            title={isDarkMode ? '切换到浅色模式' : '切换到深色模式'}
-            aria-pressed={isDarkMode}
-          >
-            {isDarkMode ? <Sun size={16} /> : <Moon size={16} />}
-            <span className="hidden sm:inline">{isDarkMode ? '浅色' : '深色'}</span>
+          <button onClick={handleToggleTheme} className="p-2 text-white hover:bg-[#2a2a2a] transition-colors" title={isDarkMode ? '切换到浅色模式' : '切换到深色模式'}>
+            {isDarkMode ? <Sun size={15} /> : <Moon size={15} />}
           </button>
         </div>
       </div>
