@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, lazy, Suspense } from 'react';
 import { 
   Type, Menu, User, Settings, 
-  Sparkles, Home, CheckSquare, PenTool, Zap, ScanLine, Minimize2, Library, Shield
+  Sparkles, Home, CheckSquare, PenTool, Zap, ScanLine, Minimize2, Library
 } from 'lucide-react';
 import { getStorageConfig, formatSyncTime } from './services/fileStorageService';
 import { getUserInfo, clearUserInfo, UserInfo, verifyUser, rustLogout } from './services/userAuthService';
@@ -127,6 +127,8 @@ const AppContent: React.FC = () => {
   const [userInfo, setUserInfo] = useState<UserInfo | null>(null);
   const [showSettings, setShowSettings] = useState(false);
   const [showAdminPanel, setShowAdminPanel] = useState(false);
+  const [adminClickCount, setAdminClickCount] = useState(0);
+  const adminClickTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const settingsButtonRef = useRef<HTMLButtonElement>(null);
   const [currentPresetId, setCurrentPresetId] = useState<string>(() => {
     return localStorage.getItem('arthub_naming_preset') || 'fgui_card';
@@ -149,6 +151,15 @@ const AppContent: React.FC = () => {
       }
     });
     return unsubscribe;
+  }, []);
+
+  // 清理管理员点击超时
+  useEffect(() => {
+    return () => {
+      if (adminClickTimeoutRef.current) {
+        clearTimeout(adminClickTimeoutRef.current);
+      }
+    };
   }, []);
 
   const openConsoleWindow = () => {
@@ -584,17 +595,34 @@ const AppContent: React.FC = () => {
                       {lastSyncTime && (
                         <span>{formatSyncTime(lastSyncTime)}</span>
                       )}
-                      <div className="flex items-center gap-2">
-                        {isAdmin() && (
-                          <button
-                            onClick={() => setShowAdminPanel(true)}
-                            className="p-1 rounded text-[#666] hover:text-blue-400 hover:bg-[#1a1a1a] transition-colors"
-                            title="管理员面板"
-                          >
-                            <Shield size={12} />
-                          </button>
-                        )}
+                      <div className="flex items-center relative">
                         <span>v{CURRENT_VERSION}</span>
+                        {/* 隐藏的管理员入口 - 版本号右侧透明区域，连点8次 */}
+                        <div
+                          onClick={() => {
+                            if (!isAdmin()) return;
+                            
+                            // 清除之前的超时
+                            if (adminClickTimeoutRef.current) {
+                              clearTimeout(adminClickTimeoutRef.current);
+                            }
+                            
+                            const newCount = adminClickCount + 1;
+                            setAdminClickCount(newCount);
+                            
+                            if (newCount >= 8) {
+                              setShowAdminPanel(true);
+                              setAdminClickCount(0);
+                            } else {
+                              // 2秒内没有继续点击则重置计数
+                              adminClickTimeoutRef.current = setTimeout(() => {
+                                setAdminClickCount(0);
+                              }, 2000);
+                            }
+                          }}
+                          className="absolute right-0 w-8 h-4 cursor-pointer opacity-0"
+                          title=""
+                        />
                       </div>
                     </div>
                   </div>
