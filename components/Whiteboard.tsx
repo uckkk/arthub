@@ -1055,6 +1055,9 @@ const Whiteboard: React.FC = () => {
                       width: 0 !important;
                       pointer-events: none !important;
                     }
+                    .tlui-layout__top__right {
+                      padding-top: 48px !important;
+                    }
                   `;
                   const watermarkElements = document.querySelectorAll(
                     '[data-testid="made-with-tldraw"], a[href*="tldraw"], a[href*="tldraw.com"]'
