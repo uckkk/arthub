@@ -256,8 +256,23 @@ async fn sync_account_to_github(
         .await
         .map_err(|e| format!("获取文件信息失败: {}", e))?;
 
-    if !get_file_response.status().is_success() {
-        return Err(format!("获取文件信息失败: HTTP {}", get_file_response.status()));
+    let get_status = get_file_response.status();
+    if !get_status.is_success() {
+        let mut error_msg = format!("获取文件信息失败: HTTP {}", get_status);
+        if get_status == 403 {
+            error_msg.push_str(" Forbidden。可能的原因：\n1. Token缺少repo权限\n2. Token已过期或无效\n3. 仓库访问权限不足\n\n请检查Token权限并重新验证。");
+        } else if get_status == 401 {
+            error_msg.push_str(" Unauthorized。Token无效或已过期，请重新生成Token。");
+        } else if get_status == 404 {
+            error_msg.push_str(" Not Found。仓库或文件不存在，请检查仓库名称和文件路径。");
+        }
+        // 尝试获取错误详情
+        if let Ok(error_text) = get_file_response.text().await {
+            if !error_text.is_empty() {
+                error_msg.push_str(&format!("\nGitHub错误信息: {}", error_text));
+            }
+        }
+        return Err(error_msg);
     }
 
     let file_info: serde_json::Value = get_file_response.json().await
@@ -291,8 +306,19 @@ async fn sync_account_to_github(
 
     let status = update_response.status();
     if !status.is_success() {
+        let mut error_msg = format!("更新文件失败: HTTP {}", status);
+        if status == 403 {
+            error_msg.push_str(" Forbidden。可能的原因：\n1. Token缺少repo权限\n2. Token已过期或无效\n3. 仓库访问权限不足\n\n请检查Token权限并重新验证。");
+        } else if status == 401 {
+            error_msg.push_str(" Unauthorized。Token无效或已过期，请重新生成Token。");
+        } else if status == 404 {
+            error_msg.push_str(" Not Found。仓库或文件不存在，请检查仓库名称和文件路径。");
+        }
         let error_text = update_response.text().await.unwrap_or_default();
-        return Err(format!("更新文件失败: HTTP {} - {}", status, error_text));
+        if !error_text.is_empty() {
+            error_msg.push_str(&format!("\nGitHub错误信息: {}", error_text));
+        }
+        return Err(error_msg);
     }
 
     Ok(())
@@ -346,6 +372,7 @@ async fn verify_github_token(github_token: String) -> Result<(bool, String), Str
     
     // 如果没有X-OAuth-Scopes头（classic token），尝试测试repo权限
     if !has_repo_scope {
+        // 先测试能否访问仓库
         let test_repo_response = client
             .get("https://api.github.com/repos/uckkk/ArtAssetNamingConfig")
             .header("Authorization", format!("Bearer {}", github_token.trim()))
@@ -354,19 +381,53 @@ async fn verify_github_token(github_token: String) -> Result<(bool, String), Str
             .await;
         
         match test_repo_response {
-            Ok(resp) if resp.status().is_success() => {
-                // 能够访问仓库，说明有repo权限
-                has_repo_scope = true;
-            }
             Ok(resp) if resp.status() == 403 => {
                 return Ok((false, "Token 缺少 repo 权限。请重新创建Token，在权限列表中勾选 'repo' 权限（完整仓库访问权限）".to_string()));
             }
             Ok(resp) if resp.status() == 404 => {
                 return Ok((false, "无法访问目标仓库，请确认Token有repo权限且仓库存在".to_string()));
             }
-            _ => {
-                // 其他情况，给出警告但允许继续
-                return Ok((true, format!("Token 验证成功！用户: {}。注意：无法验证repo权限，请确保Token有repo权限", login)));
+            Ok(resp) if !resp.status().is_success() => {
+                // 其他HTTP错误状态
+                let error_text = resp.text().await.unwrap_or_default();
+                return Ok((false, format!("验证repo权限失败: HTTP {} - {}", resp.status(), error_text)));
+            }
+            Ok(_) => {
+                // 仓库访问成功，继续测试内容访问权限
+            }
+            Err(e) => {
+                // 网络错误或其他错误
+                return Ok((false, format!("验证repo权限时发生错误: {}。请检查网络连接或稍后重试", e)));
+            }
+        }
+        
+        // 测试能否访问仓库内容（这是实际需要的权限）
+        let test_content_response = client
+            .get("https://api.github.com/repos/uckkk/ArtAssetNamingConfig/contents/useID.csv")
+            .header("Authorization", format!("Bearer {}", github_token.trim()))
+            .header("Accept", "application/vnd.github.v3+json")
+            .send()
+            .await;
+        
+        match test_content_response {
+            Ok(resp) if resp.status().is_success() => {
+                // 能够访问仓库内容，说明有repo权限
+                has_repo_scope = true;
+            }
+            Ok(resp) if resp.status() == 403 => {
+                return Ok((false, "Token 缺少 repo 权限，无法访问仓库内容。请重新创建Token，在权限列表中勾选 'repo' 权限（完整仓库访问权限）".to_string()));
+            }
+            Ok(resp) if resp.status() == 404 => {
+                return Ok((false, "无法访问目标文件，请确认Token有repo权限且文件存在".to_string()));
+            }
+            Ok(resp) => {
+                // 其他HTTP错误状态
+                let error_text = resp.text().await.unwrap_or_default();
+                return Ok((false, format!("验证repo内容权限失败: HTTP {} - {}", resp.status(), error_text)));
+            }
+            Err(e) => {
+                // 网络错误或其他错误
+                return Ok((false, format!("验证repo内容权限时发生错误: {}。请检查网络连接或稍后重试", e)));
             }
         }
     }

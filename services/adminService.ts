@@ -129,7 +129,23 @@ export async function syncAccountToGitHub(
       });
 
       if (!getFileResponse.ok) {
-        throw new Error(`获取文件信息失败: HTTP ${getFileResponse.status}`);
+        let errorMessage = `获取文件信息失败: HTTP ${getFileResponse.status}`;
+        if (getFileResponse.status === 403) {
+          errorMessage += ' Forbidden。可能的原因：\n1. Token缺少repo权限\n2. Token已过期或无效\n3. 仓库访问权限不足\n\n请检查Token权限并重新验证。';
+        } else if (getFileResponse.status === 401) {
+          errorMessage += ' Unauthorized。Token无效或已过期，请重新生成Token。';
+        } else if (getFileResponse.status === 404) {
+          errorMessage += ' Not Found。仓库或文件不存在，请检查仓库名称和文件路径。';
+        }
+        try {
+          const errorData = await getFileResponse.json();
+          if (errorData.message) {
+            errorMessage += `\nGitHub错误信息: ${errorData.message}`;
+          }
+        } catch {
+          // 忽略JSON解析错误
+        }
+        throw new Error(errorMessage);
       }
 
       const fileInfo = await getFileResponse.json();
@@ -156,8 +172,23 @@ export async function syncAccountToGitHub(
       });
 
       if (!updateResponse.ok) {
-        const errorData = await updateResponse.json();
-        throw new Error(`更新文件失败: ${errorData.message || `HTTP ${updateResponse.status}`}`);
+        let errorMessage = `更新文件失败: HTTP ${updateResponse.status}`;
+        if (updateResponse.status === 403) {
+          errorMessage += ' Forbidden。可能的原因：\n1. Token缺少repo权限\n2. Token已过期或无效\n3. 仓库访问权限不足\n\n请检查Token权限并重新验证。';
+        } else if (updateResponse.status === 401) {
+          errorMessage += ' Unauthorized。Token无效或已过期，请重新生成Token。';
+        } else if (updateResponse.status === 404) {
+          errorMessage += ' Not Found。仓库或文件不存在，请检查仓库名称和文件路径。';
+        }
+        try {
+          const errorData = await updateResponse.json();
+          if (errorData.message) {
+            errorMessage += `\nGitHub错误信息: ${errorData.message}`;
+          }
+        } catch {
+          // 忽略JSON解析错误
+        }
+        throw new Error(errorMessage);
       }
 
       return;
@@ -214,9 +245,10 @@ export async function verifyGitHubToken(githubToken: string): Promise<{ valid: b
         hasRepoScope = scopes.includes('repo');
       }
       
-      // 如果没有X-OAuth-Scopes头，尝试测试repo权限
+      // 如果没有X-OAuth-Scopes头，尝试测试repo权限（测试访问仓库内容API）
       if (!hasRepoScope) {
         try {
+          // 先测试能否访问仓库
           const repoResponse = await fetch('https://api.github.com/repos/uckkk/ArtAssetNamingConfig', {
             headers: {
               'Authorization': `Bearer ${githubToken.trim()}`,
@@ -230,10 +262,22 @@ export async function verifyGitHubToken(githubToken: string): Promise<{ valid: b
           if (repoResponse.status === 404) {
             return { valid: false, message: '无法访问目标仓库，请确认Token有repo权限且仓库存在' };
           }
-          if (repoResponse.ok) {
+          
+          // 再测试能否访问仓库内容（这是实际需要的权限）
+          const contentResponse = await fetch('https://api.github.com/repos/uckkk/ArtAssetNamingConfig/contents/useID.csv', {
+            headers: {
+              'Authorization': `Bearer ${githubToken.trim()}`,
+              'Accept': 'application/vnd.github.v3+json',
+            },
+          });
+          
+          if (contentResponse.status === 403) {
+            return { valid: false, message: 'Token 缺少 repo 权限，无法访问仓库内容。请重新创建Token，在权限列表中勾选 "repo" 权限（完整仓库访问权限）' };
+          }
+          if (contentResponse.ok) {
             hasRepoScope = true;
           }
-        } catch (e) {
+        } catch (e: any) {
           // 测试失败，给出警告但允许继续
           return { valid: true, message: `Token 验证成功！用户: ${user.login}。注意：无法验证repo权限，请确保Token有repo权限` };
         }
