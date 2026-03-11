@@ -289,9 +289,10 @@ async fn sync_account_to_github(
         .await
         .map_err(|e| format!("更新文件失败: {}", e))?;
 
-    if !update_response.status().is_success() {
+    let status = update_response.status();
+    if !status.is_success() {
         let error_text = update_response.text().await.unwrap_or_default();
-        return Err(format!("更新文件失败: HTTP {} - {}", update_response.status(), error_text));
+        return Err(format!("更新文件失败: HTTP {} - {}", status, error_text));
     }
 
     Ok(())
