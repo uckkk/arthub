@@ -362,7 +362,7 @@ const PathManager: React.FC = () => {
     window.addEventListener('quickPathsUpdated', handleQuickPathsUpdate);
     window.addEventListener('storage', handlePresetChange);
     
-    const interval = setInterval(loadQuickPaths, 500);
+    const interval = setInterval(loadQuickPaths, 5000);
     
     return () => {
       window.removeEventListener('quickPathsUpdated', handleQuickPathsUpdate);

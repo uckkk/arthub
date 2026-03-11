@@ -56,22 +56,15 @@ class LogCollectorService {
     this.perfTimer = setInterval(snap, 30000);
   }
 
-  /** 监控长任务（>50ms 的主线程阻塞） */
+  /** 统计长任务（复用 consoleService 的 PerformanceObserver，通过自定义事件接收） */
   private observeLongTasks() {
-    if (typeof PerformanceObserver === 'undefined') return;
-    try {
-      const obs = new PerformanceObserver((list) => {
-        for (const entry of list.getEntries()) {
-          this.longTaskCount++;
-          if (entry.duration > this.maxRenderMs) {
-            this.maxRenderMs = Math.round(entry.duration);
-          }
-        }
-      });
-      obs.observe({ type: 'longtask', buffered: true });
-    } catch {
-      // longtask observer not supported
-    }
+    window.addEventListener('arthub:longtask', ((e: CustomEvent) => {
+      this.longTaskCount++;
+      const duration = e.detail?.duration ?? 0;
+      if (duration > this.maxRenderMs) {
+        this.maxRenderMs = Math.round(duration);
+      }
+    }) as EventListener);
   }
 
   /** 是否为可忽略的“崩溃”（如 ResizeObserver 良性提示，不记为崩溃） */

@@ -69,10 +69,15 @@ const NamingHistory: React.FC = () => {
     };
 
     window.addEventListener('storage', handleStorageChange);
-    const interval = setInterval(loadHistory, 1000);
+    
+    const handleHistoryUpdate = () => loadHistory();
+    window.addEventListener('namingHistoryUpdated', handleHistoryUpdate);
+    
+    const interval = setInterval(loadHistory, 5000);
 
     return () => {
       window.removeEventListener('storage', handleStorageChange);
+      window.removeEventListener('namingHistoryUpdated', handleHistoryUpdate);
       clearInterval(interval);
     };
   }, [currentPresetId, getHistoryKey]);
@@ -144,7 +149,7 @@ const NamingHistory: React.FC = () => {
         });
         setCurrentPresetId(presetId);
       }
-    }, 300);
+    }, 3000);
     
     return () => {
       window.removeEventListener('storage', handleStorageChange);

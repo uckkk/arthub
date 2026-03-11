@@ -191,16 +191,15 @@ class ConsoleService {
     }
   }
 
-  // 启动布局问题检测
   private startLayoutDetection() {
-    // 延迟启动，等待页面加载完成
     setTimeout(() => {
       this.detectLayoutIssues();
-      // 定期检测（每5秒）
       setInterval(() => {
-        this.detectLayoutIssues();
-      }, 5000);
-    }, 2000);
+        if (typeof document !== 'undefined' && document.visibilityState === 'visible') {
+          this.detectLayoutIssues();
+        }
+      }, 30000);
+    }, 5000);
   }
 
   // 检测布局问题
@@ -718,6 +717,8 @@ class ConsoleService {
             const duration = entry.duration;
             const name = entry.name || 'Unknown';
             if (typeof document !== 'undefined' && document.visibilityState !== 'visible') return;
+
+            window.dispatchEvent(new CustomEvent('arthub:longtask', { detail: { duration, name } }));
 
             const isExpectedLongTask =
               name.includes('ImageCompressor') ||

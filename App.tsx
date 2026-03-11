@@ -257,8 +257,7 @@ const AppContent: React.FC = () => {
     
     window.addEventListener('storage', handleStorageChange);
     
-    // 定期更新同步时间
-    const interval = setInterval(updateSyncTime, 1000);
+    const interval = setInterval(updateSyncTime, 10000);
     
     return () => {
       window.removeEventListener('storage', handleStorageChange);
@@ -280,7 +279,7 @@ const AppContent: React.FC = () => {
       if (presetId !== currentPresetId) {
         setCurrentPresetId(presetId);
       }
-    }, 500);
+    }, 3000);
 
     return () => {
       window.removeEventListener('storage', handleStorageChange);
