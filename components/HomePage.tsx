@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { 
   Star, Folder, Globe, Server, Sparkles, 
-  X, Image as ImageIcon, Play, GripVertical
+  X, Image as ImageIcon, Play, GripVertical, Grid3X3
 } from 'lucide-react';
 import { useToast } from './Toast';
 import { FavoriteItem, getAllFavorites, removeFavorite, reorderFavorites } from '../services/favoritesService';
@@ -15,6 +15,11 @@ const HomePage: React.FC = () => {
   const [favorites, setFavorites] = useState<FavoriteItem[]>([]);
   const [hoveredId, setHoveredId] = useState<string | null>(null);
   const [isDragging, setIsDragging] = useState(false);
+  const [columnsPerRow, setColumnsPerRow] = useState<number>(() => {
+    const saved = localStorage.getItem('arthub_home_columns');
+    return saved ? parseInt(saved, 10) : 4;
+  });
+  const [showColumnsMenu, setShowColumnsMenu] = useState(false);
   
   // 鼠标中键滚动
   const scrollContainerRef = useMiddleMouseScroll<HTMLDivElement>({
@@ -253,6 +258,44 @@ const HomePage: React.FC = () => {
 
   return (
     <div className="w-full h-full flex flex-col bg-[#0a0a0a]">
+      {/* 工具栏 */}
+      <div className="flex items-center justify-end gap-2 p-4 border-b border-[#1a1a1a] shrink-0">
+        <div className="relative">
+          <button
+            onClick={() => setShowColumnsMenu(!showColumnsMenu)}
+            className="flex items-center gap-2 px-4 py-2 bg-[#1a1a1a] hover:bg-[#222222] text-[#a0a0a0] hover:text-white border border-[#2a2a2a] hover:border-[#3a3a3a] rounded-lg transition-colors duration-150"
+            title="设置列数"
+          >
+            <Grid3X3 size={18} />
+            <span className="text-sm">{columnsPerRow}列</span>
+          </button>
+          {showColumnsMenu && (
+            <>
+              <div className="fixed inset-0 z-40" onClick={() => setShowColumnsMenu(false)} />
+              <div className="absolute top-full right-0 mt-2 z-50 bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg shadow-lg shadow-black/50 min-w-[120px] overflow-hidden">
+                {[1, 2, 3, 4, 5, 6, 7, 8].map(cols => (
+                  <button
+                    key={cols}
+                    onClick={() => {
+                      setColumnsPerRow(cols);
+                      localStorage.setItem('arthub_home_columns', cols.toString());
+                      setShowColumnsMenu(false);
+                    }}
+                    className={`w-full px-4 py-2.5 text-left text-sm transition-colors duration-150 ${
+                      columnsPerRow === cols
+                        ? 'bg-blue-500/20 text-blue-400'
+                        : 'text-[#a0a0a0] hover:bg-[#222222] hover:text-white'
+                    }`}
+                  >
+                    {cols} 列
+                  </button>
+                ))}
+              </div>
+            </>
+          )}
+        </div>
+      </div>
+
       {/* 内容区域 */}
       <div 
         ref={scrollContainerRef}
@@ -281,7 +324,7 @@ const HomePage: React.FC = () => {
                     {workflowsCount}
                   </span>
                 </div>
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
+                <div className="grid gap-5" style={{ gridTemplateColumns: `repeat(${columnsPerRow}, minmax(0, 1fr))` }}>
                   {groupedFavorites.workflows.map((fav, index) => {
                     const workflow = fav.aiWorkflow!;
                     const isDragging = workflowDragState.draggedIndex === index;
@@ -446,7 +489,7 @@ const HomePage: React.FC = () => {
                     {pathsCount}
                   </span>
                 </div>
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-2.5">
+                <div className="grid gap-3" style={{ gridTemplateColumns: `repeat(${columnsPerRow}, minmax(0, 1fr))` }}>
                   {groupedFavorites.paths.map((fav, index) => {
                     const path = fav.pathItem!;
                     const isDragging = pathDragState.draggedIndex === index;
