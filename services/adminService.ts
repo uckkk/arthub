@@ -22,9 +22,18 @@ export function isAdmin(): boolean {
   }
 }
 
-// 生成随机密码（8位数字）
+// 生成随机密码（18位数字）
 export function generateRandomPassword(): string {
-  return Math.floor(10000000 + Math.random() * 90000000).toString();
+  // 生成18位数字：100000000000000000 到 999999999999999999
+  // 使用字符串拼接避免JavaScript Number精度问题
+  let password = '';
+  // 第一位必须是1-9（确保是18位，不是17位）
+  password += Math.floor(1 + Math.random() * 9).toString();
+  // 剩余17位可以是0-9
+  for (let i = 0; i < 17; i++) {
+    password += Math.floor(Math.random() * 10).toString();
+  }
+  return password;
 }
 
 // 从GitHub获取账号列表

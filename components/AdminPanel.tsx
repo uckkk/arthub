@@ -324,7 +324,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onClose }) => {
                   <button
                     onClick={handleGeneratePassword}
                     className="px-3 py-2 bg-[#2a2a2a] hover:bg-[#333] text-white rounded-lg transition-colors text-xs"
-                    title="生成随机8位密码"
+                    title="生成随机18位密码"
                   >
                     生成
                   </button>
