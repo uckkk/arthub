@@ -69,7 +69,7 @@ import {
   WhiteboardProject
 } from '../services/whiteboardProjectService';
 import { getSavedStoragePath, openSettingsAndHighlightPath } from '../services/fileStorageService';
-import { Edit2, X, Plus, Save, Download, Share2, Sun, Moon } from 'lucide-react';
+import { Edit2, X, Plus, Save, Download, Share2, Sun, Moon, Trash2 } from 'lucide-react';
 import { useToast } from './Toast';
 import { invoke } from '@tauri-apps/api/tauri';
 import { getPendingImports, clearPendingImports, addPendingImport } from '../services/whiteboardPendingImport';
@@ -473,6 +473,39 @@ const Whiteboard: React.FC = () => {
       setProjectNameInput(currentProject.name);
     }
     setIsEditingProjectName(false);
+  };
+
+  // 删除项目
+  const handleDeleteProject = async (projectId: string, projectName: string) => {
+    if (!window.confirm(`确定要删除项目 "${projectName}" 吗？\n\n注意：项目目录和文件不会被删除，仅从项目列表中移除。`)) {
+      return;
+    }
+
+    try {
+      await deleteProject(projectId);
+      loadProjects();
+
+      // 如果删除的是当前项目，切换到其他项目或创建新项目
+      if (currentProject?.id === projectId) {
+        const remainingProjects = getAllProjects();
+        if (remainingProjects.length > 0) {
+          // 切换到第一个项目
+          await handleSelectProject(remainingProjects[0].id);
+        } else {
+          // 如果没有其他项目，创建新项目
+          const newProject = await createProject();
+          loadProjects();
+          setCurrentProjectState(newProject);
+          setProjectNameInput(newProject.name);
+          showToast('success', `已创建新项目 "${newProject.name}"`);
+        }
+      }
+
+      showToast('success', `项目 "${projectName}" 已删除`);
+      setShowProjectSelector(false);
+    } catch (error: any) {
+      showToast('error', `删除项目失败: ${error.message}`);
+    }
   };
 
   // 使用 FileReader 读取文件并报告进度
@@ -928,17 +961,31 @@ const Whiteboard: React.FC = () => {
               <div className="absolute top-full right-0 mt-2 w-64 bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg shadow-xl z-[1001] max-h-96 overflow-y-auto">
                 <div className="p-2">
                   {projects.map((project) => (
-                    <button
+                    <div
                       key={project.id}
-                      onClick={() => handleSelectProject(project.id)}
-                      className={`w-full text-left px-3 py-2 rounded text-sm transition-colors ${
-                        project.id === currentProject.id
-                          ? 'bg-blue-600 text-white'
-                          : 'text-[#a0a0a0] hover:bg-[#2a2a2a] hover:text-white'
-                      }`}
+                      className="group relative flex items-center"
                     >
-                      {project.name}
-                    </button>
+                      <button
+                        onClick={() => handleSelectProject(project.id)}
+                        className={`flex-1 text-left px-3 py-2 rounded text-sm transition-colors ${
+                          project.id === currentProject.id
+                            ? 'bg-blue-600 text-white'
+                            : 'text-[#a0a0a0] hover:bg-[#2a2a2a] hover:text-white'
+                        }`}
+                      >
+                        {project.name}
+                      </button>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleDeleteProject(project.id, project.name);
+                        }}
+                        className="opacity-0 group-hover:opacity-100 p-1.5 ml-1 rounded text-[#666] hover:text-red-400 hover:bg-red-500/10 transition-all"
+                        title="删除项目"
+                      >
+                        <Trash2 size={14} />
+                      </button>
+                    </div>
                   ))}
                   <div className="border-t border-[#2a2a2a] mt-1 pt-1">
                     <button
