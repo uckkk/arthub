@@ -171,6 +171,132 @@ fn auth_logout(app: tauri::AppHandle) -> Result<(), String> {
     Ok(())
 }
 
+// Tauri 命令：获取账号列表（从GitHub CSV）
+#[tauri::command]
+async fn fetch_account_list() -> Result<Vec<(String, String)>, String> {
+    const CSV_URL: &str = "https://raw.githubusercontent.com/uckkk/ArtAssetNamingConfig/main/useID.csv";
+
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(10))
+        .build()
+        .map_err(|e| format!("创建 HTTP 客户端失败: {}", e))?;
+
+    let response = client.get(CSV_URL).send().await
+        .map_err(|e| format!("网络请求失败: {}", e))?;
+
+    if !response.status().is_success() {
+        return Err(format!("获取账号列表失败: HTTP {}", response.status()));
+    }
+
+    let csv_text = response.text().await
+        .map_err(|e| format!("读取响应失败: {}", e))?;
+
+    let csv_text = csv_text.trim_start_matches('\u{FEFF}');
+    let mut accounts = Vec::new();
+    let mut is_header = true;
+
+    for line in csv_text.lines() {
+        let line = line.trim();
+        if line.is_empty() || line.starts_with('#') {
+            continue;
+        }
+        if is_header {
+            is_header = false;
+            continue;
+        }
+        let parts: Vec<&str> = line.split(',').collect();
+        if parts.len() >= 2 {
+            let username = parts[0].trim().to_string();
+            let user_id = parts[1].trim().to_string();
+            if !username.is_empty() && !user_id.is_empty() {
+                accounts.push((username, user_id));
+            }
+        }
+    }
+
+    Ok(accounts)
+}
+
+// Tauri 命令：同步账号到GitHub
+#[tauri::command]
+async fn sync_account_to_github(
+    accounts: Vec<(String, String)>,
+    github_token: String,
+) -> Result<(), String> {
+    const REPO_OWNER: &str = "uckkk";
+    const REPO_NAME: &str = "ArtAssetNamingConfig";
+    const FILE_PATH: &str = "useID.csv";
+
+    if github_token.is_empty() {
+        return Err("GitHub Token 不能为空".to_string());
+    }
+
+    // 构建CSV内容
+    let mut csv_lines = vec!["用户名,ID,".to_string()];
+    for (username, user_id) in accounts {
+        csv_lines.push(format!("{},{},", username, user_id));
+    }
+    let csv_content = csv_lines.join("\n");
+
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(30))
+        .build()
+        .map_err(|e| format!("创建 HTTP 客户端失败: {}", e))?;
+
+    // 1. 获取文件当前SHA
+    let get_file_url = format!(
+        "https://api.github.com/repos/{}/{}/contents/{}",
+        REPO_OWNER, REPO_NAME, FILE_PATH
+    );
+    let get_file_response = client
+        .get(&get_file_url)
+        .header("Authorization", format!("token {}", github_token))
+        .header("Accept", "application/vnd.github.v3+json")
+        .send()
+        .await
+        .map_err(|e| format!("获取文件信息失败: {}", e))?;
+
+    if !get_file_response.status().is_success() {
+        return Err(format!("获取文件信息失败: HTTP {}", get_file_response.status()));
+    }
+
+    let file_info: serde_json::Value = get_file_response.json().await
+        .map_err(|e| format!("解析文件信息失败: {}", e))?;
+    let current_sha = file_info["sha"]
+        .as_str()
+        .ok_or_else(|| "无法获取文件SHA".to_string())?;
+
+    // 2. 更新文件
+    let update_file_url = format!(
+        "https://api.github.com/repos/{}/{}/contents/{}",
+        REPO_OWNER, REPO_NAME, FILE_PATH
+    );
+    use base64::{Engine as _, engine::general_purpose};
+    let base64_content = general_purpose::STANDARD.encode(csv_content.as_bytes());
+    let update_payload = serde_json::json!({
+        "message": "更新账号列表: 添加新账号",
+        "content": base64_content,
+        "sha": current_sha,
+    });
+
+    let update_response = client
+        .put(&update_file_url)
+        .header("Authorization", format!("token {}", github_token))
+        .header("Accept", "application/vnd.github.v3+json")
+        .header("Content-Type", "application/json")
+        .json(&update_payload)
+        .send()
+        .await
+        .map_err(|e| format!("更新文件失败: {}", e))?;
+
+    if !update_response.status().is_success() {
+        let error_text = update_response.text().await.unwrap_or_default();
+        return Err(format!("更新文件失败: HTTP {} - {}", update_response.status(), error_text));
+    }
+
+    Ok(())
+}
+
 const ICON_SIZE: i32 = 80; // 增大窗口大小，确保图标完整显示
 const SNAP_THRESHOLD: i32 = 20;
 
@@ -2650,6 +2776,8 @@ fn main() {
             verify_user,
             check_auth,
             auth_logout,
+            fetch_account_list,
+            sync_account_to_github,
             asset_manager::asset_get_folders,
             asset_manager::asset_add_folder,
             asset_manager::asset_remove_folder,

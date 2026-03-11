@@ -1,10 +1,11 @@
 import React, { useState, useEffect, useRef, lazy, Suspense } from 'react';
 import { 
   Type, Menu, User, Settings, 
-  Sparkles, Home, CheckSquare, PenTool, Zap, ScanLine, Minimize2, Library
+  Sparkles, Home, CheckSquare, PenTool, Zap, ScanLine, Minimize2, Library, Shield
 } from 'lucide-react';
 import { getStorageConfig, formatSyncTime } from './services/fileStorageService';
 import { getUserInfo, clearUserInfo, UserInfo, verifyUser, rustLogout } from './services/userAuthService';
+import { isAdmin } from './services/adminService';
 import { initAutoSync, setAutoSyncAuthReady } from './utils/autoSync';
 import { preloadAllData } from './services/preloadService';
 import { initHotkey, initScreenCaptureHotkeys } from './services/hotkeyService';
@@ -23,6 +24,7 @@ const NamingTool = lazy(() => import('./components/NamingTool/index'));
 const NamingHistory = lazy(() => import('./components/NamingHistory'));
 const SettingsPanel = lazy(() => import('./components/SettingsPanel'));
 const UserAuthModal = lazy(() => import('./components/UserAuthModal'));
+const AdminPanel = lazy(() => import('./components/AdminPanel'));
 const AITool = lazy(() => import('./components/AITool'));
 const UpdateNotification = lazy(() => import('./components/UpdateNotification'));
 const HomePage = lazy(() => import('./components/HomePage'));
@@ -124,6 +126,7 @@ const AppContent: React.FC = () => {
   const [isUserVerified, setIsUserVerified] = useState(false);
   const [userInfo, setUserInfo] = useState<UserInfo | null>(null);
   const [showSettings, setShowSettings] = useState(false);
+  const [showAdminPanel, setShowAdminPanel] = useState(false);
   const settingsButtonRef = useRef<HTMLButtonElement>(null);
   const [currentPresetId, setCurrentPresetId] = useState<string>(() => {
     return localStorage.getItem('arthub_naming_preset') || 'fgui_card';
@@ -581,7 +584,18 @@ const AppContent: React.FC = () => {
                       {lastSyncTime && (
                         <span>{formatSyncTime(lastSyncTime)}</span>
                       )}
-                      <span>v{CURRENT_VERSION}</span>
+                      <div className="flex items-center gap-2">
+                        {isAdmin() && (
+                          <button
+                            onClick={() => setShowAdminPanel(true)}
+                            className="p-1 rounded text-[#666] hover:text-blue-400 hover:bg-[#1a1a1a] transition-colors"
+                            title="管理员面板"
+                          >
+                            <Shield size={12} />
+                          </button>
+                        )}
+                        <span>v{CURRENT_VERSION}</span>
+                      </div>
                     </div>
                   </div>
                 )}
@@ -603,6 +617,13 @@ const AppContent: React.FC = () => {
               triggerRef={settingsButtonRef}
             />
           </Suspense>
+
+          {/* 管理员面板 */}
+          {showAdminPanel && (
+            <Suspense fallback={null}>
+              <AdminPanel onClose={() => setShowAdminPanel(false)} />
+            </Suspense>
+          )}
 
           {/* 控制台面板 - 在主窗口中显示，不打开新窗口 */}
           <Console
