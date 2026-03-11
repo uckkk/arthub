@@ -389,8 +389,9 @@ async fn verify_github_token(github_token: String) -> Result<(bool, String), Str
             }
             Ok(resp) if !resp.status().is_success() => {
                 // 其他HTTP错误状态
+                let status = resp.status();
                 let error_text = resp.text().await.unwrap_or_default();
-                return Ok((false, format!("验证repo权限失败: HTTP {} - {}", resp.status(), error_text)));
+                return Ok((false, format!("验证repo权限失败: HTTP {} - {}", status, error_text)));
             }
             Ok(_) => {
                 // 仓库访问成功，继续测试内容访问权限
@@ -422,8 +423,9 @@ async fn verify_github_token(github_token: String) -> Result<(bool, String), Str
             }
             Ok(resp) => {
                 // 其他HTTP错误状态
+                let status = resp.status();
                 let error_text = resp.text().await.unwrap_or_default();
-                return Ok((false, format!("验证repo内容权限失败: HTTP {} - {}", resp.status(), error_text)));
+                return Ok((false, format!("验证repo内容权限失败: HTTP {} - {}", status, error_text)));
             }
             Err(e) => {
                 // 网络错误或其他错误
@@ -2683,7 +2685,6 @@ fn check_single_instance() -> Result<(), Box<dyn std::error::Error>> {
 // 所以即使 DLL 被嵌入到 exe 中，也需要提取到文件系统
 #[cfg(target_os = "windows")]
 fn extract_embedded_dlls() -> Result<(), Box<dyn std::error::Error>> {
-    use std::path::PathBuf;
     use std::fs;
     use std::io::Write;
     
