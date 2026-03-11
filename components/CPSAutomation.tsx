@@ -1524,12 +1524,12 @@ async function doExport(){
         </div>
 
         {/* 保存为模板按钮 */}
-        {configDirty && (
+        {customMode && (
           <button
             onClick={() => setShowSaveTemplateModal(true)}
             className="flex items-center gap-1.5 px-3 py-1.5 rounded bg-green-600/20 border border-green-600/30 hover:bg-green-600/30 text-xs text-green-400 transition-colors"
           >
-            <Save size={12} /> 保存为模板
+            <Save size={12} /> 另存为模板
           </button>
         )}
 
