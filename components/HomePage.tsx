@@ -47,7 +47,8 @@ const HomePage: React.FC = () => {
     };
   }, []);
 
-  // 按类型分组收�?  const groupedFavorites = useMemo(() => {
+  // 按类型分组收藏
+  const groupedFavorites = useMemo(() => {
     const paths: FavoriteItem[] = [];
     const workflows: FavoriteItem[] = [];
     
@@ -66,7 +67,8 @@ const HomePage: React.FC = () => {
   const [pathDragState, pathDragHandlers] = useDragSort({
     items: groupedFavorites.paths,
     onReorder: (newPaths) => {
-      // 保持工作流的顺序不变，只更新路径的顺�?      const workflows = groupedFavorites.workflows;
+      // 保持工作流的顺序不变，只更新路径的顺序
+      const workflows = groupedFavorites.workflows;
       const allFavorites = [...workflows, ...newPaths];
       reorderFavorites(allFavorites);
       setFavorites(allFavorites);
@@ -74,10 +76,12 @@ const HomePage: React.FC = () => {
     enabled: true,
   });
 
-  // 工作流拖动排�?  const [workflowDragState, workflowDragHandlers] = useDragSort({
+  // 工作流拖动排序
+  const [workflowDragState, workflowDragHandlers] = useDragSort({
     items: groupedFavorites.workflows,
     onReorder: (newWorkflows) => {
-      // 保持路径的顺序不变，只更新工作流的顺�?      const paths = groupedFavorites.paths;
+      // 保持路径的顺序不变，只更新工作流的顺序
+      const paths = groupedFavorites.paths;
       const allFavorites = [...newWorkflows, ...paths];
       reorderFavorites(allFavorites);
       setFavorites(allFavorites);
@@ -85,7 +89,8 @@ const HomePage: React.FC = () => {
     enabled: true,
   });
 
-  // 监听拖动状�?  useEffect(() => {
+  // 监听拖动状态
+  useEffect(() => {
     setIsDragging(
       pathDragState.draggedIndex !== null || workflowDragState.draggedIndex !== null
     );
@@ -132,7 +137,8 @@ const HomePage: React.FC = () => {
     try {
       const isTauri = typeof window !== 'undefined' && (window as any).__TAURI__;
 
-      // �?localStorage 查找完整配置（包�?jsonFile�?      let jsonFile: string | undefined;
+      // 从 localStorage 查找完整配置（包含 jsonFile）
+      let jsonFile: string | undefined;
       let jsonFileName: string | undefined;
       try {
         const raw = localStorage.getItem('arthub_ai_configs');
@@ -164,11 +170,11 @@ const HomePage: React.FC = () => {
                   jsonContent = await readTextFile(jsonFile);
                 } catch {
                   const appDataDirPath = await appDataDir();
-                  const workflowDir = await join(appDataDirPath, 'comfyui工作�?);
+                  const workflowDir = await join(appDataDirPath, 'comfyui工作流');
                   const fileName = jsonFile.split(/[/\\]/).pop() || '';
                   const fallbackPath = await join(workflowDir, fileName);
                   try {
-                    jsonContent = await readTextFile(`comfyui工作�?${fileName}`, { dir: BaseDirectory.AppData });
+                    jsonContent = await readTextFile(`comfyui工作流/${fileName}`, { dir: BaseDirectory.AppData });
                   } catch {
                     jsonContent = await readTextFile(fallbackPath);
                   }
@@ -225,7 +231,7 @@ const HomePage: React.FC = () => {
   // 删除收藏
   const handleRemoveFavorite = (fav: FavoriteItem, e: React.MouseEvent) => {
     e.stopPropagation();
-    if (window.confirm('确定要取消收藏吗�?)) {
+    if (window.confirm('确定要取消收藏吗？')) {
       const id = fav.type === 'path' ? fav.pathItem!.id : fav.aiWorkflow!.id;
       removeFavorite(fav.type, id);
       setFavorites(getAllFavorites());
@@ -258,19 +264,19 @@ const HomePage: React.FC = () => {
             <div className="w-20 h-20 rounded-full bg-[#1a1a1a] flex items-center justify-center mb-4">
               <Star size={32} className="text-[#333333]" />
             </div>
-            <h3 className="text-lg font-medium text-white mb-2">还没有收�?/h3>
+            <h3 className="text-lg font-medium text-white mb-2">还没有收藏</h3>
             <p className="text-[#666666] mb-6">
               在路径管理或AI盒子中收藏内容，它们会显示在这里
             </p>
           </div>
         ) : (
           <div className="space-y-8">
-            {/* AI工作流区�?- 置顶显示 */}
+            {/* AI工作流区域 - 置顶显示 */}
             {workflowsCount > 0 && (
               <div>
                 <div className="flex items-center gap-2 mb-4">
                   <Sparkles size={18} className="text-blue-400" />
-                  <h3 className="text-base font-semibold text-white">AI工作�?/h3>
+                  <h3 className="text-base font-semibold text-white">AI工作流</h3>
                   <span className="px-2 py-0.5 rounded text-xs font-medium bg-[#1a1a1a] text-[#666666]">
                     {workflowsCount}
                   </span>
@@ -309,7 +315,7 @@ const HomePage: React.FC = () => {
                           ${isDragOver ? 'border-blue-500 border-2' : ''}
                         `}
                       >
-                        {/* 缩略图区�?*/}
+                        {/* 缩略图区域 */}
                         <div className="relative aspect-[16/10] bg-[#0f0f0f] overflow-hidden">
                           {workflow.thumbnail ? (
                             <img
@@ -327,7 +333,7 @@ const HomePage: React.FC = () => {
                             </div>
                           )}
 
-                          {/* 标签覆盖�?*/}
+                          {/* 标签覆盖层 */}
                           {workflow.tags && workflow.tags.length > 0 && (
                             <div className="
                               absolute bottom-2 left-2 right-2
@@ -342,7 +348,7 @@ const HomePage: React.FC = () => {
                                 else if (tagLower.includes('image') || tagLower.includes('图片')) tagType = 'image';
                                 else if (tagLower.includes('video') || tagLower.includes('视频')) tagType = 'video';
                                 else if (tagLower.includes('design') || tagLower.includes('设计')) tagType = 'design';
-                                else if (tagLower.includes('workflow') || tagLower.includes('工作�?)) tagType = 'workflow';
+                                else if (tagLower.includes('workflow') || tagLower.includes('工作流')) tagType = 'workflow';
                                 
                                 return (
                                   <Tag 
@@ -357,7 +363,7 @@ const HomePage: React.FC = () => {
                             </div>
                           )}
 
-                          {/* 播放按钮悬浮�?*/}
+                          {/* 播放按钮悬浮层 */}
                           <div className="
                             absolute inset-0
                             flex items-center justify-center
@@ -476,7 +482,7 @@ const HomePage: React.FC = () => {
                           ${isDragOver ? 'border-blue-500 border-2' : ''}
                         `}
                       >
-                        {/* 拖动指示�?*/}
+                        {/* 拖动指示器 */}
                         <div className="shrink-0 text-[#444444] group-hover:text-[#666666] transition-colors">
                           <GripVertical size={14} />
                         </div>
