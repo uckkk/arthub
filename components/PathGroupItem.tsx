@@ -132,52 +132,45 @@ export const PathGroupItem: React.FC<PathGroupItemProps> = ({
           <span className={['px-1.5 py-0.5 rounded text-[10px] font-medium', 'bg-[#1a1a1a] text-[#666666]'].join(' ')}>{items.length}</span>
         </div>
         {!isCollapsed && (
-          <div className={[columnsPerRow === 1 ? 'space-y-1' : 'grid gap-1.5'].filter(Boolean).join(' ')} style={columnsPerRow > 1 ? { gridTemplateColumns: `repeat(${columnsPerRow}, minmax(0, 1fr))` } : undefined} onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; if (draggedItem) { onDragOver(groupName, items.length, e); } }} onDrop={(e) => { e.preventDefault(); e.stopPropagation(); onDrop(items.length, e); }}>
+          <div className={[columnsPerRow === 1 ? 'space-y-0.5' : 'grid gap-1'].filter(Boolean).join(' ')} style={columnsPerRow > 1 ? { gridTemplateColumns: `repeat(${columnsPerRow}, minmax(0, 1fr))` } : undefined} onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; if (draggedItem) { onDragOver(groupName, items.length, e); } }} onDrop={(e) => { e.preventDefault(); e.stopPropagation(); onDrop(items.length, e); }}>
             {items.map((item, index) => {
               return (
-                <div key={item.id} draggable={true} onDragStart={(e) => { onDragStart(item, e); }} onDragOver={(e) => { onDragOver(groupName, index, e); }} onDrop={(e) => { e.preventDefault(); e.stopPropagation(); onDrop(index, e); }} onDragEnd={onDragEnd} onClick={(e) => { if (isDragging || draggedItem) { e.preventDefault(); e.stopPropagation(); return; } onJump(item); }} className={['group relative bg-[#1a1a1a] hover:bg-[#222222]', 'border border-[#2a2a2a] hover:border-[#3a3a3a]', 'rounded-md px-2.5 py-2 flex items-center gap-2', 'cursor-pointer transition-all duration-150', draggedItem?.id === item.id ? 'opacity-50' : '', dragOverGroup === groupName && dragOverIndex === index ? 'border-blue-500' : '', columnsPerRow > 1 ? 'min-w-0' : ''].filter(Boolean).join(' ')}>
+                <div key={item.id} draggable={true} onDragStart={(e) => { onDragStart(item, e); }} onDragOver={(e) => { onDragOver(groupName, index, e); }} onDrop={(e) => { e.preventDefault(); e.stopPropagation(); onDrop(index, e); }} onDragEnd={onDragEnd} onClick={(e) => { if (isDragging || draggedItem) { e.preventDefault(); e.stopPropagation(); return; } onJump(item); }} className={['group relative bg-[#1a1a1a] hover:bg-[#222222]', 'border border-[#2a2a2a] hover:border-[#3a3a3a]', 'rounded px-2 py-1.5 flex items-center gap-1.5', 'cursor-pointer transition-all duration-150', draggedItem?.id === item.id ? 'opacity-50' : '', dragOverGroup === groupName && dragOverIndex === index ? 'border-blue-500' : '', columnsPerRow > 1 ? 'min-w-0' : ''].filter(Boolean).join(' ')}>
                   {copiedId === item.id && (
-                    <div className={'absolute inset-0 rounded-md ' + OPACITY_CLASSES.bgGreen50090 + ' flex items-center justify-center text-white text-xs font-medium animate-fade-in z-20'}>
-                      <Check size={14} className="mr-1" />
+                    <div className={'absolute inset-0 rounded ' + OPACITY_CLASSES.bgGreen50090 + ' flex items-center justify-center text-white text-xs font-medium animate-fade-in z-20'}>
+                      <Check size={12} className="mr-1" />
                       已复制
                     </div>
                   )}
-                  <div className={'p-1.5 rounded bg-[#0f0f0f] group-hover:bg-[#151515] transition-colors flex items-center justify-center shrink-0'}>{getIcon(item)}</div>
-                  <div className={'flex-1 min-w-0 overflow-hidden'}>
-                    <h3 className={'text-[13px] font-medium text-white group-hover:text-blue-400 transition-colors truncate'} title={item.name}>{item.name}</h3>
-                    {columnsPerRow <= 2 && item.tags && item.tags.length > 0 && (
-                      <div className="flex items-center gap-1 flex-wrap mt-1">
-                        {item.tags.slice(0, columnsPerRow > 1 ? 2 : undefined).map((tag, tagIndex) => {
-                          const color = getTagColor(tag);
-                          const tagClassName = 'inline-flex items-center gap-0.5 px-1.5 py-px rounded ' + color.bg + ' ' + color.text + ' border ' + color.border + ' text-[9px] font-medium whitespace-nowrap';
-                          return (
-                            <span key={tagIndex} className={tagClassName} title={tag}>
-                              <TagIcon size={8} />
-                              {tag}
-                            </span>
-                          );
-                        })}
-                        {columnsPerRow > 1 && item.tags.length > 2 && (
-                          <span className="text-[9px] text-[#666666]">+{item.tags.length - 2}</span>
-                        )}
-                      </div>
-                    )}
-                  </div>
+                  <div className={'p-1 rounded bg-[#0f0f0f] group-hover:bg-[#151515] transition-colors flex items-center justify-center shrink-0'}>{getIcon(item)}</div>
+                  <span className={'flex-1 min-w-0 text-[12px] font-medium text-white group-hover:text-blue-400 transition-colors truncate'} title={item.name}>{item.name}</span>
                   {isFavorited(item.id) && (
-                    <Star size={10} fill="currentColor" className="text-yellow-400 shrink-0" />
+                    <Star size={9} fill="currentColor" className="text-yellow-400 shrink-0" />
                   )}
-                  <div className="flex items-center gap-0.5 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
-                    <button onClick={(e) => { e.stopPropagation(); onAddToFavorites(item, e); }} className={['p-1 rounded transition-all duration-150', isFavorited(item.id) ? 'text-yellow-400' : 'text-[#666666] hover:text-yellow-400', justFavoritedId === item.id ? 'scale-125' : ''].filter(Boolean).join(' ')} title={isFavorited(item.id) ? "取消收藏" : "添加到收藏"}>
-                      <Star size={11} fill={isFavorited(item.id) ? "currentColor" : "none"} />
+                  {columnsPerRow <= 2 && item.tags && item.tags.length > 0 && (
+                    <div className="flex items-center gap-0.5 shrink-0">
+                      {item.tags.slice(0, 1).map((tag, tagIndex) => {
+                        const color = getTagColor(tag);
+                        return (
+                          <span key={tagIndex} className={'px-1 py-px rounded text-[8px] font-medium whitespace-nowrap ' + color.bg + ' ' + color.text} title={tag}>{tag}</span>
+                        );
+                      })}
+                      {item.tags.length > 1 && <span className="text-[8px] text-[#555]">+{item.tags.length - 1}</span>}
+                    </div>
+                  )}
+                  {/* Floating action bar above card on hover */}
+                  <div className="absolute left-1/2 -translate-x-1/2 bottom-full mb-1 hidden group-hover:flex items-center gap-0.5 bg-[#222] border border-[#3a3a3a] rounded-md px-1 py-0.5 shadow-lg z-30" onClick={(e) => e.stopPropagation()}>
+                    <button onClick={(e) => { e.stopPropagation(); onAddToFavorites(item, e); }} className={['p-1 rounded transition-all duration-150', isFavorited(item.id) ? 'text-yellow-400' : 'text-[#888] hover:text-yellow-400', justFavoritedId === item.id ? 'scale-125' : ''].filter(Boolean).join(' ')} title={isFavorited(item.id) ? "取消收藏" : "收藏"}>
+                      <Star size={12} fill={isFavorited(item.id) ? "currentColor" : "none"} />
                     </button>
-                    <button onClick={(e) => { e.stopPropagation(); onEdit(item, e); }} className="p-1 rounded text-[#666666] hover:text-white hover:bg-[#2a2a2a] transition-colors" title="编辑">
-                      <Pencil size={11} />
+                    <button onClick={(e) => { e.stopPropagation(); onEdit(item, e); }} className="p-1 rounded text-[#888] hover:text-white hover:bg-[#333] transition-colors" title="编辑">
+                      <Pencil size={12} />
                     </button>
-                    <button onClick={(e) => { e.stopPropagation(); onCopy(item, e); }} className="p-1 rounded text-[#666666] hover:text-white hover:bg-[#2a2a2a] transition-colors" title="复制路径">
-                      <Copy size={11} />
+                    <button onClick={(e) => { e.stopPropagation(); onCopy(item, e); }} className="p-1 rounded text-[#888] hover:text-white hover:bg-[#333] transition-colors" title="复制路径">
+                      <Copy size={12} />
                     </button>
-                    <button onClick={(e) => { e.stopPropagation(); onDelete(item.id, e); }} className={'p-1 rounded text-[#666666] hover:text-red-400 ' + OPACITY_CLASSES.bgRed50010 + ' transition-colors'} title="删除">
-                      <Trash2 size={11} />
+                    <button onClick={(e) => { e.stopPropagation(); onDelete(item.id, e); }} className={'p-1 rounded text-[#888] hover:text-red-400 ' + OPACITY_CLASSES.bgRed50010 + ' transition-colors'} title="删除">
+                      <Trash2 size={12} />
                     </button>
                   </div>
                 </div>

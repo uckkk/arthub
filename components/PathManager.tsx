@@ -1259,7 +1259,7 @@ const PathManager: React.FC = () => {
                   'min-w-[120px]',
                   'overflow-hidden'
                 ].join(' ')}>
-                  {[1, 2, 3, 4].map(cols => (
+                  {[1, 2, 3, 4, 5, 6, 7, 8].map(cols => (
                     <button
                       key={cols}
                       onClick={() => {
