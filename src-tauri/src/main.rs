@@ -330,13 +330,7 @@ async fn verify_github_token(github_token: String) -> Result<(bool, String), Str
         return Ok((false, format!("验证失败: HTTP {} - {}", status, error_text)));
     }
 
-    // 获取用户信息
-    let user: serde_json::Value = response.json().await
-        .map_err(|e| format!("解析用户信息失败: {}", e))?;
-    let login = user["login"].as_str().unwrap_or("未知用户");
-
-    // 检查是否有repo权限
-    // 对于classic token，可能没有X-OAuth-Scopes头，我们尝试测试repo权限
+    // 先获取headers（在消费response之前）
     let scopes = response.headers().get("X-OAuth-Scopes");
     let mut has_repo_scope = false;
     
@@ -344,6 +338,11 @@ async fn verify_github_token(github_token: String) -> Result<(bool, String), Str
         let scopes_str = scopes_header.to_str().unwrap_or("");
         has_repo_scope = scopes_str.contains("repo");
     }
+
+    // 获取用户信息（这会消费response）
+    let user: serde_json::Value = response.json().await
+        .map_err(|e| format!("解析用户信息失败: {}", e))?;
+    let login = user["login"].as_str().unwrap_or("未知用户");
     
     // 如果没有X-OAuth-Scopes头（classic token），尝试测试repo权限
     if !has_repo_scope {
