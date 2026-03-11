@@ -1,10 +1,12 @@
 import React, { useState, useEffect } from 'react';
-import { X, Plus, Trash2, RefreshCw, Save, Key, ExternalLink, HelpCircle, CheckCircle } from 'lucide-react';
+import { X, Plus, Trash2, RefreshCw, Save, Key, ExternalLink, HelpCircle, CheckCircle, Edit2 } from 'lucide-react';
 import { useToast } from './Toast';
 import {
   isAdmin,
   fetchAccountList,
   addAccount,
+  deleteAccount,
+  updateAccount,
   generateRandomPassword,
   verifyGitHubToken,
   AccountInfo,
@@ -27,6 +29,9 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onClose }) => {
   const [verifyingToken, setVerifyingToken] = useState(false);
   const [tokenValid, setTokenValid] = useState<boolean | null>(null);
   const [tokenMessage, setTokenMessage] = useState('');
+  const [editingAccount, setEditingAccount] = useState<AccountInfo | null>(null);
+  const [editUsername, setEditUsername] = useState('');
+  const [editPassword, setEditPassword] = useState('');
 
   useEffect(() => {
     if (!isAdmin()) {
@@ -64,7 +69,6 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onClose }) => {
     }
     if (!githubToken.trim()) {
       showToast('error', '请先配置GitHub Token');
-      setShowTokenInput(true);
       return;
     }
 
@@ -77,6 +81,68 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onClose }) => {
       await loadAccounts();
     } catch (error: any) {
       showToast('error', `创建账号失败: ${error.message}`);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleDeleteAccount = async (username: string) => {
+    if (!window.confirm(`确定要删除账号 "${username}" 吗？\n\n此操作将同步到GitHub，无法撤销。`)) {
+      return;
+    }
+
+    if (!githubToken.trim()) {
+      showToast('error', '请先配置GitHub Token');
+      return;
+    }
+
+    setLoading(true);
+    try {
+      await deleteAccount(username, githubToken);
+      showToast('success', `账号 "${username}" 已删除`);
+      await loadAccounts();
+    } catch (error: any) {
+      showToast('error', `删除账号失败: ${error.message}`);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleStartEdit = (account: AccountInfo) => {
+    setEditingAccount(account);
+    setEditUsername(account.username);
+    setEditPassword(account.userId);
+  };
+
+  const handleCancelEdit = () => {
+    setEditingAccount(null);
+    setEditUsername('');
+    setEditPassword('');
+  };
+
+  const handleSaveEdit = async () => {
+    if (!editingAccount) return;
+    if (!editUsername.trim()) {
+      showToast('error', '请输入用户名');
+      return;
+    }
+    if (!editPassword.trim()) {
+      showToast('error', '请输入密码');
+      return;
+    }
+    if (!githubToken.trim()) {
+      showToast('error', '请先配置GitHub Token');
+      return;
+    }
+
+    setLoading(true);
+    try {
+      await updateAccount(editingAccount.username, editUsername, editPassword, githubToken);
+      showToast('success', `账号已更新：${editUsername}`);
+      handleCancelEdit();
+      await loadAccounts();
+    } catch (error: any) {
+      showToast('error', `更新账号失败: ${error.message}`);
     } finally {
       setLoading(false);
     }
@@ -350,6 +416,79 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onClose }) => {
             </button>
           </div>
 
+          {/* 编辑账号模态框 */}
+          {editingAccount && (
+            <div className="fixed inset-0 bg-black/90 backdrop-blur-sm z-[60] flex items-center justify-center p-4">
+              <div className="w-full max-w-md bg-[#151515] border border-[#2a2a2a] rounded-xl shadow-2xl">
+                <div className="flex items-center justify-between px-6 py-4 border-b border-[#2a2a2a]">
+                  <h3 className="text-lg font-semibold text-white">编辑账号</h3>
+                  <button
+                    onClick={handleCancelEdit}
+                    className="p-1.5 rounded-lg text-[#666] hover:text-white hover:bg-[#252525] transition-colors"
+                  >
+                    <X size={18} />
+                  </button>
+                </div>
+                <div className="px-6 py-4 space-y-4">
+                  <div>
+                    <label className="block text-xs text-[#888] mb-1.5">用户名</label>
+                    <input
+                      type="text"
+                      value={editUsername}
+                      onChange={(e) => setEditUsername(e.target.value)}
+                      placeholder="输入用户名"
+                      className="w-full px-3 py-2 rounded-lg bg-[#0f0f0f] border border-[#2a2a2a] text-white text-sm placeholder-[#666] focus:outline-none focus:border-blue-500"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs text-[#888] mb-1.5">密码（ID）</label>
+                    <div className="flex gap-2">
+                      <input
+                        type="text"
+                        value={editPassword}
+                        onChange={(e) => setEditPassword(e.target.value)}
+                        placeholder="输入18位密码"
+                        className="flex-1 px-3 py-2 rounded-lg bg-[#0f0f0f] border border-[#2a2a2a] text-white text-sm placeholder-[#666] focus:outline-none focus:border-blue-500"
+                      />
+                      <button
+                        onClick={() => setEditPassword(generateRandomPassword())}
+                        className="px-3 py-2 bg-[#2a2a2a] hover:bg-[#333] text-white rounded-lg transition-colors text-xs"
+                        title="生成随机18位密码"
+                      >
+                        生成
+                      </button>
+                    </div>
+                  </div>
+                </div>
+                <div className="px-6 py-4 border-t border-[#2a2a2a] flex justify-end gap-3">
+                  <button
+                    onClick={handleCancelEdit}
+                    className="px-4 py-2 bg-[#2a2a2a] hover:bg-[#333] text-white rounded-lg transition-colors"
+                  >
+                    取消
+                  </button>
+                  <button
+                    onClick={handleSaveEdit}
+                    disabled={loading || !editUsername || !editPassword}
+                    className="px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-[#2a2a2a] disabled:text-[#666] text-white rounded-lg transition-colors flex items-center gap-2"
+                  >
+                    {loading ? (
+                      <>
+                        <RefreshCw size={14} className="animate-spin" />
+                        保存中...
+                      </>
+                    ) : (
+                      <>
+                        <Save size={14} />
+                        保存并同步到GitHub
+                      </>
+                    )}
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
           {/* 账号列表 */}
           <div className="bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg p-4 space-y-3">
             <div className="flex items-center justify-between">
@@ -373,11 +512,28 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onClose }) => {
                 accounts.map((account, index) => (
                   <div
                     key={index}
-                    className="flex items-center justify-between px-3 py-2 bg-[#0f0f0f] rounded-lg"
+                    className="flex items-center justify-between px-3 py-2 bg-[#0f0f0f] rounded-lg group hover:bg-[#151515] transition-colors"
                   >
-                    <div>
-                      <div className="text-sm text-white font-medium">{account.username}</div>
-                      <div className="text-xs text-[#666] font-mono">{account.userId}</div>
+                    <div className="flex-1 min-w-0">
+                      <div className="text-sm text-white font-medium truncate">{account.username}</div>
+                      <div className="text-xs text-[#666] font-mono truncate">{account.userId}</div>
+                    </div>
+                    <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                      <button
+                        onClick={() => handleStartEdit(account)}
+                        className="p-1.5 rounded text-[#666] hover:text-blue-400 hover:bg-[#2a2a2a] transition-colors"
+                        title="编辑账号"
+                      >
+                        <Edit2 size={14} />
+                      </button>
+                      <button
+                        onClick={() => handleDeleteAccount(account.username)}
+                        disabled={loading}
+                        className="p-1.5 rounded text-[#666] hover:text-red-400 hover:bg-red-500/10 transition-colors disabled:opacity-50"
+                        title="删除账号"
+                      >
+                        <Trash2 size={14} />
+                      </button>
                     </div>
                   </div>
                 ))

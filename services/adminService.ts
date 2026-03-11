@@ -247,3 +247,68 @@ export async function addAccount(
   // 同步到GitHub
   await syncAccountToGitHub(accounts, githubToken);
 }
+
+// 删除账号
+export async function deleteAccount(
+  username: string,
+  githubToken: string
+): Promise<void> {
+  if (!username.trim()) {
+    throw new Error('用户名不能为空');
+  }
+
+  // 获取现有账号列表
+  const accounts = await fetchAccountList();
+
+  // 查找并删除账号
+  const index = accounts.findIndex(acc => acc.username === username);
+  if (index === -1) {
+    throw new Error(`账号 "${username}" 不存在`);
+  }
+
+  accounts.splice(index, 1);
+
+  // 同步到GitHub
+  await syncAccountToGitHub(accounts, githubToken);
+}
+
+// 更新账号
+export async function updateAccount(
+  oldUsername: string,
+  newUsername: string,
+  newPassword: string,
+  githubToken: string
+): Promise<void> {
+  if (!oldUsername.trim()) {
+    throw new Error('原用户名不能为空');
+  }
+  if (!newUsername.trim()) {
+    throw new Error('新用户名不能为空');
+  }
+  if (!newPassword.trim()) {
+    throw new Error('密码不能为空');
+  }
+
+  // 获取现有账号列表
+  const accounts = await fetchAccountList();
+
+  // 查找账号
+  const index = accounts.findIndex(acc => acc.username === oldUsername);
+  if (index === -1) {
+    throw new Error(`账号 "${oldUsername}" 不存在`);
+  }
+
+  // 如果用户名改变，检查新用户名是否已存在
+  if (oldUsername !== newUsername && accounts.some(acc => acc.username === newUsername)) {
+    throw new Error(`用户名 "${newUsername}" 已存在`);
+  }
+
+  // 更新账号
+  accounts[index] = {
+    username: newUsername.trim(),
+    userId: newPassword.trim(),
+  };
+
+  // 同步到GitHub
+  await syncAccountToGitHub(accounts, githubToken);
+}
