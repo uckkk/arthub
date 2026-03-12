@@ -239,6 +239,7 @@ async fn sync_account_to_github(
     let csv_content = csv_lines.join("\n");
 
     let client = reqwest::Client::builder()
+        .user_agent("ArtHub/1.0")
         .timeout(std::time::Duration::from_secs(30))
         .build()
         .map_err(|e| format!("创建 HTTP 客户端失败: {}", e))?;
@@ -332,6 +333,7 @@ async fn verify_github_token(github_token: String) -> Result<(bool, String), Str
     }
 
     let client = reqwest::Client::builder()
+        .user_agent("ArtHub/1.0")
         .timeout(std::time::Duration::from_secs(10))
         .build()
         .map_err(|e| format!("创建 HTTP 客户端失败: {}", e))?;
