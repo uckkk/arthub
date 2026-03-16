@@ -1,5 +1,5 @@
-import React, { useState, useEffect, useRef, useMemo } from 'react';
-import { Plus, X, Edit2, Trash2, GripVertical, Link as LinkIcon, ChevronDown, ChevronUp, ExternalLink } from 'lucide-react';
+import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
+import { Plus, X, Edit2, Trash2, GripVertical, Link as LinkIcon, ChevronDown, ChevronUp, ExternalLink, Bell, BellOff } from 'lucide-react';
 import { useMiddleMouseScroll } from '../utils/useMiddleMouseScroll';
 import { PathItem } from '../types';
 import { launchApp } from '../services/appService';
@@ -12,8 +12,10 @@ interface TodoItem {
   completed?: boolean;
   createdAt: number;
   updatedAt: number;
-  linkedPaths?: string[]; // 关联的路径ID列表
-  url?: string; // 关联的URL链接
+  linkedPaths?: string[];
+  url?: string;
+  remindAt?: number; // 提醒时间戳（毫秒）
+  reminded?: boolean; // 是否已提醒
 }
 
 const QuadrantTodo: React.FC = () => {
@@ -67,6 +69,11 @@ const QuadrantTodo: React.FC = () => {
     'uncategorized': false,
   });
 
+  const [activeReminder, setActiveReminder] = useState<TodoItem | null>(null);
+  const [reminderFlash, setReminderFlash] = useState(false);
+  const [newRemindDate, setNewRemindDate] = useState('');
+  const [newRemindTime, setNewRemindTime] = useState('');
+
   const scrollContainerRef = useMiddleMouseScroll<HTMLDivElement>({
     enabled: true,
     scrollSpeed: 1.5
@@ -76,6 +83,75 @@ const QuadrantTodo: React.FC = () => {
   useEffect(() => {
     localStorage.setItem('arthub_quadrant_todos', JSON.stringify(todos));
   }, [todos]);
+
+  // 提醒检查定时器
+  useEffect(() => {
+    const checkReminders = () => {
+      const now = Date.now();
+      const dueReminder = todos.find(t => t.remindAt && !t.reminded && !t.completed && t.remindAt <= now);
+      if (dueReminder) {
+        setActiveReminder(dueReminder);
+        setReminderFlash(true);
+        setTodos(prev => prev.map(t => t.id === dueReminder.id ? { ...t, reminded: true } : t));
+        // 尝试系统通知
+        try {
+          if ('Notification' in window && Notification.permission === 'granted') {
+            new Notification('待办提醒', { body: dueReminder.text, icon: '/favicon.ico' });
+          } else if ('Notification' in window && Notification.permission !== 'denied') {
+            Notification.requestPermission().then(p => {
+              if (p === 'granted') new Notification('待办提醒', { body: dueReminder.text });
+            });
+          }
+        } catch { /* Tauri环境可能不支持 */ }
+        // 播放提示音
+        try {
+          const audio = new Audio('data:audio/wav;base64,UklGRl9vT19teleVTRk10AAAAB9BQUFNRQAAAA4AAABMSVNUGgAAAElORk9JU0ZUDgAAAExhdmY2MC4xNi4xMDAA');
+          audio.volume = 0.5;
+          audio.play().catch(() => {});
+        } catch { /* ignore */ }
+      }
+    };
+    const timer = setInterval(checkReminders, 3000);
+    checkReminders();
+    return () => clearInterval(timer);
+  }, [todos]);
+
+  // 闪烁动画
+  useEffect(() => {
+    if (!reminderFlash) return;
+    const timer = setTimeout(() => setReminderFlash(false), 30000);
+    return () => clearTimeout(timer);
+  }, [reminderFlash]);
+
+  const dismissReminder = useCallback(() => {
+    setActiveReminder(null);
+    setReminderFlash(false);
+  }, []);
+
+  const setReminder = useCallback((todoId: string, date: string, time: string) => {
+    if (!date) return;
+    const timeStr = time || '09:00';
+    const remindAt = new Date(`${date}T${timeStr}`).getTime();
+    if (isNaN(remindAt) || remindAt <= Date.now()) return;
+    setTodos(prev => prev.map(t => t.id === todoId ? { ...t, remindAt, reminded: false, updatedAt: Date.now() } : t));
+  }, []);
+
+  const clearReminder = useCallback((todoId: string) => {
+    setTodos(prev => prev.map(t => t.id === todoId ? { ...t, remindAt: undefined, reminded: undefined, updatedAt: Date.now() } : t));
+  }, []);
+
+  const formatRemindTime = (timestamp: number): string => {
+    const d = new Date(timestamp);
+    const now = new Date();
+    const isToday = d.toDateString() === now.toDateString();
+    const tomorrow = new Date(now);
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    const isTomorrow = d.toDateString() === tomorrow.toDateString();
+    const timeStr = d.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' });
+    if (isToday) return `今天 ${timeStr}`;
+    if (isTomorrow) return `明天 ${timeStr}`;
+    return `${d.getMonth() + 1}/${d.getDate()} ${timeStr}`;
+  };
 
   // 从常用入口加载路径列表
   const availablePaths = useMemo<PathItem[]>(() => {
@@ -324,6 +400,13 @@ const QuadrantTodo: React.FC = () => {
       }
     }
     
+    let remindAt: number | undefined;
+    if (newRemindDate) {
+      const timeStr = newRemindTime || '09:00';
+      remindAt = new Date(`${newRemindDate}T${timeStr}`).getTime();
+      if (isNaN(remindAt) || remindAt <= Date.now()) remindAt = undefined;
+    }
+
     const newTodo: TodoItem = {
       id: Date.now().toString(),
       text: finalText,
@@ -332,10 +415,13 @@ const QuadrantTodo: React.FC = () => {
       updatedAt: Date.now(),
       linkedPaths: linkedPathIds.length > 0 ? linkedPathIds : undefined,
       url: url || undefined,
+      remindAt,
     };
     
     setTodos([...todos, newTodo]);
     setNewTodoText('');
+    setNewRemindDate('');
+    setNewRemindTime('');
     setShowAddModal(false);
     setShowPathSelector(false);
   };
@@ -988,26 +1074,13 @@ const QuadrantTodo: React.FC = () => {
           ) : (
             <>
               <div className="flex items-center gap-1.5">
-                {/* 勾选框 */}
-                <button
-                  onClick={(e) => { e.stopPropagation(); toggleCompleted(todo.id); }}
-                  className={`w-3.5 h-3.5 rounded border flex-shrink-0 flex items-center justify-center transition-colors ${
-                    todo.completed
-                      ? 'bg-green-600 border-green-600 text-white'
-                      : 'border-[#444] hover:border-[#666] bg-transparent'
-                  }`}
-                >
-                  {todo.completed && (
-                    <svg width="8" height="8" viewBox="0 0 12 12" fill="none">
-                      <path d="M2 6l3 3 5-6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-                    </svg>
-                  )}
-                </button>
-                {/* 拖动手柄 */}
-                <GripVertical size={12} data-drag-handle
-                  className="text-[#555] cursor-grab active:cursor-grabbing flex-shrink-0 opacity-0 group-hover:opacity-100 transition-opacity"
+                {/* 左侧拖动热区：勾选框 + 拖动手柄 */}
+                <div
+                  className="flex items-center gap-1 cursor-grab active:cursor-grabbing flex-shrink-0"
                   onMouseDown={(e) => {
                     if (e.button === 0) {
+                      const target = e.target as HTMLElement;
+                      if (target.closest('button[data-checkbox]')) return;
                       e.preventDefault(); e.stopPropagation();
                       const dragInfo = { todoId: todo.id, startY: e.clientY, startX: e.clientX };
                       dragStartRef.current = dragInfo;
@@ -1015,7 +1088,26 @@ const QuadrantTodo: React.FC = () => {
                       setDraggedTodo(todo);
                     }
                   }}
-                />
+                >
+                  <button
+                    data-checkbox
+                    onClick={(e) => { e.stopPropagation(); toggleCompleted(todo.id); }}
+                    className={`w-3.5 h-3.5 rounded border flex-shrink-0 flex items-center justify-center transition-colors ${
+                      todo.completed
+                        ? 'bg-green-600 border-green-600 text-white'
+                        : 'border-[#444] hover:border-[#666] bg-transparent'
+                    }`}
+                  >
+                    {todo.completed && (
+                      <svg width="8" height="8" viewBox="0 0 12 12" fill="none">
+                        <path d="M2 6l3 3 5-6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                      </svg>
+                    )}
+                  </button>
+                  <GripVertical size={12}
+                    className="text-[#555] flex-shrink-0 opacity-0 group-hover:opacity-100 transition-opacity"
+                  />
+                </div>
                 <div className={`flex-1 break-words leading-tight ${todo.completed ? 'line-through text-[#555]' : 'text-[#ccc]'}`}>
                   <div className="flex items-start gap-1">
                     <span className="flex-1">{renderTextWithPaths(todo.text)}</span>
@@ -1023,9 +1115,38 @@ const QuadrantTodo: React.FC = () => {
                       <ExternalLink size={11} className="text-blue-400 flex-shrink-0 mt-0.5 opacity-60 hover:opacity-100 transition-opacity" title={todoUrl} />
                     )}
                   </div>
+                  {todo.remindAt && !todo.reminded && (
+                    <div className="flex items-center gap-1 mt-0.5 text-[10px] text-yellow-400/80">
+                      <Bell size={9} />
+                      <span>{formatRemindTime(todo.remindAt)}</span>
+                    </div>
+                  )}
                 </div>
                 {/* 操作按钮 */}
                 <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0">
+                  {!todo.remindAt || todo.reminded ? (
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        const now = new Date();
+                        const dateStr = now.toISOString().slice(0, 10);
+                        const timeStr = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes() + 30).padStart(2, '0')}`;
+                        setNewRemindDate(dateStr);
+                        setNewRemindTime(timeStr);
+                        setEditingId('remind-' + todo.id);
+                      }}
+                      className="p-0.5 rounded text-[#555] hover:text-yellow-400 transition-colors" title="设置提醒"
+                    >
+                      <Bell size={11} />
+                    </button>
+                  ) : (
+                    <button
+                      onClick={(e) => { e.stopPropagation(); clearReminder(todo.id); }}
+                      className="p-0.5 rounded text-yellow-400 hover:text-yellow-300 transition-colors" title="取消提醒"
+                    >
+                      <BellOff size={11} />
+                    </button>
+                  )}
                   <button onClick={() => handleStartEdit(todo)} className="p-0.5 rounded text-[#555] hover:text-blue-400 transition-colors" title="编辑">
                     <Edit2 size={11} />
                   </button>
@@ -1034,6 +1155,30 @@ const QuadrantTodo: React.FC = () => {
                   </button>
                 </div>
               </div>
+              {/* 提醒设置弹出框 */}
+              {editingId === 'remind-' + todo.id && (
+                <div className="mt-1.5 p-2 rounded bg-[#0f0f0f] border border-[#222] space-y-1.5" onClick={(e) => e.stopPropagation()}>
+                  <div className="flex items-center gap-1.5">
+                    <input type="date" value={newRemindDate} onChange={(e) => setNewRemindDate(e.target.value)}
+                      className="flex-1 px-1.5 py-1 rounded bg-[#141414] border border-[#222] text-white text-[10px] focus:outline-none focus:border-blue-500"
+                      min={new Date().toISOString().slice(0, 10)}
+                    />
+                    <input type="time" value={newRemindTime} onChange={(e) => setNewRemindTime(e.target.value)}
+                      className="w-20 px-1.5 py-1 rounded bg-[#141414] border border-[#222] text-white text-[10px] focus:outline-none focus:border-blue-500"
+                    />
+                  </div>
+                  <div className="flex items-center gap-1">
+                    <button
+                      onClick={() => { setReminder(todo.id, newRemindDate, newRemindTime); setEditingId(null); }}
+                      disabled={!newRemindDate}
+                      className="px-2 py-0.5 rounded bg-yellow-600 hover:bg-yellow-700 text-white text-[10px] disabled:opacity-50 transition-colors"
+                    >确定</button>
+                    <button onClick={() => setEditingId(null)}
+                      className="px-2 py-0.5 rounded bg-[#1a1a1a] border border-[#222] text-[#999] hover:text-white text-[10px] transition-colors"
+                    >取消</button>
+                  </div>
+                </div>
+              )}
             </>
           )}
         </div>
@@ -1264,6 +1409,20 @@ const QuadrantTodo: React.FC = () => {
                 </select>
               </div>
 
+              {/* 提醒设置 */}
+              <div>
+                <label className="block text-sm font-medium text-[#a0a0a0] mb-2">提醒（可选）</label>
+                <div className="flex items-center gap-3">
+                  <input type="date" value={newRemindDate} onChange={(e) => setNewRemindDate(e.target.value)}
+                    className="flex-1 px-3 py-2 rounded-lg bg-[#0f0f0f] border border-[#2a2a2a] text-white text-sm focus:outline-none focus:border-blue-500"
+                    min={new Date().toISOString().slice(0, 10)}
+                  />
+                  <input type="time" value={newRemindTime} onChange={(e) => setNewRemindTime(e.target.value)}
+                    className="w-32 px-3 py-2 rounded-lg bg-[#0f0f0f] border border-[#2a2a2a] text-white text-sm focus:outline-none focus:border-blue-500"
+                  />
+                </div>
+              </div>
+
               <div>
                 <div className="flex items-center justify-between mb-2">
                   <label className="block text-sm font-medium text-[#a0a0a0]">内容</label>
@@ -1329,6 +1488,62 @@ const QuadrantTodo: React.FC = () => {
                 <Plus size={16} />
                 添加
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 提醒弹窗 - 屏幕顶部居中闪烁 */}
+      {activeReminder && (
+        <div className="fixed top-0 left-0 right-0 z-[9999] flex justify-center pointer-events-none">
+          <div
+            className={`pointer-events-auto mt-4 max-w-lg w-full mx-4 rounded-xl border-2 shadow-2xl shadow-yellow-500/20
+              ${reminderFlash ? 'animate-pulse border-yellow-400 bg-yellow-500/15' : 'border-yellow-500/50 bg-[#1a1a0a]'}
+            `}
+            style={reminderFlash ? { animation: 'reminderFlash 0.8s ease-in-out infinite' } : undefined}
+          >
+            <style>{`
+              @keyframes reminderFlash {
+                0%, 100% { border-color: rgb(250 204 21); background: rgba(250, 204, 21, 0.15); box-shadow: 0 0 30px rgba(250, 204, 21, 0.3); }
+                50% { border-color: rgb(239 68 68); background: rgba(239, 68, 68, 0.15); box-shadow: 0 0 30px rgba(239, 68, 68, 0.3); }
+              }
+            `}</style>
+            <div className="px-5 py-4">
+              <div className="flex items-start gap-3">
+                <div className="p-2 rounded-lg bg-yellow-500/20 shrink-0">
+                  <Bell size={24} className="text-yellow-400" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <h3 className="text-base font-bold text-yellow-400 mb-1">待办提醒</h3>
+                  <p className="text-white text-sm break-words">{activeReminder.text}</p>
+                  {activeReminder.remindAt && (
+                    <p className="text-[#888] text-xs mt-1">提醒时间：{new Date(activeReminder.remindAt).toLocaleString('zh-CN')}</p>
+                  )}
+                </div>
+                <button
+                  onClick={dismissReminder}
+                  className="p-1.5 rounded-lg text-[#666] hover:text-white hover:bg-[#252525] transition-colors shrink-0"
+                >
+                  <X size={18} />
+                </button>
+              </div>
+              <div className="flex justify-end gap-2 mt-3">
+                <button
+                  onClick={() => {
+                    toggleCompleted(activeReminder.id);
+                    dismissReminder();
+                  }}
+                  className="px-3 py-1.5 rounded-lg bg-green-600 hover:bg-green-700 text-white text-xs font-medium transition-colors"
+                >
+                  标记完成
+                </button>
+                <button
+                  onClick={dismissReminder}
+                  className="px-3 py-1.5 rounded-lg bg-[#2a2a2a] hover:bg-[#333] text-[#ccc] hover:text-white text-xs font-medium transition-colors"
+                >
+                  知道了
+                </button>
+              </div>
             </div>
           </div>
         </div>
