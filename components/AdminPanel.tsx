@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { X, Plus, Trash2, RefreshCw, Save, Key, ExternalLink, HelpCircle, CheckCircle, Edit2, Copy, AlertCircle } from 'lucide-react';
+import { X, Plus, Trash2, RefreshCw, Save, Key, ExternalLink, HelpCircle, CheckCircle, Edit2, Copy, AlertCircle, ClipboardCopy } from 'lucide-react';
 import { useToast } from './Toast';
 import {
   isAdmin,
@@ -36,6 +36,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onClose }) => {
   const [editPassword, setEditPassword] = useState('');
   const [adminErrors, setAdminErrors] = useState<Array<{ timestamp: string; operation: string; error: string; details?: any }>>([]);
   const [copied, setCopied] = useState(false);
+  const [copiedAccountId, setCopiedAccountId] = useState<string | null>(null);
 
   // 记录管理员错误
   const recordError = useCallback((operation: string, error: any, details?: any) => {
@@ -97,11 +98,11 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onClose }) => {
 
     setLoading(true);
     try {
-      await addAccount(newUsername, newPassword, githubToken);
+      const updatedAccounts = await addAccount(newUsername, newPassword, githubToken, accounts);
+      setAccounts(updatedAccounts);
       showToast('success', `账号 "${newUsername}" 已创建，密码: ${newPassword}`);
       setNewUsername('');
       setNewPassword('');
-      await loadAccounts();
     } catch (error: any) {
       const errorMsg = `创建账号失败: ${error.message}`;
       showToast('error', errorMsg);
@@ -123,9 +124,9 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onClose }) => {
 
     setLoading(true);
     try {
-      await deleteAccount(username, githubToken);
+      const updatedAccounts = await deleteAccount(username, githubToken, accounts);
+      setAccounts(updatedAccounts);
       showToast('success', `账号 "${username}" 已删除`);
-      await loadAccounts();
     } catch (error: any) {
       const errorMsg = `删除账号失败: ${error.message}`;
       showToast('error', errorMsg);
@@ -164,10 +165,10 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onClose }) => {
 
     setLoading(true);
     try {
-      await updateAccount(editingAccount.username, editUsername, editPassword, githubToken);
+      const updatedAccounts = await updateAccount(editingAccount.username, editUsername, editPassword, githubToken, accounts);
+      setAccounts(updatedAccounts);
       showToast('success', `账号已更新：${editUsername}`);
       handleCancelEdit();
-      await loadAccounts();
     } catch (error: any) {
       const errorMsg = `更新账号失败: ${error.message}`;
       showToast('error', errorMsg);
@@ -345,6 +346,25 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onClose }) => {
   const openTokenCreationPage = () => {
     window.open('https://github.com/settings/tokens/new', '_blank');
   };
+
+  const handleCopyAccount = useCallback(async (account: AccountInfo) => {
+    const text = `${account.username}\n${account.userId}`;
+    try {
+      await navigator.clipboard.writeText(text);
+    } catch {
+      const ta = document.createElement('textarea');
+      ta.value = text;
+      ta.style.position = 'fixed';
+      ta.style.opacity = '0';
+      document.body.appendChild(ta);
+      ta.select();
+      document.execCommand('copy');
+      document.body.removeChild(ta);
+    }
+    setCopiedAccountId(account.username);
+    showToast('success', `已复制：${account.username} 的账号密码`);
+    setTimeout(() => setCopiedAccountId(null), 1500);
+  }, [showToast]);
 
   if (!isAdmin()) {
     return null;
@@ -677,6 +697,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onClose }) => {
               <div className="flex items-center gap-2">
                 <RefreshCw size={16} className="text-blue-400" />
                 <h3 className="text-sm font-medium text-white">账号列表</h3>
+                <span className="text-xs text-[#666] bg-[#252525] px-2 py-0.5 rounded-full">{accounts.length}</span>
               </div>
               <button
                 onClick={loadAccounts}
@@ -701,6 +722,17 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onClose }) => {
                       <div className="text-xs text-[#666] font-mono truncate">{account.userId}</div>
                     </div>
                     <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                      <button
+                        onClick={() => handleCopyAccount(account)}
+                        className={`p-1.5 rounded transition-colors ${
+                          copiedAccountId === account.username
+                            ? 'text-emerald-400'
+                            : 'text-[#666] hover:text-emerald-400 hover:bg-emerald-500/10'
+                        }`}
+                        title="复制账号密码"
+                      >
+                        <ClipboardCopy size={14} />
+                      </button>
                       <button
                         onClick={() => handleStartEdit(account)}
                         className="p-1.5 rounded text-[#666] hover:text-blue-400 hover:bg-[#2a2a2a] transition-colors"
