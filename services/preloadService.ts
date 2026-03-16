@@ -72,18 +72,19 @@ export const preloadSettingsData = () => {
   }
 };
 
-// 预加载所有数据
+// 预加载所有数据（延迟到浏览器空闲时执行，避免阻塞首屏渲染）
 export const preloadAllData = async () => {
-  // 先尝试从文件导入数据（如果已启用文件存储）
-  // 注意：这个导入已经在 App.tsx 中执行过了，这里不再重复导入
-  // 保留此代码以防其他地方调用 preloadAllData
-  
-  // 然后预加载 localStorage 数据（快速）
-  preloadLocalStorageData();
-  preloadSettingsData();
-  
-  // 最后预加载需要网络请求的数据（延迟执行）
-  setTimeout(() => {
-    preloadNamingData();
-  }, 100);
+  const doPreload = () => {
+    preloadLocalStorageData();
+    preloadSettingsData();
+    setTimeout(() => {
+      preloadNamingData();
+    }, 100);
+  };
+
+  if ('requestIdleCallback' in window) {
+    requestIdleCallback(doPreload, { timeout: 3000 });
+  } else {
+    setTimeout(doPreload, 500);
+  }
 };

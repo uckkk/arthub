@@ -636,15 +636,16 @@ const AppContent: React.FC = () => {
             {renderAllTabs()}
           </main>
 
-          {/* 设置面板 - 始终渲染以静默加载数据，但只在 showSettings 为 true 时显示 */}
-          {/* 即使isOpen=false也渲染，这样组件会挂载并执行useEffect加载数据 */}
-          <Suspense fallback={null}>
-            <SettingsPanel 
-              isOpen={showSettings} 
-              onClose={() => setShowSettings(false)}
-              triggerRef={settingsButtonRef}
-            />
-          </Suspense>
+          {/* 设置面板 - 仅在打开时挂载，减少启动开销 */}
+          {showSettings && (
+            <Suspense fallback={null}>
+              <SettingsPanel 
+                isOpen={showSettings} 
+                onClose={() => setShowSettings(false)}
+                triggerRef={settingsButtonRef}
+              />
+            </Suspense>
+          )}
 
           {/* 管理员面板 */}
           {showAdminPanel && (

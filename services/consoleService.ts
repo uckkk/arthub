@@ -36,19 +36,34 @@ class ConsoleService {
       debug: console.debug.bind(console),
     };
 
-    // 拦截 console 方法
-    this.interceptConsole();
+    // 只同步拦截 console 方法（轻量），其余延迟初始化
+    this.interceptConsoleOnly();
+
+    // 延迟初始化重量级功能（错误监听、fetch/XHR 拦截、性能监控等）
+    const deferInit = () => {
+      this.installErrorListeners();
+      this.startCrashDetection();
+      this.interceptFetch();
+      this.interceptXHR();
+      this.interceptTauriInvoke();
+      if (process.env.NODE_ENV === 'development' || this.shouldDetectLayoutIssues()) {
+        this.startLayoutDetection();
+      }
+    };
+    if ('requestIdleCallback' in window) {
+      requestIdleCallback(deferInit, { timeout: 5000 });
+    } else {
+      setTimeout(deferInit, 1000);
+    }
   }
 
-  private interceptConsole() {
-    // 拦截 console.error（错误日志）
+  // 轻量级 console 拦截（同步，不阻塞启动）
+  private interceptConsoleOnly() {
     console.error = (...args: any[]) => {
-      // 过滤掉预期的错误（如开发者工具打开失败）
       const firstArg = args[0];
       if (typeof firstArg === 'string' && 
           (firstArg.includes('无法打开开发者工具') || 
            firstArg.includes('Failed to open developer tools'))) {
-        // 这是预期的错误，只输出到原始控制台，不记录到日志服务
         this.originalConsole.error(...args);
         return;
       }
@@ -56,9 +71,7 @@ class ConsoleService {
       this.originalConsole.error(...args);
     };
 
-    // 拦截 console.warn（警告日志）- 警告也可能表示潜在问题
     console.warn = (...args: any[]) => {
-      // 过滤内部库的常见警告，只输出到原始控制台
       const firstArg = args[0];
       if (typeof firstArg === 'string' && (
         firstArg.includes('ToggleGroup is changing from') ||
@@ -72,10 +85,8 @@ class ConsoleService {
       this.originalConsole.warn(...args);
     };
 
-    // 拦截 console.log（普通日志）- 记录调试信息和重要操作
     console.log = (...args: any[]) => {
       const firstArg = args[0];
-      // 记录包含调试标记的日志
       if (typeof firstArg === 'string' && 
           (firstArg.includes('[PathManager]') ||
            firstArg.includes('[调试]') ||
@@ -88,10 +99,8 @@ class ConsoleService {
       this.originalLog(...args);
     };
 
-    // 拦截 console.info（信息日志）- 记录重要操作和状态变化
     console.info = (...args: any[]) => {
       const firstArg = args[0];
-      // 记录包含关键词的 info，或所有包含标记的 info
       if (typeof firstArg === 'string' && 
           (firstArg.toLowerCase().includes('error') || 
            firstArg.toLowerCase().includes('fail') || 
@@ -105,81 +114,44 @@ class ConsoleService {
       }
       this.originalConsole.info(...args);
     };
+  }
 
-    // 拦截未捕获的错误（包含更详细的堆栈信息）
+  // 安装错误监听器（延迟初始化）
+  private installErrorListeners() {
     window.addEventListener('error', (event) => {
-      // Skip resource loading errors (handled by the dedicated listener below)
       if (event.target && (event.target as any).tagName && !event.message) return;
-      const errorDetails = {
-        message: event.message,
-        filename: event.filename,
-        lineno: event.lineno,
-        colno: event.colno,
-        error: event.error,
-        stack: event.error?.stack,
-      };
       this.addLog('error', [
         `[未捕获错误] ${event.message}`,
         `位置: ${event.filename}:${event.lineno}:${event.colno}`,
-        errorDetails,
+        { message: event.message, filename: event.filename, lineno: event.lineno, colno: event.colno, stack: event.error?.stack },
       ]);
-    }, true); // 使用捕获阶段
+    }, true);
 
-    // 拦截未处理的 Promise 拒绝（包含更详细的信息）
     window.addEventListener('unhandledrejection', (event) => {
       const reason = event.reason;
-      const errorDetails = {
-        reason: reason,
-        stack: reason?.stack,
-        message: reason?.message || String(reason),
-        name: reason?.name,
-        code: reason?.code,
-      };
       this.addLog('error', [
         `[未处理的 Promise 拒绝]`,
-        `错误类型: ${errorDetails.name || 'Unknown'}`,
-        `错误消息: ${errorDetails.message}`,
-        errorDetails.code ? `错误代码: ${errorDetails.code}` : '',
-        errorDetails.stack ? `堆栈:\n${errorDetails.stack}` : '',
-        errorDetails,
+        `错误类型: ${reason?.name || 'Unknown'}`,
+        `错误消息: ${reason?.message || String(reason)}`,
+        reason?.code ? `错误代码: ${reason.code}` : '',
+        reason?.stack ? `堆栈:\n${reason.stack}` : '',
+        { reason, stack: reason?.stack, message: reason?.message || String(reason) },
       ]);
     });
-    
-    // 添加崩溃检测（内存泄漏、性能问题）
-    this.startCrashDetection();
 
-    // 拦截资源加载错误（忽略 Tauri asset:// 协议的图片加载失败，这些由组件自行处理）
     window.addEventListener('error', (event) => {
       if (event.target && (event.target as any).tagName) {
         const target = event.target as HTMLElement;
         const tagName = target.tagName;
         if (['IMG', 'SCRIPT', 'LINK', 'IFRAME'].includes(tagName)) {
           const src = (target as any).src || (target as any).href || 'unknown';
-          // Skip Tauri asset protocol image errors (handled by components with SkeletonImage/onError)
           if (tagName === 'IMG' && (typeof src === 'string') && (src.startsWith('https://asset.localhost') || src.startsWith('asset://'))) {
             return;
           }
-          this.addLog('error', [
-            `[资源加载失败] ${tagName}`,
-            `资源: ${typeof src === 'string' ? src : 'unknown'}`,
-          ]);
+          this.addLog('error', [`[资源加载失败] ${tagName}`, `资源: ${typeof src === 'string' ? src : 'unknown'}`]);
         }
       }
     }, true);
-
-    // 拦截 fetch 请求错误
-    this.interceptFetch();
-
-    // 拦截 XMLHttpRequest 错误
-    this.interceptXHR();
-
-    // 拦截 Tauri invoke 调用（如果可用）
-    this.interceptTauriInvoke();
-
-    // 启动布局问题检测（仅在开发模式或启用时）
-    if (process.env.NODE_ENV === 'development' || this.shouldDetectLayoutIssues()) {
-      this.startLayoutDetection();
-    }
   }
 
   // 检查是否应该检测布局问题
