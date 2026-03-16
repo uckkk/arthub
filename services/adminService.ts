@@ -211,10 +211,14 @@ export async function verifyGitHubToken(githubToken: string): Promise<{ valid: b
     if (isTauri) {
       // Tauri环境：通过Rust后端验证
       const { invoke } = await import('@tauri-apps/api/tauri');
-      const result: { valid: boolean; message: string } = await invoke('verify_github_token', {
+      // Rust 返回 Result<(bool, String), String>，Tauri 序列化为 [bool, string]
+      const result = await invoke('verify_github_token', {
         githubToken: githubToken.trim(),
       });
-      return result;
+      if (Array.isArray(result)) {
+        return { valid: result[0] as boolean, message: result[1] as string };
+      }
+      return result as { valid: boolean; message: string };
     } else {
       // 浏览器环境：直接调用GitHub API
       const response = await fetch('https://api.github.com/user', {

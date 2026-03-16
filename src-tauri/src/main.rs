@@ -177,6 +177,7 @@ async fn fetch_account_list() -> Result<Vec<(String, String)>, String> {
     const CSV_URL: &str = "https://raw.githubusercontent.com/uckkk/ArtAssetNamingConfig/main/useID.csv";
 
     let client = reqwest::Client::builder()
+        .user_agent("ArtHub/1.0")
         .timeout(std::time::Duration::from_secs(10))
         .build()
         .map_err(|e| format!("创建 HTTP 客户端失败: {}", e))?;
