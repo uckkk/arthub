@@ -1012,6 +1012,16 @@ const QuadrantTodo: React.FC = () => {
         )}
         <div
           data-todo-id={todo.id}
+          onMouseDown={(e) => {
+            if (e.button !== 0) return;
+            const target = e.target as HTMLElement;
+            if (target.closest('button, input, textarea, [data-no-drag]')) return;
+            e.preventDefault();
+            const dragInfo = { todoId: todo.id, startY: e.clientY, startX: e.clientX };
+            dragStartRef.current = dragInfo;
+            setDragStartState(dragInfo);
+            setDraggedTodo(todo);
+          }}
           onClick={(e) => {
             if (isDragging || draggedTodo || dragStartRef.current) {
               e.preventDefault(); e.stopPropagation(); return;
@@ -1019,14 +1029,14 @@ const QuadrantTodo: React.FC = () => {
             if (isClickable) handleTodoClick(todo, e);
           }}
           className={`
-            group relative px-2 py-1.5 rounded border transition-all text-xs
+            group relative px-2 py-1.5 rounded border transition-all text-xs cursor-grab active:cursor-grabbing
             ${isDragged
               ? 'opacity-50 cursor-move border-blue-500/50 bg-[#1a1a1a]'
               : isDragOverItem && isSameQuadrantDrag
               ? 'border-blue-500 bg-blue-500/10'
               : isClickable
-              ? 'cursor-pointer border-[#222] hover:border-[#333] bg-[#141414] hover:bg-[#1a1a1a]'
-              : 'cursor-move border-[#222] hover:border-[#333] bg-[#141414]'
+              ? 'border-[#222] hover:border-[#333] bg-[#141414] hover:bg-[#1a1a1a]'
+              : 'border-[#222] hover:border-[#333] bg-[#141414]'
             }
           `}
         >
@@ -1074,21 +1084,8 @@ const QuadrantTodo: React.FC = () => {
           ) : (
             <>
               <div className="flex items-center gap-1.5">
-                {/* 左侧拖动热区：勾选框 + 拖动手柄 */}
-                <div
-                  className="flex items-center gap-1 cursor-grab active:cursor-grabbing flex-shrink-0"
-                  onMouseDown={(e) => {
-                    if (e.button === 0) {
-                      const target = e.target as HTMLElement;
-                      if (target.closest('button[data-checkbox]')) return;
-                      e.preventDefault(); e.stopPropagation();
-                      const dragInfo = { todoId: todo.id, startY: e.clientY, startX: e.clientX };
-                      dragStartRef.current = dragInfo;
-                      setDragStartState(dragInfo);
-                      setDraggedTodo(todo);
-                    }
-                  }}
-                >
+                {/* 左侧：勾选框 + 拖动手柄 */}
+                <div className="flex items-center gap-1 flex-shrink-0">
                   <button
                     data-checkbox
                     onClick={(e) => { e.stopPropagation(); toggleCompleted(todo.id); }}

@@ -68,38 +68,19 @@ const HomePage: React.FC = () => {
     return { paths, workflows };
   }, [favorites]);
 
-  // 路径拖动排序
-  const [pathDragState, pathDragHandlers] = useDragSort({
-    items: groupedFavorites.paths,
-    onReorder: (newPaths) => {
-      // 保持工作流的顺序不变，只更新路径的顺序
-      const workflows = groupedFavorites.workflows;
-      const allFavorites = [...workflows, ...newPaths];
-      reorderFavorites(allFavorites);
-      setFavorites(allFavorites);
+  // 统一拖动排序（支持跨 AI工作流/快捷路径 拖放）
+  const [unifiedDragState, unifiedDragHandlers] = useDragSort({
+    items: favorites,
+    onReorder: (newFavorites) => {
+      reorderFavorites(newFavorites);
+      setFavorites(newFavorites);
     },
     enabled: true,
   });
 
-  // 工作流拖动排序
-  const [workflowDragState, workflowDragHandlers] = useDragSort({
-    items: groupedFavorites.workflows,
-    onReorder: (newWorkflows) => {
-      // 保持路径的顺序不变，只更新工作流的顺序
-      const paths = groupedFavorites.paths;
-      const allFavorites = [...newWorkflows, ...paths];
-      reorderFavorites(allFavorites);
-      setFavorites(allFavorites);
-    },
-    enabled: true,
-  });
-
-  // 监听拖动状态
   useEffect(() => {
-    setIsDragging(
-      pathDragState.draggedIndex !== null || workflowDragState.draggedIndex !== null
-    );
-  }, [pathDragState.draggedIndex, workflowDragState.draggedIndex]);
+    setIsDragging(unifiedDragState.draggedIndex !== null);
+  }, [unifiedDragState.draggedIndex]);
 
   // 处理路径跳转
   const handlePathJump = async (item: PathItem) => {
@@ -325,19 +306,20 @@ const HomePage: React.FC = () => {
                   </span>
                 </div>
                 <div className="grid gap-5" style={{ gridTemplateColumns: `repeat(${columnsPerRow}, minmax(0, 1fr))` }}>
-                  {groupedFavorites.workflows.map((fav, index) => {
+                  {groupedFavorites.workflows.map((fav) => {
                     const workflow = fav.aiWorkflow!;
-                    const isDragging = workflowDragState.draggedIndex === index;
-                    const isDragOver = workflowDragState.dragOverIndex === index;
+                    const globalIndex = favorites.findIndex(f => f.id === fav.id);
+                    const isDragging = unifiedDragState.draggedIndex === globalIndex;
+                    const isDragOver = unifiedDragState.dragOverIndex === globalIndex;
                     return (
                       <div
                         key={fav.id}
                         draggable={true}
-                        onDragStart={(e) => workflowDragHandlers.onDragStart(index, e)}
-                        onDragOver={(e) => workflowDragHandlers.onDragOver(index, e)}
-                        onDragLeave={workflowDragHandlers.onDragLeave}
-                        onDrop={(e) => workflowDragHandlers.onDrop(index, e)}
-                        onDragEnd={workflowDragHandlers.onDragEnd}
+                        onDragStart={(e) => unifiedDragHandlers.onDragStart(globalIndex, e)}
+                        onDragOver={(e) => unifiedDragHandlers.onDragOver(globalIndex, e)}
+                        onDragLeave={unifiedDragHandlers.onDragLeave}
+                        onDrop={(e) => unifiedDragHandlers.onDrop(globalIndex, e)}
+                        onDragEnd={unifiedDragHandlers.onDragEnd}
                         onMouseEnter={() => setHoveredId(fav.id)}
                         onMouseLeave={() => setHoveredId(null)}
                         onClick={(e) => {
@@ -490,19 +472,20 @@ const HomePage: React.FC = () => {
                   </span>
                 </div>
                 <div className="grid gap-3" style={{ gridTemplateColumns: `repeat(${columnsPerRow}, minmax(0, 1fr))` }}>
-                  {groupedFavorites.paths.map((fav, index) => {
+                  {groupedFavorites.paths.map((fav) => {
                     const path = fav.pathItem!;
-                    const isDragging = pathDragState.draggedIndex === index;
-                    const isDragOver = pathDragState.dragOverIndex === index;
+                    const globalIndex = favorites.findIndex(f => f.id === fav.id);
+                    const isDragging = unifiedDragState.draggedIndex === globalIndex;
+                    const isDragOver = unifiedDragState.dragOverIndex === globalIndex;
                     return (
                       <div
                         key={fav.id}
                         draggable={true}
-                        onDragStart={(e) => pathDragHandlers.onDragStart(index, e)}
-                        onDragOver={(e) => pathDragHandlers.onDragOver(index, e)}
-                        onDragLeave={pathDragHandlers.onDragLeave}
-                        onDrop={(e) => pathDragHandlers.onDrop(index, e)}
-                        onDragEnd={pathDragHandlers.onDragEnd}
+                        onDragStart={(e) => unifiedDragHandlers.onDragStart(globalIndex, e)}
+                        onDragOver={(e) => unifiedDragHandlers.onDragOver(globalIndex, e)}
+                        onDragLeave={unifiedDragHandlers.onDragLeave}
+                        onDrop={(e) => unifiedDragHandlers.onDrop(globalIndex, e)}
+                        onDragEnd={unifiedDragHandlers.onDragEnd}
                         onMouseEnter={() => setHoveredId(fav.id)}
                         onMouseLeave={() => setHoveredId(null)}
                         onClick={(e) => {

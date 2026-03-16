@@ -1118,12 +1118,54 @@ const PathManager: React.FC = () => {
     }
     
     const [draggedItemData] = updatedPaths.splice(draggedIndex, 1);
-    draggedItemData.group = targetGroup;
-    
+
+    if (sortMode === 'tag') {
+      // 标签模式：跨组拖动时自动更新 tags
+      const oldTags = draggedItemData.tags || [];
+      if (targetGroup === '无标签') {
+        draggedItemData.tags = [];
+      } else if (targetGroup.startsWith('标签: ')) {
+        const targetTag = targetGroup.replace('标签: ', '');
+        const targetTags = targetTag.includes(', ') ? targetTag.split(', ') : [targetTag];
+        // 移除当前分组对应的旧标签，添加目标分组标签
+        const tagsToRemove = new Set<string>();
+        // 找出旧标签中与某个标签分组名匹配的标签（即导致该项出现在原分组的标签）
+        const allGroupTags = Object.keys(groupedPaths)
+          .filter(g => g.startsWith('标签: '))
+          .map(g => g.replace('标签: ', ''));
+        for (const t of oldTags) {
+          if (allGroupTags.includes(t) && !targetTags.includes(t)) {
+            tagsToRemove.add(t);
+          }
+        }
+        const newTags = oldTags.filter(t => !tagsToRemove.has(t));
+        for (const t of targetTags) {
+          if (!newTags.includes(t)) {
+            newTags.push(t);
+          }
+        }
+        draggedItemData.tags = newTags;
+      }
+    } else {
+      draggedItemData.group = targetGroup;
+    }
+
     const targetGroupIndices: number[] = [];
     updatedPaths.forEach((p, idx) => {
-      if ((p.group || '默认分组') === targetGroup) {
-        targetGroupIndices.push(idx);
+      if (sortMode === 'tag') {
+        // 标签模式下按 tags 判断目标组
+        const itemTags = p.tags || [];
+        if (targetGroup === '无标签') {
+          if (itemTags.length === 0) targetGroupIndices.push(idx);
+        } else if (targetGroup.startsWith('标签: ')) {
+          const targetTag = targetGroup.replace('标签: ', '');
+          const targetTags = targetTag.includes(', ') ? targetTag.split(', ') : [targetTag];
+          if (targetTags.some(t => itemTags.includes(t))) targetGroupIndices.push(idx);
+        }
+      } else {
+        if ((p.group || '默认分组') === targetGroup) {
+          targetGroupIndices.push(idx);
+        }
       }
     });
     
