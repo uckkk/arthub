@@ -51,13 +51,32 @@ export async function fetchAccountList(): Promise<AccountInfo[]> {
       throw new Error(error.message || '获取账号列表失败');
     }
   } else {
-    // 浏览器环境：直接调用GitHub
+    // 浏览器环境：通过 GitHub Contents API 获取（无缓存延迟）
     try {
-      const response = await fetch(CSV_URL);
-      if (!response.ok) {
-        throw new Error(`获取账号列表失败: HTTP ${response.status}`);
+      const token = localStorage.getItem('arthub_github_token') || '';
+      const apiUrl = `https://api.github.com/repos/${CSV_REPO_OWNER}/${CSV_REPO_NAME}/contents/${CSV_FILE_PATH}`;
+      const headers: Record<string, string> = {
+        'Accept': 'application/vnd.github.v3.raw',
+      };
+      if (token) {
+        headers['Authorization'] = `Bearer ${token.trim()}`;
       }
-      const csvText = await response.text();
+
+      let csvText: string;
+      const apiResponse = await fetch(apiUrl, { headers });
+
+      if (apiResponse.ok) {
+        csvText = await apiResponse.text();
+      } else {
+        // API 失败时降级到 raw URL（加时间戳绕过缓存）
+        const rawUrl = `${CSV_URL}?t=${Date.now()}`;
+        const rawResponse = await fetch(rawUrl);
+        if (!rawResponse.ok) {
+          throw new Error(`获取账号列表失败: HTTP ${rawResponse.status}`);
+        }
+        csvText = await rawResponse.text();
+      }
+
       const lines = csvText.split('\n').filter(l => l.trim() && !l.trim().startsWith('#'));
       
       const accounts: AccountInfo[] = [];

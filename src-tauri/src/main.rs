@@ -174,7 +174,9 @@ fn auth_logout(app: tauri::AppHandle) -> Result<(), String> {
 // Tauri 命令：获取账号列表（从GitHub CSV）
 #[tauri::command]
 async fn fetch_account_list() -> Result<Vec<(String, String)>, String> {
-    const CSV_URL: &str = "https://raw.githubusercontent.com/uckkk/ArtAssetNamingConfig/main/useID.csv";
+    const REPO_OWNER: &str = "uckkk";
+    const REPO_NAME: &str = "ArtAssetNamingConfig";
+    const FILE_PATH: &str = "useID.csv";
 
     let client = reqwest::Client::builder()
         .user_agent("ArtHub/1.0")
@@ -182,16 +184,52 @@ async fn fetch_account_list() -> Result<Vec<(String, String)>, String> {
         .build()
         .map_err(|e| format!("创建 HTTP 客户端失败: {}", e))?;
 
-    let response = client.get(CSV_URL).send().await
+    // 通过 GitHub Contents API 获取（无缓存延迟）
+    let api_url = format!(
+        "https://api.github.com/repos/{}/{}/contents/{}",
+        REPO_OWNER, REPO_NAME, FILE_PATH
+    );
+
+    // 尝试用已保存的 Token 获取最新内容
+    let mut headers = reqwest::header::HeaderMap::new();
+    headers.insert("Accept", "application/vnd.github.v3.raw".parse().unwrap());
+
+    let response = client.get(&api_url)
+        .headers(headers)
+        .send()
+        .await
         .map_err(|e| format!("网络请求失败: {}", e))?;
 
     if !response.status().is_success() {
-        return Err(format!("获取账号列表失败: HTTP {}", response.status()));
+        // API 失败时降级到 raw URL（公开仓库可直接访问，但可能有缓存）
+        let raw_url = format!(
+            "https://raw.githubusercontent.com/{}/{}/main/{}?t={}",
+            REPO_OWNER, REPO_NAME, FILE_PATH,
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_secs()
+        );
+        let raw_response = client.get(&raw_url).send().await
+            .map_err(|e| format!("网络请求失败: {}", e))?;
+
+        if !raw_response.status().is_success() {
+            return Err(format!("获取账号列表失败: HTTP {}", raw_response.status()));
+        }
+
+        let csv_text = raw_response.text().await
+            .map_err(|e| format!("读取响应失败: {}", e))?;
+
+        return parse_csv_accounts(&csv_text);
     }
 
     let csv_text = response.text().await
         .map_err(|e| format!("读取响应失败: {}", e))?;
 
+    parse_csv_accounts(&csv_text)
+}
+
+fn parse_csv_accounts(csv_text: &str) -> Result<Vec<(String, String)>, String> {
     let csv_text = csv_text.trim_start_matches('\u{FEFF}');
     let mut accounts = Vec::new();
     let mut is_header = true;
