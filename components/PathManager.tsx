@@ -1187,16 +1187,30 @@ const PathManager: React.FC = () => {
   };
 
   const handleDragEnd = () => {
-    setTimeout(() => {
-      setDraggedItem(null);
-      setDraggedGroup(null);
-      setDragOverGroup(null);
-      setDragOverIndex(null);
-      setIsDragging(false);
-      draggedGroupRef.current = null;
-      dragOverGroupRef.current = null;
-    }, 100);
+    setDraggedItem(null);
+    setDraggedGroup(null);
+    setDragOverGroup(null);
+    setDragOverIndex(null);
+    setIsDragging(false);
+    draggedGroupRef.current = null;
+    dragOverGroupRef.current = null;
   };
+
+  const handleDragLeaveItem = () => {
+    setDragOverGroup(null);
+    setDragOverIndex(null);
+  };
+
+  // 安全网：mouseup 时清理残留的拖拽状态（dragend 在 Tauri webview 中可能不触发）
+  useEffect(() => {
+    const cleanup = () => {
+      if (draggedItem || draggedGroup || isDragging) {
+        handleDragEnd();
+      }
+    };
+    document.addEventListener('mouseup', cleanup);
+    return () => document.removeEventListener('mouseup', cleanup);
+  }, [draggedItem, draggedGroup, isDragging]);
 
   const TypeSelector = ({ value, onChange }: { value: PathType; onChange: (t: PathType) => void }) => (
     <div className="flex gap-2 flex-wrap">
@@ -1420,6 +1434,7 @@ const PathManager: React.FC = () => {
                   onDragEnd={handleDragEnd}
                   onDragStart={(item, e) => handleDragStart(item, e)}
                   onDragOver={(index, e) => handleDragOver(groupName, index, e)}
+                  onDragLeaveItem={handleDragLeaveItem}
                   onDrop={(index, e) => handleDrop(groupName, index, e)}
                   onJump={handleJump}
                   onAddToFavorites={handleAddToFavorites}

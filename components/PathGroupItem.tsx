@@ -84,6 +84,7 @@ interface PathGroupItemProps {
   onEdit: (item: PathItem, e: React.MouseEvent) => void;
   onCopy: (item: PathItem, e: React.MouseEvent) => void;
   onDelete: (id: string, e: React.MouseEvent) => void;
+  onDragLeaveItem?: () => void;
   onInsertBeforeDrop: (e: React.DragEvent) => void;
   onLastGroupDrop: (e: React.DragEvent) => void;
 }
@@ -116,6 +117,7 @@ export const PathGroupItem: React.FC<PathGroupItemProps> = ({
   onEdit,
   onCopy,
   onDelete,
+  onDragLeaveItem,
   onInsertBeforeDrop,
   onLastGroupDrop,
 }) => {
@@ -135,7 +137,7 @@ export const PathGroupItem: React.FC<PathGroupItemProps> = ({
           <div className={[columnsPerRow === 1 ? 'space-y-2' : 'grid gap-2.5'].filter(Boolean).join(' ')} style={columnsPerRow > 1 ? { gridTemplateColumns: `repeat(${columnsPerRow}, minmax(0, 1fr))` } : undefined} onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; if (draggedItem) { onDragOver(groupName, items.length, e); } }} onDrop={(e) => { e.preventDefault(); e.stopPropagation(); onDrop(items.length, e); }}>
             {items.map((item, index) => {
               return (
-                <div key={item.id} draggable={true} onDragStart={(e) => { onDragStart(item, e); }} onDragOver={(e) => { onDragOver(groupName, index, e); }} onDrop={(e) => { e.preventDefault(); e.stopPropagation(); onDrop(index, e); }} onDragEnd={onDragEnd} onClick={(e) => { if (isDragging || draggedItem) { e.preventDefault(); e.stopPropagation(); return; } onJump(item); }} className={['group relative bg-[#1a1a1a] hover:bg-[#222222]', 'border border-[#2a2a2a] hover:border-[#3a3a3a]', 'rounded px-2.5 py-2.5 flex items-center gap-2', 'cursor-pointer transition-all duration-150', draggedItem?.id === item.id ? 'opacity-50' : '', dragOverGroup === groupName && dragOverIndex === index ? 'border-blue-500' : '', columnsPerRow > 1 ? 'min-w-0' : ''].filter(Boolean).join(' ')}>
+                <div key={item.id} draggable={true} onDragStart={(e) => { onDragStart(item, e); }} onDragOver={(e) => { onDragOver(groupName, index, e); }} onDragLeave={onDragLeaveItem} onDrop={(e) => { e.preventDefault(); e.stopPropagation(); onDrop(index, e); }} onDragEnd={onDragEnd} onClick={(e) => { if (isDragging || draggedItem) { e.preventDefault(); e.stopPropagation(); return; } onJump(item); }} className={['group relative bg-[#1a1a1a] hover:bg-[#222222]', 'border border-[#2a2a2a] hover:border-[#3a3a3a]', 'rounded px-2.5 py-2.5 flex items-center gap-2', 'cursor-pointer transition-all duration-150', draggedItem?.id === item.id ? 'opacity-50' : '', dragOverGroup === groupName && dragOverIndex === index && draggedItem ? 'border-blue-500' : '', columnsPerRow > 1 ? 'min-w-0' : ''].filter(Boolean).join(' ')}>
                   {copiedId === item.id && (
                     <div className={'absolute inset-0 rounded ' + OPACITY_CLASSES.bgGreen50090 + ' flex items-center justify-center text-white text-xs font-medium animate-fade-in z-20'}>
                       <Check size={12} className="mr-1" />
