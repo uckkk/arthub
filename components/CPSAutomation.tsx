@@ -335,6 +335,9 @@ const CPSAutomation: React.FC = () => {
 
     const setup = async () => {
       unlistenHover = await listen<string[]>('tauri://file-drop-hover', async () => {
+        const self = document.querySelector('[data-drop-target]')?.closest('[aria-hidden]');
+        if (self && self.getAttribute('aria-hidden') === 'true') return;
+
         const target = await findDropTargetUnderCursor();
         if (target) {
           hoverTargetRef.current = target;
@@ -347,6 +350,11 @@ const CPSAutomation: React.FC = () => {
 
       unlistenDrop = await listen<string[]>('tauri://file-drop', async (event) => {
         setDragOverTarget(null);
+
+        // Skip when this component is not the active tab (hidden via aria-hidden)
+        const self = document.querySelector('[data-drop-target]')?.closest('[aria-hidden]');
+        if (self && self.getAttribute('aria-hidden') === 'true') return;
+
         const paths = event.payload;
         if (!paths || paths.length === 0) return;
 

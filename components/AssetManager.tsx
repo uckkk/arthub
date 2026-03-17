@@ -3807,6 +3807,32 @@ export default function AssetManager() {
     return () => el.removeEventListener('scroll', onScroll);
   }, [loading, assets.length, totalAssets, loadAssets]);
 
+  // ---- Tauri file-drop: version management drag support ----
+  const detailAssetIdRef = useRef(detailAssetId);
+  useEffect(() => { detailAssetIdRef.current = detailAssetId; }, [detailAssetId]);
+  const handleAddVersionRef = useRef(handleAddVersion);
+  useEffect(() => { handleAddVersionRef.current = handleAddVersion; }, [handleAddVersion]);
+
+  useEffect(() => {
+    let unlisten: (() => void) | null = null;
+    (async () => {
+      unlisten = await listen<string[]>('tauri://file-drop', (event) => {
+        if (!detailAssetIdRef.current) return;
+        // Only handle when this component's container is visible (not hidden by tab switching)
+        const container = scrollRef.current?.closest('[aria-hidden]');
+        if (container && container.getAttribute('aria-hidden') === 'true') return;
+
+        const paths = event.payload;
+        if (!paths || paths.length === 0) return;
+        const filePath = paths[0];
+        const isImage = /\.(png|jpe?g|gif|bmp|webp|tiff?|svg|psd|tga)$/i.test(filePath);
+        if (!isImage) return;
+        handleAddVersionRef.current(filePath);
+      });
+    })();
+    return () => { unlisten?.(); };
+  }, []);
+
   // ---- Scan progress listener ----
   useEffect(() => {
     let unlisten: (() => void) | null = null;
