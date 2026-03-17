@@ -6,7 +6,8 @@ import {
   Star, Tag, MessageSquare, Sparkles, Edit3, Check, Palette, Copy,
   MoreHorizontal, ChevronUp, SlidersHorizontal, Bookmark,
   Lock, Unlock, History, Shield, Users, AlertTriangle, Clock,
-  Settings, Download, Video, Music, List, Shuffle, Type, Columns, RotateCcw
+  Settings, Download, Video, Music, List, Shuffle, Type, Columns, RotateCcw,
+  Share2, Link, ExternalLink, Power, Wifi
 } from 'lucide-react';
 import { invoke } from '../services/tauriInvokeInterceptor';
 import { convertFileSrc } from '@tauri-apps/api/tauri';
@@ -170,6 +171,24 @@ interface FfmpegDownloadProgress {
   phase: string;
   progress: number;
   message: string;
+}
+
+// Share types
+interface ShareInfo {
+  id: number;
+  folder_id: number;
+  folder_name: string;
+  token: string;
+  created_by: string;
+  created_at: number;
+  expires_at: number | null;
+  is_active: boolean;
+}
+
+interface ShareServerStatus {
+  running: boolean;
+  url: string;
+  port: number;
 }
 
 type SpaceType = 'personal' | 'team';
@@ -3255,6 +3274,17 @@ export default function AssetManager() {
   const [aiStats, setAiStats] = useState<{ indexed: number; total: number; progress: number } | null>(null);
   const [aiResults, setAiResults] = useState<Map<number, number> | null>(null); // asset_id → score
 
+  // ---- Share State ----
+  const [showShareDialog, setShowShareDialog] = useState(false);
+  const [shareFolderId, setShareFolderId] = useState<number | null>(null);
+  const [shareLink, setShareLink] = useState('');
+  const [shareServerStatus, setShareServerStatus] = useState<ShareServerStatus | null>(null);
+  const [allShares, setAllShares] = useState<ShareInfo[]>([]);
+  const [showShareManager, setShowShareManager] = useState(false);
+  const [showNetworkPathInput, setShowNetworkPathInput] = useState(false);
+  const [networkPathValue, setNetworkPathValue] = useState('');
+  const [networkPathChecking, setNetworkPathChecking] = useState(false);
+
   // Load OS username from backend (Phase 3 fix)
   useEffect(() => {
     (async () => {
@@ -4387,13 +4417,35 @@ export default function AssetManager() {
       const folder = await invoke<AssetFolder>('asset_add_folder', { path: selected, spaceType: space });
       await loadFolders();
       showToast('success', '文件夹已添加，正在扫描...');
-      // 自动选中新添加的文件夹
       setSelectedFolderId(folder.id);
-      // 自动扫描新添加的文件夹
       handleScanFolder(folder.id);
     } catch (e: any) {
       showToast('error', e?.toString() || '添加失败');
     }
+  };
+
+  const handleAddNetworkFolder = async () => {
+    const pathStr = networkPathValue.trim();
+    if (!pathStr) { showToast('error', '请输入路径'); return; }
+    setNetworkPathChecking(true);
+    try {
+      const accessible = await invoke<boolean>('asset_check_path_accessible', { path: pathStr });
+      if (!accessible) {
+        showToast('error', '路径不可访问，请检查网络连接和路径格式');
+        setNetworkPathChecking(false);
+        return;
+      }
+      const folder = await invoke<AssetFolder>('asset_add_folder', { path: pathStr, spaceType: space });
+      await loadFolders();
+      setShowNetworkPathInput(false);
+      setNetworkPathValue('');
+      showToast('success', '网络文件夹已添加，正在扫描...');
+      setSelectedFolderId(folder.id);
+      handleScanFolder(folder.id);
+    } catch (e: any) {
+      showToast('error', e?.toString() || '添加网络文件夹失败');
+    }
+    setNetworkPathChecking(false);
   };
 
   const handleRemoveFolder = async (folderId: number) => {
@@ -4425,6 +4477,60 @@ export default function AssetManager() {
       await handleScanFolder(folder.id);
     }
   };
+
+  // ---- Share Handlers ----
+  const handleShareFolder = async (folderId: number) => {
+    try {
+      // Ensure server is running
+      const status = await invoke<ShareServerStatus>('share_start_server');
+      setShareServerStatus(status);
+
+      // Create share
+      const share = await invoke<ShareInfo>('share_create', { folderId });
+      const link = `${status.url}/share/${share.token}`;
+      setShareLink(link);
+      setShareFolderId(folderId);
+      setShowShareDialog(true);
+    } catch (e: any) {
+      showToast('error', e?.toString() || '创建分享失败');
+    }
+  };
+
+  const handleRevokeShare = async (shareId: number) => {
+    try {
+      await invoke('share_revoke', { shareId });
+      showToast('success', '分享已撤销');
+      loadShareList();
+    } catch (e: any) {
+      showToast('error', e?.toString() || '撤销分享失败');
+    }
+  };
+
+  const loadShareList = async () => {
+    try {
+      const shares = await invoke<ShareInfo[]>('share_list', { folderId: null });
+      setAllShares(shares);
+    } catch { /* ignore */ }
+  };
+
+  const loadShareServerStatus = async () => {
+    try {
+      const status = await invoke<ShareServerStatus>('share_server_status');
+      setShareServerStatus(status);
+    } catch { /* ignore */ }
+  };
+
+  const handleStopShareServer = async () => {
+    try {
+      await invoke('share_stop_server');
+      setShareServerStatus({ running: false, url: '', port: 0 });
+      showToast('success', '分享服务器已停止');
+    } catch (e: any) {
+      showToast('error', e?.toString() || '停止服务器失败');
+    }
+  };
+
+  const isNetworkPath = (path: string) => path.startsWith('\\\\') || path.startsWith('//') || /^[A-Z]:\\/.test(path) === false && path.includes('\\\\');
 
   // ---- Derived ----
   const spaceFolders = useMemo(() => folders.filter(f => f.space_type === space), [folders, space]);
@@ -4872,13 +4978,22 @@ export default function AssetManager() {
           <div className="flex-none w-56 border-r border-[#222] flex flex-col bg-[#0d0d0d]">
             <div className="flex items-center justify-between px-3 py-2 border-b border-[#1a1a1a]">
               <span className="text-xs font-medium text-[#888]">文件夹</span>
-              <button
-                onClick={handleAddFolder}
-                className="text-[#666] hover:text-[#3b82f6] transition-colors"
-                title="添加文件夹"
-              >
-                <Plus size={15} />
-              </button>
+              <div className="flex items-center gap-1">
+                <button
+                  onClick={() => { setShowNetworkPathInput(true); setNetworkPathValue(''); }}
+                  className="text-[#666] hover:text-[#3b82f6] transition-colors"
+                  title="添加网络路径"
+                >
+                  <Globe size={13} />
+                </button>
+                <button
+                  onClick={handleAddFolder}
+                  className="text-[#666] hover:text-[#3b82f6] transition-colors"
+                  title="添加文件夹"
+                >
+                  <Plus size={15} />
+                </button>
+              </div>
             </div>
             <div className="flex-1 overflow-y-auto py-1">
               {/* "All" option */}
@@ -4907,10 +5022,21 @@ export default function AssetManager() {
                   }`}
                   onClick={() => setSelectedFolderId(folder.id)}
                 >
-                  <FolderOpen size={13} className="flex-none" />
+                  {isNetworkPath(folder.path) ? (
+                    <Globe size={13} className="flex-none text-blue-400" />
+                  ) : (
+                    <HardDrive size={13} className="flex-none" />
+                  )}
                   <span className="truncate flex-1" title={folder.path}>{folder.name}</span>
                   <span className="text-[10px] text-[#555] flex-none">{folder.asset_count}</span>
                   <div className="hidden group-hover:flex items-center gap-0.5 flex-none">
+                    <button
+                      onClick={e => { e.stopPropagation(); handleShareFolder(folder.id); }}
+                      className="text-[#555] hover:text-[#22c55e]"
+                      title="分享此文件夹"
+                    >
+                      <Share2 size={11} />
+                    </button>
                     <button
                       onClick={e => { e.stopPropagation(); handleScanFolder(folder.id); }}
                       className="text-[#555] hover:text-[#3b82f6]"
@@ -5017,6 +5143,17 @@ export default function AssetManager() {
                   </div>
                 </>
               )}
+            </div>
+
+            {/* Share Manager Entry */}
+            <div className="flex-none px-3 py-1 border-t border-[#1a1a1a]">
+              <button
+                onClick={() => { setShowShareManager(true); loadShareList(); loadShareServerStatus(); }}
+                className="w-full flex items-center gap-2 px-2 py-1.5 text-[11px] text-[#555] hover:text-[#22c55e] hover:bg-[#111] rounded transition-colors"
+              >
+                <Share2 size={12} />
+                <span>分享管理</span>
+              </button>
             </div>
 
             {/* Stats */}
@@ -5345,6 +5482,203 @@ export default function AssetManager() {
           onClose={() => setShowDuplicates(false)}
           onSelectAsset={(id) => { setShowDuplicates(false); setDetailAssetId(id); }}
         />
+      )}
+
+      {/* Network Path Input Dialog */}
+      {showNetworkPathInput && (
+        <div className="fixed inset-0 bg-black/60 z-[300] flex items-center justify-center" onClick={() => setShowNetworkPathInput(false)}>
+          <div className="bg-[#1a1a1a] border border-[#333] rounded-xl shadow-2xl w-[440px] p-5" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-sm font-medium text-[#e0e0e0] flex items-center gap-2">
+                <Globe size={16} className="text-blue-400" />
+                添加网络文件夹
+              </h3>
+              <button onClick={() => setShowNetworkPathInput(false)} className="text-[#666] hover:text-[#aaa]"><X size={16} /></button>
+            </div>
+            <p className="text-[11px] text-[#666] mb-3">
+              输入局域网共享路径（UNC 格式）或映射盘路径
+            </p>
+            <input
+              type="text"
+              value={networkPathValue}
+              onChange={e => setNetworkPathValue(e.target.value)}
+              onKeyDown={e => e.key === 'Enter' && handleAddNetworkFolder()}
+              placeholder="例如：\\server\share 或 Z:\projects"
+              className="w-full bg-[#111] border border-[#2a2a2a] rounded-lg px-3 py-2.5 text-sm text-[#ccc] placeholder-[#444] outline-none focus:border-[#3b82f6] font-mono"
+              autoFocus
+            />
+            <div className="flex items-center justify-end gap-2 mt-4">
+              <button
+                onClick={() => setShowNetworkPathInput(false)}
+                className="px-4 py-1.5 text-xs text-[#888] hover:text-[#ccc] rounded-lg hover:bg-[#222] transition-colors"
+              >
+                取消
+              </button>
+              <button
+                onClick={handleAddNetworkFolder}
+                disabled={networkPathChecking || !networkPathValue.trim()}
+                className="px-4 py-1.5 text-xs bg-[#2563eb] text-white rounded-lg hover:bg-[#1d4ed8] transition-colors disabled:opacity-50 flex items-center gap-1.5"
+              >
+                {networkPathChecking ? <Loader2 size={12} className="animate-spin" /> : <Plus size={12} />}
+                {networkPathChecking ? '检测中...' : '添加'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Share Link Dialog */}
+      {showShareDialog && (
+        <div className="fixed inset-0 bg-black/60 z-[300] flex items-center justify-center" onClick={() => setShowShareDialog(false)}>
+          <div className="bg-[#1a1a1a] border border-[#333] rounded-xl shadow-2xl w-[480px] p-5" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-sm font-medium text-[#e0e0e0] flex items-center gap-2">
+                <Share2 size={16} className="text-green-400" />
+                分享链接已生成
+              </h3>
+              <button onClick={() => setShowShareDialog(false)} className="text-[#666] hover:text-[#aaa]"><X size={16} /></button>
+            </div>
+            <p className="text-[11px] text-[#666] mb-3">
+              局域网内的其他设备可通过浏览器打开此链接查看文件夹内容
+            </p>
+            <div className="flex items-center gap-2 bg-[#111] border border-[#2a2a2a] rounded-lg px-3 py-2.5">
+              <Link size={14} className="text-[#555] flex-none" />
+              <input
+                type="text"
+                value={shareLink}
+                readOnly
+                className="flex-1 bg-transparent text-sm text-[#3b82f6] outline-none font-mono select-all"
+                onClick={e => (e.target as HTMLInputElement).select()}
+              />
+              <button
+                onClick={() => {
+                  navigator.clipboard.writeText(shareLink);
+                  showToast('success', '链接已复制到剪贴板');
+                }}
+                className="text-[#555] hover:text-[#3b82f6] transition-colors flex-none"
+                title="复制链接"
+              >
+                <Copy size={14} />
+              </button>
+            </div>
+            <div className="flex items-center justify-between mt-4">
+              <div className="flex items-center gap-2 text-[10px] text-[#555]">
+                <div className="flex items-center gap-1">
+                  <div className={`w-1.5 h-1.5 rounded-full ${shareServerStatus?.running ? 'bg-green-500' : 'bg-red-500'}`} />
+                  <span>{shareServerStatus?.running ? '服务运行中' : '服务已停止'}</span>
+                </div>
+                {shareServerStatus?.running && (
+                  <span className="text-[#444]">端口 {shareServerStatus.port}</span>
+                )}
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => window.open(shareLink, '_blank')}
+                  className="px-3 py-1.5 text-xs text-[#888] hover:text-[#ccc] rounded-lg hover:bg-[#222] transition-colors flex items-center gap-1"
+                >
+                  <ExternalLink size={11} /> 在浏览器打开
+                </button>
+                <button
+                  onClick={() => setShowShareDialog(false)}
+                  className="px-4 py-1.5 text-xs bg-[#2563eb] text-white rounded-lg hover:bg-[#1d4ed8] transition-colors"
+                >
+                  完成
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Share Manager Panel */}
+      {showShareManager && (
+        <div className="fixed inset-0 bg-black/60 z-[300] flex items-center justify-center" onClick={() => setShowShareManager(false)}>
+          <div className="bg-[#1a1a1a] border border-[#333] rounded-xl shadow-2xl w-[560px] max-h-[70vh] flex flex-col" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between p-4 border-b border-[#222]">
+              <h3 className="text-sm font-medium text-[#e0e0e0] flex items-center gap-2">
+                <Share2 size={16} className="text-green-400" />
+                分享管理
+              </h3>
+              <button onClick={() => setShowShareManager(false)} className="text-[#666] hover:text-[#aaa]"><X size={16} /></button>
+            </div>
+
+            {/* Server status */}
+            <div className="px-4 py-3 border-b border-[#222] flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="flex items-center gap-1.5 text-xs">
+                  <div className={`w-2 h-2 rounded-full ${shareServerStatus?.running ? 'bg-green-500 animate-pulse' : 'bg-[#333]'}`} />
+                  <span className={shareServerStatus?.running ? 'text-green-400' : 'text-[#555]'}>
+                    {shareServerStatus?.running ? '服务运行中' : '服务已停止'}
+                  </span>
+                </div>
+                {shareServerStatus?.running && (
+                  <span className="text-[10px] text-[#444] font-mono">{shareServerStatus.url}</span>
+                )}
+              </div>
+              {shareServerStatus?.running && (
+                <button
+                  onClick={handleStopShareServer}
+                  className="px-3 py-1 text-[11px] text-[#ef4444] hover:bg-[#ef4444]/10 rounded transition-colors flex items-center gap-1"
+                >
+                  <Power size={11} /> 停止服务
+                </button>
+              )}
+            </div>
+
+            {/* Share list */}
+            <div className="flex-1 overflow-y-auto p-4">
+              {allShares.length === 0 ? (
+                <div className="text-center py-12 text-[#555]">
+                  <Share2 size={32} className="mx-auto mb-3 opacity-30" />
+                  <p className="text-xs">暂无活跃的分享</p>
+                  <p className="text-[10px] mt-1 text-[#444]">在文件夹列表中点击分享按钮来创建分享</p>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {allShares.map(share => (
+                    <div key={share.id} className="bg-[#111] border border-[#1a1a1a] rounded-lg p-3 hover:border-[#222] transition-colors">
+                      <div className="flex items-center justify-between mb-2">
+                        <span className="text-xs text-[#ccc] font-medium">{share.folder_name}</span>
+                        <span className="text-[10px] text-[#555]">{formatDate(share.created_at)}</span>
+                      </div>
+                      <div className="flex items-center gap-2 text-[10px] font-mono text-[#3b82f6] bg-[#0a0a0a] rounded px-2 py-1.5 mb-2">
+                        <span className="truncate">{shareServerStatus?.url || 'http://...'}/share/{share.token}</span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <button
+                          onClick={() => {
+                            const link = `${shareServerStatus?.url || ''}/share/${share.token}`;
+                            navigator.clipboard.writeText(link);
+                            showToast('success', '链接已复制');
+                          }}
+                          className="px-2 py-1 text-[10px] text-[#888] hover:text-[#ccc] hover:bg-[#1a1a1a] rounded transition-colors flex items-center gap-1"
+                        >
+                          <Copy size={10} /> 复制链接
+                        </button>
+                        <button
+                          onClick={() => {
+                            const link = `${shareServerStatus?.url || ''}/share/${share.token}`;
+                            window.open(link, '_blank');
+                          }}
+                          className="px-2 py-1 text-[10px] text-[#888] hover:text-[#ccc] hover:bg-[#1a1a1a] rounded transition-colors flex items-center gap-1"
+                        >
+                          <ExternalLink size={10} /> 打开
+                        </button>
+                        <div className="flex-1" />
+                        <button
+                          onClick={() => handleRevokeShare(share.id)}
+                          className="px-2 py-1 text-[10px] text-[#ef4444] hover:bg-[#ef4444]/10 rounded transition-colors flex items-center gap-1"
+                        >
+                          <Trash2 size={10} /> 撤销
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

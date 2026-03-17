@@ -8,6 +8,7 @@ use std::sync::Mutex;
 pub struct AssetManagerState {
     pub db: Mutex<Connection>,
     pub thumb_dir: Mutex<PathBuf>,
+    pub db_path: Mutex<PathBuf>,
 }
 
 impl AssetManagerState {
@@ -18,6 +19,7 @@ impl AssetManagerState {
         Ok(Self {
             db: Mutex::new(conn),
             thumb_dir: Mutex::new(thumb_dir),
+            db_path: Mutex::new(db_path),
         })
     }
 
@@ -27,6 +29,7 @@ impl AssetManagerState {
         std::fs::create_dir_all(&thumb_dir).ok();
         *self.db.lock().map_err(|e| e.to_string())? = conn;
         *self.thumb_dir.lock().map_err(|e| e.to_string())? = thumb_dir;
+        *self.db_path.lock().map_err(|e| e.to_string())? = db_path;
         Ok(())
     }
 }
@@ -262,7 +265,21 @@ fn init_tables(conn: &Connection) -> Result<(), String> {
             FOREIGN KEY (asset_id) REFERENCES assets(id) ON DELETE CASCADE,
             UNIQUE(asset_id, version_number)
         );
-        CREATE INDEX IF NOT EXISTS idx_asset_versions_asset ON asset_versions(asset_id);"
+        CREATE INDEX IF NOT EXISTS idx_asset_versions_asset ON asset_versions(asset_id);
+
+        -- 分享表
+        CREATE TABLE IF NOT EXISTS folder_shares (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            folder_id INTEGER NOT NULL,
+            token TEXT NOT NULL UNIQUE,
+            created_by TEXT NOT NULL DEFAULT '',
+            created_at INTEGER NOT NULL DEFAULT (strftime('%s','now')),
+            expires_at INTEGER,
+            is_active INTEGER NOT NULL DEFAULT 1,
+            FOREIGN KEY (folder_id) REFERENCES folders(id) ON DELETE CASCADE
+        );
+        CREATE INDEX IF NOT EXISTS idx_folder_shares_token ON folder_shares(token);
+        CREATE INDEX IF NOT EXISTS idx_folder_shares_folder ON folder_shares(folder_id);"
     ).map_err(|e| format!("创建数据表失败: {}", e))?;
 
     Ok(())

@@ -10,6 +10,7 @@ use crate::asset_manager::thumbnail;
 use crate::asset_manager::team;
 use crate::asset_manager::ffmpeg;
 use crate::asset_manager::ai::{self, AiState};
+use crate::asset_manager::share::{self, ShareState};
 
 // ---- 初始化 ----
 
@@ -1344,6 +1345,69 @@ pub fn ai_embedding_stats(
         "total": total,
         "progress": if total > 0 { indexed as f64 / total as f64 } else { 0.0 },
     }))
+}
+
+/// 检查路径是否可访问（用于验证网络路径）
+#[tauri::command]
+pub fn asset_check_path_accessible(path: String) -> Result<bool, String> {
+    let p = std::path::Path::new(&path);
+    Ok(p.exists() && p.is_dir())
+}
+
+// ============================================================
+// Share Commands
+// ============================================================
+
+#[tauri::command]
+pub fn share_create(
+    state: tauri::State<'_, AssetManagerState>,
+    _share_state: tauri::State<'_, ShareState>,
+    folder_id: i64,
+) -> Result<share::ShareInfo, String> {
+    let conn = state.db.lock().map_err(|e| e.to_string())?;
+    share::create_share(&conn, folder_id, "")
+}
+
+#[tauri::command]
+pub fn share_revoke(
+    state: tauri::State<'_, AssetManagerState>,
+    share_id: i64,
+) -> Result<(), String> {
+    let conn = state.db.lock().map_err(|e| e.to_string())?;
+    share::revoke_share(&conn, share_id)
+}
+
+#[tauri::command]
+pub fn share_list(
+    state: tauri::State<'_, AssetManagerState>,
+    folder_id: Option<i64>,
+) -> Result<Vec<share::ShareInfo>, String> {
+    let conn = state.db.lock().map_err(|e| e.to_string())?;
+    share::get_shares(&conn, folder_id)
+}
+
+#[tauri::command]
+pub fn share_start_server(
+    state: tauri::State<'_, AssetManagerState>,
+    share_state: tauri::State<'_, ShareState>,
+) -> Result<share::ShareServerStatus, String> {
+    let db_path = state.db_path.lock().map_err(|e| e.to_string())?.clone();
+    let thumb_dir = state.thumb_dir.lock().map_err(|e| e.to_string())?.clone();
+    share::start_server(&share_state, db_path, thumb_dir)
+}
+
+#[tauri::command]
+pub fn share_stop_server(
+    share_state: tauri::State<'_, ShareState>,
+) -> Result<(), String> {
+    share::stop_server(&share_state)
+}
+
+#[tauri::command]
+pub fn share_server_status(
+    share_state: tauri::State<'_, ShareState>,
+) -> Result<share::ShareServerStatus, String> {
+    Ok(share::get_server_status(&share_state))
 }
 
 /// 切换资产管理器存储路径（用户更改存储目录后调用，无需重启）

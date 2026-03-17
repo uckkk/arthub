@@ -2852,6 +2852,7 @@ fn main() {
 
                 let ai_state = asset_manager::ai::AiState::new(&am_dir);
                 app.manage(ai_state);
+                app.manage(asset_manager::ShareState::new());
                 app.manage(screen_capture::ScreenCaptureState::new());
                 println!("Asset manager initialized (with AI support)");
             }
@@ -3027,6 +3028,13 @@ fn main() {
             asset_manager::ai_semantic_search,
             asset_manager::ai_embedding_stats,
             asset_manager::asset_get_os_username,
+            asset_manager::asset_check_path_accessible,
+            asset_manager::share_create,
+            asset_manager::share_revoke,
+            asset_manager::share_list,
+            asset_manager::share_start_server,
+            asset_manager::share_stop_server,
+            asset_manager::share_server_status,
             asset_manager::ffmpeg_check,
             asset_manager::ffmpeg_download,
             asset_manager::ffmpeg_extract_thumbnail,
