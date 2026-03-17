@@ -93,26 +93,6 @@ const PathManager: React.FC = () => {
   const [editType, setEditType] = useState<PathType>('local');
   const [editGroup, setEditGroup] = useState('');
   
-  const [draggedItem, setDraggedItem] = useState<PathItem | null>(null);
-  const [draggedGroup, setDraggedGroup] = useState<string | null>(null);
-  const [dragOverGroup, setDragOverGroup] = useState<string | null>(null);
-  const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
-  const [isDragging, setIsDragging] = useState(false);
-  
-  const draggedGroupRef = useRef<string | null>(null);
-  const dragOverGroupRef = useRef<string | null>(null);
-  
-  const mouseDragStateRef = useRef<{
-    isDragging: boolean;
-    draggedGroup: string | null;
-    startY: number;
-    startGroup: string | null;
-  }>({
-    isDragging: false,
-    draggedGroup: null,
-    startY: 0,
-    startGroup: null
-  });
 
   const [newName, setNewName] = useState('');
   const [newPath, setNewPath] = useState('');
@@ -205,168 +185,6 @@ const PathManager: React.FC = () => {
     }
   }, []);
 
-  const reorderGroups = useCallback((draggedGroupName: string, targetGroupName: string, insertBefore: boolean) => {
-    if (!draggedGroupName || !targetGroupName || draggedGroupName === targetGroupName) {
-      return;
-    }
-    
-    setGroupOrder((currentOrder) => {
-      const allGroups = Array.from(new Set([...currentOrder]));
-      const newOrder = [...allGroups];
-      
-      const draggedIndex = newOrder.indexOf(draggedGroupName);
-      const targetIndex = newOrder.indexOf(targetGroupName);
-      
-      if (draggedIndex === -1 || targetIndex === -1) {
-        return currentOrder;
-      }
-      
-      newOrder.splice(draggedIndex, 1);
-      
-      let insertIndex: number;
-      if (insertBefore) {
-        insertIndex = draggedIndex < targetIndex ? targetIndex - 1 : targetIndex;
-      } else {
-        insertIndex = draggedIndex < targetIndex ? targetIndex : targetIndex + 1;
-      }
-      
-      newOrder.splice(insertIndex, 0, draggedGroupName);
-      localStorage.setItem('arthub_group_order', JSON.stringify(newOrder));
-      return newOrder;
-    });
-  }, []);
-
-  useEffect(() => {
-    draggedGroupRef.current = draggedGroup;
-  }, [draggedGroup]);
-  
-  useEffect(() => {
-    dragOverGroupRef.current = dragOverGroup;
-  }, [dragOverGroup]);
-
-  useEffect(() => {
-    const handleMouseDown = (e: MouseEvent) => {
-      const target = e.target as HTMLElement;
-      const groupHeader = target.closest('[data-drag-group]');
-      if (groupHeader && e.button === 0) {
-        const groupName = groupHeader.getAttribute('data-drag-group');
-        if (groupName) {
-          mouseDragStateRef.current = {
-            isDragging: true,
-            draggedGroup: groupName,
-            startY: e.clientY,
-            startGroup: groupName
-          };
-          setDraggedGroup(groupName);
-          draggedGroupRef.current = groupName;
-          setIsDragging(true);
-          e.preventDefault();
-        }
-      }
-    };
-
-    const handleMouseMove = (e: MouseEvent) => {
-      const state = mouseDragStateRef.current;
-      if (state.isDragging && state.draggedGroup) {
-        const groupContainers = document.querySelectorAll('[data-group-name]');
-        let hoveredGroup: string | null = null;
-        let hoveredRect: DOMRect | null = null;
-        
-        // 查找鼠标悬停的分组，扩大检测范围以提高准确性
-        groupContainers.forEach((container) => {
-          const rect = container.getBoundingClientRect();
-          // 扩大检测范围，包括分组标题区域
-          const padding = 30;
-          if (e.clientY >= rect.top - padding && e.clientY <= rect.bottom + padding) {
-            hoveredGroup = container.getAttribute('data-group-name');
-            hoveredRect = rect;
-          }
-        });
-        
-        if (hoveredGroup && hoveredGroup !== state.draggedGroup) {
-          // 只有当悬停到不同分组时才更新
-          if (dragOverGroupRef.current !== hoveredGroup) {
-            setDragOverGroup(hoveredGroup);
-            dragOverGroupRef.current = hoveredGroup;
-          }
-        } else if (hoveredGroup === state.draggedGroup) {
-          // 如果悬停到被拖动的分组本身，清除 dragOverGroup
-          if (dragOverGroupRef.current !== null) {
-            setDragOverGroup(null);
-            dragOverGroupRef.current = null;
-          }
-        } else {
-          // 如果没有悬停到任何分组，也清除 dragOverGroup
-          if (dragOverGroupRef.current !== null) {
-            setDragOverGroup(null);
-            dragOverGroupRef.current = null;
-          }
-        }
-      }
-    };
-
-    const handleMouseUp = (e: MouseEvent) => {
-      const state = mouseDragStateRef.current;
-      if (state.isDragging && state.draggedGroup) {
-        // 优先使用 dragOverGroup（如果已设置），因为它更准确
-        const targetGroup = dragOverGroupRef.current || (() => {
-          // 如果没有 dragOverGroup，使用鼠标位置查找
-          const groupContainers = document.querySelectorAll('[data-group-name]');
-          let foundGroup: string | null = null;
-          
-          groupContainers.forEach((container) => {
-            const rect = container.getBoundingClientRect();
-            // 扩大检测范围，提高准确性
-            const padding = 20;
-            if (e.clientY >= rect.top - padding && e.clientY <= rect.bottom + padding) {
-              foundGroup = container.getAttribute('data-group-name');
-            }
-          });
-          
-          return foundGroup;
-        })();
-        
-        if (targetGroup && targetGroup !== state.draggedGroup) {
-          // 计算插入位置：如果鼠标在上半部分，插入到目标分组之前；否则插入到之后
-          const groupContainer = document.querySelector(`[data-group-name="${targetGroup}"]`);
-          let insertBefore = false;
-          
-          if (groupContainer) {
-            const rect = groupContainer.getBoundingClientRect();
-            const midpoint = rect.top + rect.height / 2;
-            insertBefore = e.clientY < midpoint;
-          } else {
-            // 如果找不到容器，使用 dragOverGroup 的位置判断
-            insertBefore = true; // 默认插入到前面
-          }
-          
-          reorderGroups(state.draggedGroup, targetGroup, insertBefore);
-        }
-        
-        mouseDragStateRef.current = {
-          isDragging: false,
-          draggedGroup: null,
-          startY: 0,
-          startGroup: null
-        };
-        setDraggedGroup(null);
-        setDragOverGroup(null);
-        draggedGroupRef.current = null;
-        dragOverGroupRef.current = null;
-        setIsDragging(false);
-      }
-    };
-
-    document.addEventListener('mousedown', handleMouseDown);
-    document.addEventListener('mousemove', handleMouseMove);
-    document.addEventListener('mouseup', handleMouseUp);
-
-    return () => {
-      document.removeEventListener('mousedown', handleMouseDown);
-      document.removeEventListener('mousemove', handleMouseMove);
-      document.removeEventListener('mouseup', handleMouseUp);
-    };
-  }, [reorderGroups]);
 
   useEffect(() => {
     const loadQuickPaths = () => {
@@ -410,7 +228,7 @@ const PathManager: React.FC = () => {
     e.preventDefault();
     e.stopPropagation();
     const types = Array.from(e.dataTransfer.types);
-    const isInternalDrag = draggedGroupRef.current || types.includes('application/x-group') || types.includes('text/plain') || isDragging;
+    const isInternalDrag = types.includes('application/x-group');
     if (!isInternalDrag) {
       setIsDraggingOver(true);
     }
@@ -458,22 +276,12 @@ const PathManager: React.FC = () => {
   }, []);
 
   const handleDragOverCreatePath = (e: React.DragEvent) => {
-    if (draggedGroup) {
-      return;
-    }
     e.preventDefault();
     e.stopPropagation();
     setIsDraggingOver(true);
   };
 
   const handleDropCreatePath = async (e: React.DragEvent) => {
-    const types = Array.from(e.dataTransfer.types);
-    const isGroupDrag = draggedGroup || types.includes('application/x-group');
-    
-    if (isGroupDrag) {
-      return;
-    }
-    
     e.preventDefault();
     e.stopPropagation();
     setIsDraggingOver(false);
@@ -1008,209 +816,7 @@ const PathManager: React.FC = () => {
     }
   };
 
-  const handleDragStart = (item: PathItem, e: React.DragEvent) => {
-    e.stopPropagation();
-    e.dataTransfer.effectAllowed = 'move';
-    e.dataTransfer.dropEffect = 'move';
-    setDraggedItem(item);
-    setIsDragging(true);
-    e.dataTransfer.setData('text/plain', item.id);
-    e.dataTransfer.setData('application/x-path-item', JSON.stringify({ id: item.id, type: 'path-item' }));
-  };
 
-  const handleDragStartGroup = (groupName: string, e: React.DragEvent) => {
-    e.dataTransfer.effectAllowed = 'move';
-    e.dataTransfer.dropEffect = 'move';
-    
-    try {
-      e.dataTransfer.setData('text/plain', groupName);
-      e.dataTransfer.setData('application/x-group', 'true');
-    } catch (err) {
-      console.warn('设置拖拽数据失败:', err);
-    }
-    
-    setDraggedGroup(groupName);
-    draggedGroupRef.current = groupName;
-    setIsDragging(true);
-  };
-
-  const handleDragOver = (groupName: string, index: number, e: React.DragEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    if (draggedItem) {
-      e.dataTransfer.dropEffect = 'move';
-      setDragOverGroup(groupName);
-      setDragOverIndex(index);
-    } else {
-      const types = Array.from(e.dataTransfer.types);
-      if (types.includes('application/x-path-item') || types.includes('text/plain')) {
-        e.dataTransfer.dropEffect = 'move';
-      } else {
-        e.dataTransfer.dropEffect = 'none';
-      }
-    }
-  };
-
-  const handleDragOverGroup = (groupName: string, e: React.DragEvent) => {
-    if (!draggedGroup || draggedGroup === groupName) {
-      return;
-    }
-    e.preventDefault();
-    e.stopPropagation();
-    e.dataTransfer.dropEffect = 'move';
-    setDragOverGroup(groupName);
-    dragOverGroupRef.current = groupName;
-  };
-  
-  // 处理分组拖放的 drop 事件
-  const handleDropGroup = (targetGroup: string, e: React.DragEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    
-    if (!draggedGroup || draggedGroup === targetGroup) {
-      setDraggedGroup(null);
-      setDragOverGroup(null);
-      return;
-    }
-    
-    // 计算插入位置：根据鼠标位置判断插入到目标分组之前还是之后
-    const groupContainer = document.querySelector(`[data-group-name="${targetGroup}"]`);
-    let insertBefore = false;
-    
-    if (groupContainer) {
-      const rect = groupContainer.getBoundingClientRect();
-      const midpoint = rect.top + rect.height / 2;
-      insertBefore = e.clientY < midpoint;
-    }
-    
-    reorderGroups(draggedGroup, targetGroup, insertBefore);
-    setDraggedGroup(null);
-    setDragOverGroup(null);
-    draggedGroupRef.current = null;
-    dragOverGroupRef.current = null;
-  };
-
-  const handleDrop = (targetGroup: string, targetIndex: number, e: React.DragEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    
-    const types = Array.from(e.dataTransfer.types);
-    const isPathItemDrag = draggedItem || types.includes('application/x-path-item');
-    
-    if (!isPathItemDrag || !draggedItem) {
-      setDraggedItem(null);
-      setDragOverGroup(null);
-      setDragOverIndex(null);
-      return;
-    }
-
-    if (!groupOrder.includes(targetGroup)) {
-      setGroupOrder([...groupOrder, targetGroup]);
-    }
-    
-    const updatedPaths = [...paths];
-    const draggedIndex = updatedPaths.findIndex(p => p.id === draggedItem.id);
-    if (draggedIndex === -1) {
-      setDraggedItem(null);
-      setDragOverGroup(null);
-      setDragOverIndex(null);
-      return;
-    }
-    
-    const [draggedItemData] = updatedPaths.splice(draggedIndex, 1);
-
-    if (sortMode === 'tag') {
-      // 标签模式：跨组拖动时自动更新 tags
-      const oldTags = draggedItemData.tags || [];
-      if (targetGroup === '无标签') {
-        draggedItemData.tags = [];
-      } else if (targetGroup.startsWith('标签: ')) {
-        const targetTag = targetGroup.replace('标签: ', '');
-        const targetTags = targetTag.includes(', ') ? targetTag.split(', ') : [targetTag];
-        // 移除当前分组对应的旧标签，添加目标分组标签
-        const tagsToRemove = new Set<string>();
-        // 找出旧标签中与某个标签分组名匹配的标签（即导致该项出现在原分组的标签）
-        const allGroupTags = Object.keys(groupedPaths)
-          .filter(g => g.startsWith('标签: '))
-          .map(g => g.replace('标签: ', ''));
-        for (const t of oldTags) {
-          if (allGroupTags.includes(t) && !targetTags.includes(t)) {
-            tagsToRemove.add(t);
-          }
-        }
-        const newTags = oldTags.filter(t => !tagsToRemove.has(t));
-        for (const t of targetTags) {
-          if (!newTags.includes(t)) {
-            newTags.push(t);
-          }
-        }
-        draggedItemData.tags = newTags;
-      }
-    } else {
-      draggedItemData.group = targetGroup;
-    }
-
-    const targetGroupIndices: number[] = [];
-    updatedPaths.forEach((p, idx) => {
-      if (sortMode === 'tag') {
-        // 标签模式下按 tags 判断目标组
-        const itemTags = p.tags || [];
-        if (targetGroup === '无标签') {
-          if (itemTags.length === 0) targetGroupIndices.push(idx);
-        } else if (targetGroup.startsWith('标签: ')) {
-          const targetTag = targetGroup.replace('标签: ', '');
-          const targetTags = targetTag.includes(', ') ? targetTag.split(', ') : [targetTag];
-          if (targetTags.some(t => itemTags.includes(t))) targetGroupIndices.push(idx);
-        }
-      } else {
-        if ((p.group || '默认分组') === targetGroup) {
-          targetGroupIndices.push(idx);
-        }
-      }
-    });
-    
-    let insertIndex: number;
-    if (targetGroupIndices.length === 0) {
-      insertIndex = updatedPaths.length;
-    } else {
-      const targetActualIndex = targetIndex < targetGroupIndices.length 
-        ? targetGroupIndices[targetIndex]
-        : targetGroupIndices[targetGroupIndices.length - 1] + 1;
-      insertIndex = targetActualIndex;
-    }
-    
-    updatedPaths.splice(insertIndex, 0, draggedItemData);
-    setPaths(updatedPaths);
-    setDraggedItem(null);
-    setDragOverGroup(null);
-    setDragOverIndex(null);
-  };
-
-  const handleDragEnd = () => {
-    setDraggedItem(null);
-    setDraggedGroup(null);
-    setDragOverGroup(null);
-    setDragOverIndex(null);
-    setIsDragging(false);
-    draggedGroupRef.current = null;
-    dragOverGroupRef.current = null;
-  };
-
-  const handleDragLeaveItem = () => {
-    setDragOverGroup(null);
-    setDragOverIndex(null);
-  };
-
-  // 安全网：mouseup 时清理残留的拖拽状态（dragend 在 Tauri webview 中可能不触发）
-  useEffect(() => {
-    const cleanup = () => {
-      if (draggedItem || draggedGroup || isDragging) {
-        handleDragEnd();
-      }
-    };
-    document.addEventListener('mouseup', cleanup);
-    return () => document.removeEventListener('mouseup', cleanup);
-  }, [draggedItem, draggedGroup, isDragging]);
 
   const TypeSelector = ({ value, onChange }: { value: PathType; onChange: (t: PathType) => void }) => (
     <div className="flex gap-2 flex-wrap">
@@ -1358,19 +964,9 @@ const PathManager: React.FC = () => {
         onDragEnter={handleDragEnter}
         onDragLeave={handleDragLeave}
         onDragOver={(e) => {
-          const types = Array.from(e.dataTransfer.types);
-          const isGroupDrag = draggedGroupRef.current || types.includes('application/x-group') || types.includes('text/plain');
-          if (isGroupDrag) {
-            return;
-          }
           handleDragOverCreatePath(e);
         }}
         onDrop={(e) => {
-          const types = Array.from(e.dataTransfer.types);
-          const isGroupDrag = draggedGroupRef.current || types.includes('application/x-group');
-          if (isGroupDrag) {
-            return;
-          }
           handleDropCreatePath(e);
         }}
         className={[
@@ -1389,18 +985,7 @@ const PathManager: React.FC = () => {
             <p className="text-[#666666] mb-6">点击"添加路径"开始管理你的目录</p>
           </div>
         ) : (
-          <div 
-            className="space-y-3"
-            onDragOver={(e) => {
-              const types = Array.from(e.dataTransfer.types);
-              const isGroupDrag = draggedGroup || types.includes('application/x-group');
-              
-              if (isGroupDrag && draggedGroup) {
-                e.preventDefault();
-                e.dataTransfer.dropEffect = 'move';
-              }
-            }}
-          >
+          <div className="space-y-3">
             {(sortMode === 'group' ? groupOrder : Object.keys(groupedPaths)).map((groupName, groupIndex) => {
               if (!groupedPaths[groupName]) {
                 return null;
@@ -1409,7 +994,6 @@ const PathManager: React.FC = () => {
               const groupKeys = Object.keys(groupedPaths);
               const firstNonSelectedIndex = groupKeys.findIndex(key => key !== selectedGroupName);
               const isDividerNeeded = sortMode === 'tag' && groupIndex === firstNonSelectedIndex && firstNonSelectedIndex > 0 && selectedTags.length > 0;
-              const showInsertBefore = draggedGroup && draggedGroup !== groupName && dragOverGroup === groupName;
               return (
                 <PathGroupItem
                   key={groupName}
@@ -1418,31 +1002,16 @@ const PathManager: React.FC = () => {
                   items={groupedPaths[groupName]}
                   isCollapsed={collapsedGroups.has(groupName)}
                   columnsPerRow={columnsPerRow}
-                  draggedGroup={draggedGroup}
-                  dragOverGroup={dragOverGroup}
-                  draggedItem={draggedItem}
-                  dragOverIndex={dragOverIndex}
                   copiedId={copiedId}
                   justFavoritedId={justFavoritedId}
-                  isDragging={isDragging}
                   isFavorited={isFavorited}
-                  isLastGroup={groupIndex === groupOrder.length - 1}
                   showDivider={isDividerNeeded}
-                  showInsertBefore={showInsertBefore}
                   onToggleGroup={() => toggleGroup(groupName)}
-                  onDragStartGroup={(e) => handleDragStartGroup(groupName, e)}
-                  onDragEnd={handleDragEnd}
-                  onDragStart={(item, e) => handleDragStart(item, e)}
-                  onDragOver={(index, e) => handleDragOver(groupName, index, e)}
-                  onDragLeaveItem={handleDragLeaveItem}
-                  onDrop={(index, e) => handleDrop(groupName, index, e)}
                   onJump={handleJump}
                   onAddToFavorites={handleAddToFavorites}
                   onEdit={handleEdit}
                   onCopy={handleCopy}
                   onDelete={handleDelete}
-                  onInsertBeforeDrop={(e) => { e.preventDefault(); e.stopPropagation(); const draggedGroupName = draggedGroup || e.dataTransfer.getData('text/plain'); if (draggedGroupName && draggedGroupName !== groupName) { const groupContainer = document.querySelector(`[data-group-name="${groupName}"]`); let insertBefore = true; if (groupContainer) { const rect = groupContainer.getBoundingClientRect(); const midpoint = rect.top + rect.height / 2; insertBefore = e.clientY < midpoint; } reorderGroups(draggedGroupName, groupName, insertBefore); setDraggedGroup(null); setDragOverGroup(null); draggedGroupRef.current = null; dragOverGroupRef.current = null; } }}
-                  onLastGroupDrop={(e) => { e.preventDefault(); e.stopPropagation(); const draggedGroupName = e.dataTransfer.getData('text/plain') || draggedGroup; if (draggedGroupName && draggedGroupName !== groupName) { const allGroups = Array.from(new Set([...groupOrder, ...Object.keys(groupedPaths)])); const newOrder = [...allGroups]; const draggedIndex = newOrder.indexOf(draggedGroupName); if (draggedIndex >= 0) { newOrder.splice(draggedIndex, 1); newOrder.push(draggedGroupName); setGroupOrder(newOrder); localStorage.setItem('arthub_group_order', JSON.stringify(newOrder)); } setDraggedGroup(null); setDragOverGroup(null); }}}
                 />
               );
             })}

@@ -7,8 +7,6 @@ const S_L = '/';
 const OPACITY_CLASSES = {
   bgGreen50090: 'bg-green-500' + S_L + '90',
   bgRed50010: 'hover:bg-red-500' + S_L + '10',
-  borderWhite30: 'border-white' + S_L + '30',
-  bgWhite5: 'bg-white' + S_L + '5',
 } as const;
 
 const TAG_COLORS = [
@@ -62,31 +60,16 @@ interface PathGroupItemProps {
   items: PathItem[];
   isCollapsed: boolean;
   columnsPerRow: number;
-  draggedGroup: string | null;
-  dragOverGroup: string | null;
-  draggedItem: PathItem | null;
-  dragOverIndex: number | null;
   copiedId: string | null;
   justFavoritedId: string | null;
-  isDragging: boolean;
   isFavorited: (id: string) => boolean;
-  isLastGroup: boolean;
   showDivider: boolean;
-  showInsertBefore: boolean;
   onToggleGroup: () => void;
-  onDragStartGroup: (e: React.DragEvent) => void;
-  onDragEnd: () => void;
-  onDragStart: (item: PathItem, e: React.DragEvent) => void;
-  onDragOver: (groupName: string, index: number, e: React.DragEvent) => void;
-  onDrop: (index: number, e: React.DragEvent) => void;
   onJump: (item: PathItem) => void;
   onAddToFavorites: (item: PathItem, e: React.MouseEvent) => void;
   onEdit: (item: PathItem, e: React.MouseEvent) => void;
   onCopy: (item: PathItem, e: React.MouseEvent) => void;
   onDelete: (id: string, e: React.MouseEvent) => void;
-  onDragLeaveItem?: () => void;
-  onInsertBeforeDrop: (e: React.DragEvent) => void;
-  onLastGroupDrop: (e: React.DragEvent) => void;
 }
 
 export const PathGroupItem: React.FC<PathGroupItemProps> = ({
@@ -95,49 +78,31 @@ export const PathGroupItem: React.FC<PathGroupItemProps> = ({
   items,
   isCollapsed,
   columnsPerRow,
-  draggedGroup,
-  dragOverGroup,
-  draggedItem,
-  dragOverIndex,
   copiedId,
   justFavoritedId,
-  isDragging,
   isFavorited,
-  isLastGroup,
   showDivider,
-  showInsertBefore,
   onToggleGroup,
-  onDragStartGroup,
-  onDragEnd,
-  onDragStart,
-  onDragOver,
-  onDrop,
   onJump,
   onAddToFavorites,
   onEdit,
   onCopy,
   onDelete,
-  onDragLeaveItem,
-  onInsertBeforeDrop,
-  onLastGroupDrop,
 }) => {
   return (
     <React.Fragment key={groupName}>
       {showDivider && <div className="my-3 border-t border-[#2a2a2a]" />}
-      {showInsertBefore && (
-        <div className="h-1 bg-blue-500 rounded-full mx-2 my-1" onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); e.dataTransfer.dropEffect = 'move'; }} onDrop={onInsertBeforeDrop} />
-      )}
-      <div className="space-y-1" data-group-name={groupName} onDragOver={(e) => { if (draggedGroup && draggedGroup !== groupName) { e.preventDefault(); e.stopPropagation(); e.dataTransfer.dropEffect = 'move'; } }} onDrop={(e) => { if (draggedGroup && draggedGroup !== groupName) { e.preventDefault(); e.stopPropagation(); if (onInsertBeforeDrop) { onInsertBeforeDrop(e); } } }}>
-        <div draggable={true} data-drag-group={groupName} onDragStart={onDragStartGroup} onDragEnd={onDragEnd} onDragOver={(e) => { if (draggedGroup && draggedGroup !== groupName) { e.preventDefault(); e.stopPropagation(); e.dataTransfer.dropEffect = 'move'; } }} onDrop={(e) => { if (draggedGroup && draggedGroup !== groupName) { e.preventDefault(); e.stopPropagation(); if (onInsertBeforeDrop) { onInsertBeforeDrop(e); } } }} onClick={(e) => { if (isDragging || draggedGroup) { e.preventDefault(); e.stopPropagation(); return; } onToggleGroup(); }} className={['flex items-center gap-2 px-2 py-1 rounded-lg', 'cursor-move select-none', 'text-[#808080] hover:text-white hover:bg-[#1a1a1a]', 'transition-all duration-150', draggedGroup === groupName ? 'opacity-50 scale-95' : '', dragOverGroup === groupName && draggedGroup && draggedGroup !== groupName ? 'border-2 ' + OPACITY_CLASSES.borderWhite30 + ' ' + OPACITY_CLASSES.bgWhite5 : ''].filter(Boolean).join(' ')}>
+      <div className="space-y-1" data-group-name={groupName}>
+        <div onClick={onToggleGroup} className="flex items-center gap-2 px-2 py-1 rounded-lg cursor-pointer select-none text-[#808080] hover:text-white hover:bg-[#1a1a1a] transition-all duration-150">
           {isCollapsed ? <ChevronRight size={14} /> : <ChevronDown size={14} />}
           <span className="text-[11px] font-medium uppercase tracking-wider">{groupName}</span>
           <span className={['px-1.5 py-0.5 rounded text-[10px] font-medium', 'bg-[#1a1a1a] text-[#666666]'].join(' ')}>{items.length}</span>
         </div>
         {!isCollapsed && (
-          <div className={[columnsPerRow === 1 ? 'space-y-2' : 'grid gap-2.5'].filter(Boolean).join(' ')} style={columnsPerRow > 1 ? { gridTemplateColumns: `repeat(${columnsPerRow}, minmax(0, 1fr))` } : undefined} onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; if (draggedItem) { onDragOver(groupName, items.length, e); } }} onDrop={(e) => { e.preventDefault(); e.stopPropagation(); onDrop(items.length, e); }}>
+          <div className={[columnsPerRow === 1 ? 'space-y-2' : 'grid gap-2.5'].filter(Boolean).join(' ')} style={columnsPerRow > 1 ? { gridTemplateColumns: `repeat(${columnsPerRow}, minmax(0, 1fr))` } : undefined}>
             {items.map((item, index) => {
               return (
-                <div key={item.id} draggable={true} onDragStart={(e) => { onDragStart(item, e); }} onDragOver={(e) => { onDragOver(groupName, index, e); }} onDragLeave={onDragLeaveItem} onDrop={(e) => { e.preventDefault(); e.stopPropagation(); onDrop(index, e); }} onDragEnd={onDragEnd} onClick={(e) => { if (isDragging || draggedItem) { e.preventDefault(); e.stopPropagation(); return; } onJump(item); }} className={['group relative bg-[#1a1a1a] hover:bg-[#222222]', 'border border-[#2a2a2a] hover:border-[#3a3a3a]', 'rounded px-2.5 py-2.5 flex items-center gap-2', 'cursor-pointer transition-all duration-150', draggedItem?.id === item.id ? 'opacity-50' : '', dragOverGroup === groupName && dragOverIndex === index && draggedItem ? 'border-blue-500' : '', columnsPerRow > 1 ? 'min-w-0' : ''].filter(Boolean).join(' ')}>
+                <div key={item.id} onClick={() => onJump(item)} className={['group relative bg-[#1a1a1a] hover:bg-[#222222]', 'border border-[#2a2a2a] hover:border-[#3a3a3a]', 'rounded px-2.5 py-2.5 flex items-center gap-2', 'cursor-pointer transition-all duration-150', columnsPerRow > 1 ? 'min-w-0' : ''].filter(Boolean).join(' ')}>
                   {copiedId === item.id && (
                     <div className={'absolute inset-0 rounded ' + OPACITY_CLASSES.bgGreen50090 + ' flex items-center justify-center text-white text-xs font-medium animate-fade-in z-20'}>
                       <Check size={12} className="mr-1" />
@@ -160,7 +125,6 @@ export const PathGroupItem: React.FC<PathGroupItemProps> = ({
                       {item.tags.length > 1 && <span className="text-[8px] text-[#555]">+{item.tags.length - 1}</span>}
                     </div>
                   )}
-                  {/* Floating action bar above card on hover */}
                   <div className="absolute left-1/2 -translate-x-1/2 bottom-full mb-1 hidden group-hover:flex items-center gap-0.5 bg-[#222] border border-[#3a3a3a] rounded-md px-1 py-0.5 shadow-lg z-30" onClick={(e) => e.stopPropagation()}>
                     <button onClick={(e) => { e.stopPropagation(); onAddToFavorites(item, e); }} className={['p-1 rounded transition-all duration-150', isFavorited(item.id) ? 'text-yellow-400' : 'text-[#888] hover:text-yellow-400', justFavoritedId === item.id ? 'scale-125' : ''].filter(Boolean).join(' ')} title={isFavorited(item.id) ? "取消收藏" : "收藏"}>
                       <Star size={12} fill={isFavorited(item.id) ? "currentColor" : "none"} />
@@ -181,9 +145,6 @@ export const PathGroupItem: React.FC<PathGroupItemProps> = ({
           </div>
         )}
       </div>
-      {isLastGroup && draggedGroup && draggedGroup !== groupName && !dragOverGroup && (
-        <div className="h-1 bg-blue-500 rounded-full mx-2 my-1" onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); e.dataTransfer.dropEffect = 'move'; }} onDrop={onLastGroupDrop} />
-      )}
     </React.Fragment>
   );
 };

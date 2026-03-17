@@ -88,6 +88,19 @@ interface AssetDetail {
   custom_paths: CustomPaths;
 }
 
+interface AssetVersion {
+  id: number;
+  asset_id: number;
+  version_number: number;
+  label: string;
+  file_path: string;
+  file_size: number;
+  width: number;
+  height: number;
+  thumb_path: string;
+  created_at: number;
+}
+
 interface SmartFolder {
   id: number;
   name: string;
@@ -641,6 +654,12 @@ const AssetDetailSidebar: React.FC<{
   onRemoveTag: (tagId: number) => void;
   isFavorite?: boolean;
   onToggleFavorite?: () => void;
+  // Version management
+  versions?: AssetVersion[];
+  onAddVersion?: (filePath: string) => void;
+  onDeleteVersion?: (versionId: number) => void;
+  onRenameVersion?: (versionId: number, label: string) => void;
+  onSwitchVersion?: (versionId: number) => void;
   // Team features
   isTeamSpace?: boolean;
   lockStatus?: LockStatusInfo | null;
@@ -651,11 +670,15 @@ const AssetDetailSidebar: React.FC<{
   onRestoreVersion?: (version: number) => void;
 }> = ({ asset, detail, allTags, onClose, onSetRating, onSetNote, onSetCustomPaths, onAddTag, onRemoveTag,
   isFavorite, onToggleFavorite,
+  versions, onAddVersion, onDeleteVersion, onRenameVersion, onSwitchVersion,
   isTeamSpace, lockStatus, currentUser, onLock, onUnlock, fileHistory, onRestoreVersion }) => {
   const [editingNote, setEditingNote] = useState(false);
   const [noteText, setNoteText] = useState('');
   const [showTagPicker, setShowTagPicker] = useState(false);
   const noteRef = useRef<HTMLTextAreaElement>(null);
+  const [editingVersionId, setEditingVersionId] = useState<number | null>(null);
+  const [editingVersionLabel, setEditingVersionLabel] = useState('');
+  const [versionDragOver, setVersionDragOver] = useState(false);
 
   const [customPaths, setCustomPaths] = useState<CustomPaths>({ source_path: '', slice_path: '', effect_path: '' });
   const [editingPaths, setEditingPaths] = useState(false);
@@ -938,6 +961,83 @@ const AssetDetailSidebar: React.FC<{
             )}
           </div>
         ))}
+      </div>
+
+      {/* Version Management */}
+      <div className="border-t border-[#1a1a1a]" />
+      <div className="px-3 py-3">
+        <div className="flex items-center justify-between mb-2">
+          <div className="flex items-center gap-2">
+            <History size={12} className="text-[#666]" />
+            <span className="text-[11px] text-[#888]">版本管理</span>
+            {versions && versions.length > 0 && (
+              <span className="text-[9px] text-[#555] bg-[#1a1a1a] px-1.5 py-0.5 rounded-full">{versions.length}</span>
+            )}
+          </div>
+        </div>
+        {/* Drop zone for adding new version */}
+        <div
+          className={['rounded-lg border-2 border-dashed px-3 py-2 mb-2 text-center transition-colors cursor-pointer', versionDragOver ? 'border-blue-500 bg-blue-500/10' : 'border-[#2a2a2a] hover:border-[#3a3a3a]'].join(' ')}
+          onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = 'copy'; setVersionDragOver(true); }}
+          onDragLeave={() => setVersionDragOver(false)}
+          onDrop={async (e) => {
+            e.preventDefault();
+            setVersionDragOver(false);
+            const files = Array.from(e.dataTransfer.files);
+            const imgFile = files.find(f => /\.(png|jpe?g|gif|bmp|webp|tiff?|svg|psd|tga)$/i.test(f.name));
+            if (imgFile && onAddVersion) {
+              onAddVersion((imgFile as any).path || imgFile.name);
+            }
+          }}
+        >
+          <span className="text-[10px] text-[#555]">拖入图片创建新版本</span>
+        </div>
+        {/* Version list */}
+        {versions && versions.length > 0 && (
+          <div className="space-y-1 max-h-[200px] overflow-y-auto" style={{ scrollbarWidth: 'thin' }}>
+            {versions.map((ver) => (
+              <div key={ver.id} className="flex items-center gap-2 px-2 py-1.5 rounded-lg hover:bg-[#1a1a1a] group transition-colors">
+                {ver.thumb_path ? (
+                  <img src={convertFileSrc(ver.thumb_path)} className="w-8 h-8 rounded object-cover bg-[#111] shrink-0" />
+                ) : (
+                  <div className="w-8 h-8 rounded bg-[#111] shrink-0 flex items-center justify-center text-[#444]">
+                    <ImageIcon size={12} />
+                  </div>
+                )}
+                <div className="flex-1 min-w-0">
+                  {editingVersionId === ver.id ? (
+                    <input
+                      autoFocus
+                      className="bg-[#111] border border-[#333] rounded px-1 py-0.5 text-[10px] text-white w-full outline-none"
+                      value={editingVersionLabel}
+                      onChange={(e) => setEditingVersionLabel(e.target.value)}
+                      onBlur={() => { if (onRenameVersion) onRenameVersion(ver.id, editingVersionLabel); setEditingVersionId(null); }}
+                      onKeyDown={(e) => { if (e.key === 'Enter') { if (onRenameVersion) onRenameVersion(ver.id, editingVersionLabel); setEditingVersionId(null); } if (e.key === 'Escape') setEditingVersionId(null); }}
+                    />
+                  ) : (
+                    <span className="text-[10px] text-[#aaa] truncate block">
+                      v{ver.version_number} {ver.label && `· ${ver.label}`}
+                    </span>
+                  )}
+                  <span className="text-[9px] text-[#555]">{ver.width > 0 ? `${ver.width}×${ver.height}` : ''} {formatFileSize(ver.file_size)}</span>
+                </div>
+                <div className="hidden group-hover:flex items-center gap-0.5 shrink-0">
+                  <button onClick={() => { if (onSwitchVersion) onSwitchVersion(ver.id); }} className="p-1 rounded text-[#666] hover:text-blue-400 hover:bg-blue-500/10" title="切换到此版本">
+                    <RotateCcw size={10} />
+                  </button>
+                  <button onClick={() => { setEditingVersionId(ver.id); setEditingVersionLabel(ver.label); }} className="p-1 rounded text-[#666] hover:text-white hover:bg-[#333]" title="重命名">
+                    <Edit3 size={10} />
+                  </button>
+                  {versions.length > 1 && (
+                    <button onClick={() => { if (onDeleteVersion) onDeleteVersion(ver.id); }} className="p-1 rounded text-[#666] hover:text-red-400 hover:bg-red-500/10" title="删除版本">
+                      <Trash2 size={10} />
+                    </button>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* Team features */}
@@ -2478,6 +2578,9 @@ interface PreviewProps {
   currentIndex: number;
   onClose: () => void;
   onNavigate: (index: number) => void;
+  versions?: AssetVersion[];
+  previewVersionIndex?: number;
+  onVersionChange?: (index: number) => void;
 }
 
 // ============================================================
@@ -2791,7 +2894,7 @@ const FontPreview: React.FC<{ fontPath: string; fontName: string }> = ({ fontPat
   );
 };
 
-const PreviewModal: React.FC<PreviewProps> = ({ asset, assets, currentIndex, onClose, onNavigate }) => {
+const PreviewModal: React.FC<PreviewProps> = ({ asset, assets, currentIndex, onClose, onNavigate, versions, previewVersionIndex = -1, onVersionChange }) => {
   const [loaded, setLoaded] = useState(false);
   const [zoom, setZoom] = useState(1);
   const [pan, setPan] = useState({ x: 0, y: 0 });
@@ -2799,12 +2902,15 @@ const PreviewModal: React.FC<PreviewProps> = ({ asset, assets, currentIndex, onC
   const panStart = useRef({ x: 0, y: 0 });
   const [annotating, setAnnotating] = useState(false);
 
+  const activeVersion = versions && previewVersionIndex >= 0 && previewVersionIndex < versions.length ? versions[previewVersionIndex] : null;
+  const displayFilePath = activeVersion ? activeVersion.file_path : (asset?.file_path || '');
+
   useEffect(() => {
     setLoaded(false);
     setZoom(1);
     setPan({ x: 0, y: 0 });
     setAnnotating(false);
-  }, [asset?.id]);
+  }, [asset?.id, previewVersionIndex]);
 
   useEffect(() => {
     const handleKey = (e: KeyboardEvent) => {
@@ -2818,8 +2924,10 @@ const PreviewModal: React.FC<PreviewProps> = ({ asset, assets, currentIndex, onC
 
   if (!asset) return null;
 
-  const imgUrl = convertFileSrc(asset.file_path);
-  const thumbUrl = asset.thumb_path ? convertFileSrc(asset.thumb_path) : '';
+  const imgUrl = convertFileSrc(displayFilePath);
+  const thumbUrl = activeVersion
+    ? (activeVersion.thumb_path ? convertFileSrc(activeVersion.thumb_path) : '')
+    : (asset.thumb_path ? convertFileSrc(asset.thumb_path) : '');
   const isImage = IMAGE_EXTS.has(asset.file_ext) && !['dds', 'hdr', 'exr'].includes(asset.file_ext);
   const isPsd = asset.file_ext === 'psd';
   const isVideo = VIDEO_EXTS.has(asset.file_ext);
@@ -2962,6 +3070,25 @@ const PreviewModal: React.FC<PreviewProps> = ({ asset, assets, currentIndex, onC
             <Edit3 size={14} className="inline mr-1" />标注
           </button>
         )}
+        {versions && versions.length > 1 && onVersionChange && (
+          <div className="flex items-center gap-1">
+            <History size={12} className="text-[#666]" />
+            {versions.map((ver, idx) => (
+              <button
+                key={ver.id}
+                onClick={() => onVersionChange(idx)}
+                className={`px-2 py-0.5 rounded text-[10px] font-medium transition-colors ${
+                  previewVersionIndex === idx
+                    ? 'bg-blue-500 text-white'
+                    : 'bg-[#333] text-[#888] hover:bg-[#444] hover:text-white'
+                }`}
+                title={ver.label || `版本 ${ver.version_number}`}
+              >
+                v{ver.version_number}
+              </button>
+            ))}
+          </div>
+        )}
         <span className="ml-auto text-[#666]">{currentIndex + 1} / {assets.length}</span>
       </div>
 
@@ -3030,6 +3157,14 @@ export default function AssetManager() {
   const [previewIndex, setPreviewIndex] = useState(-1);
   const previewAsset = previewIndex >= 0 ? assets[previewIndex] : null;
 
+  useEffect(() => {
+    if (previewAsset) {
+      invoke<AssetVersion[]>('asset_get_versions', { assetId: previewAsset.id })
+        .then(v => setAssetVersions(v))
+        .catch(() => setAssetVersions([]));
+    }
+  }, [previewAsset?.id]);
+
   // Grid size — continuous zoom (min col width in px, 100–400)
   const [thumbScale, setThumbScale] = useState<number>(() => {
     const saved = localStorage.getItem('arthub_asset_thumb_scale');
@@ -3063,6 +3198,10 @@ export default function AssetManager() {
   // Detail sidebar
   const [detailAssetId, setDetailAssetId] = useState<number | null>(null);
   const [detailData, setDetailData] = useState<AssetDetail | null>(null);
+
+  // Version management
+  const [assetVersions, setAssetVersions] = useState<AssetVersion[]>([]);
+  const [previewVersionIndex, setPreviewVersionIndex] = useState<number>(-1);
 
   // Multi-select
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
@@ -3741,9 +3880,10 @@ export default function AssetManager() {
     try {
       const detail = await invoke<AssetDetail>('asset_get_detail', { assetId });
       setDetailData(detail);
-      // Update caches
       setAssetTagsMap(prev => new Map(prev).set(assetId, detail.tags));
       setAssetRatingsMap(prev => new Map(prev).set(assetId, detail.rating));
+      const versions = await invoke<AssetVersion[]>('asset_get_versions', { assetId });
+      setAssetVersions(versions);
     } catch (e) {
       console.error('加载资产详情失败:', e);
     }
@@ -3751,7 +3891,49 @@ export default function AssetManager() {
 
   useEffect(() => {
     if (detailAssetId) loadAssetDetail(detailAssetId);
-    else setDetailData(null);
+    else { setDetailData(null); setAssetVersions([]); }
+  }, [detailAssetId, loadAssetDetail]);
+
+  const handleAddVersion = useCallback(async (filePath: string) => {
+    if (!detailAssetId) return;
+    try {
+      await invoke<AssetVersion>('asset_add_version', { assetId: detailAssetId, filePath, label: '' });
+      loadAssetDetail(detailAssetId);
+      loadAssetsRef.current(false);
+    } catch (e) {
+      console.error('添加版本失败:', e);
+    }
+  }, [detailAssetId, loadAssetDetail]);
+
+  const handleDeleteVersion = useCallback(async (versionId: number) => {
+    if (!detailAssetId) return;
+    try {
+      await invoke('asset_delete_version', { versionId });
+      loadAssetDetail(detailAssetId);
+    } catch (e) {
+      console.error('删除版本失败:', e);
+    }
+  }, [detailAssetId, loadAssetDetail]);
+
+  const handleRenameVersion = useCallback(async (versionId: number, label: string) => {
+    if (!detailAssetId) return;
+    try {
+      await invoke('asset_rename_version', { versionId, label });
+      loadAssetDetail(detailAssetId);
+    } catch (e) {
+      console.error('重命名版本失败:', e);
+    }
+  }, [detailAssetId, loadAssetDetail]);
+
+  const handleSwitchVersion = useCallback(async (versionId: number) => {
+    if (!detailAssetId) return;
+    try {
+      await invoke('asset_switch_version', { assetId: detailAssetId, versionId });
+      loadAssetDetail(detailAssetId);
+      loadAssetsRef.current(false);
+    } catch (e) {
+      console.error('切换版本失败:', e);
+    }
   }, [detailAssetId, loadAssetDetail]);
 
   // Batch load tags/ratings for visible assets (single IPC call)
@@ -5021,6 +5203,11 @@ export default function AssetManager() {
               onRemoveTag={tagId => handleRemoveTagFromAsset(detailAssetId, tagId)}
               isFavorite={favoriteIds.has(detailAssetId)}
               onToggleFavorite={() => handleToggleFavorite(detailAssetId)}
+              versions={assetVersions}
+              onAddVersion={handleAddVersion}
+              onDeleteVersion={handleDeleteVersion}
+              onRenameVersion={handleRenameVersion}
+              onSwitchVersion={handleSwitchVersion}
               isTeamSpace={space === 'team'}
               lockStatus={detailLockStatus}
               currentUser={currentUser}
@@ -5039,8 +5226,11 @@ export default function AssetManager() {
           asset={previewAsset}
           assets={assets}
           currentIndex={previewIndex}
-          onClose={() => setPreviewIndex(-1)}
-          onNavigate={setPreviewIndex}
+          onClose={() => { setPreviewIndex(-1); setPreviewVersionIndex(-1); }}
+          onNavigate={(idx) => { setPreviewIndex(idx); setPreviewVersionIndex(-1); }}
+          versions={assetVersions}
+          previewVersionIndex={previewVersionIndex}
+          onVersionChange={setPreviewVersionIndex}
         />
       )}
 

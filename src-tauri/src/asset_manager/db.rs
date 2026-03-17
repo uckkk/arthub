@@ -246,7 +246,23 @@ fn init_tables(conn: &Connection) -> Result<(), String> {
             effect_path TEXT NOT NULL DEFAULT '',
             updated_at INTEGER NOT NULL DEFAULT (strftime('%s','now')),
             FOREIGN KEY (asset_id) REFERENCES assets(id) ON DELETE CASCADE
-        );"
+        );
+
+        CREATE TABLE IF NOT EXISTS asset_versions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            asset_id INTEGER NOT NULL,
+            version_number INTEGER NOT NULL,
+            label TEXT NOT NULL DEFAULT '',
+            file_path TEXT NOT NULL,
+            file_size INTEGER NOT NULL DEFAULT 0,
+            width INTEGER NOT NULL DEFAULT 0,
+            height INTEGER NOT NULL DEFAULT 0,
+            thumb_path TEXT NOT NULL DEFAULT '',
+            created_at INTEGER NOT NULL DEFAULT (strftime('%s','now')),
+            FOREIGN KEY (asset_id) REFERENCES assets(id) ON DELETE CASCADE,
+            UNIQUE(asset_id, version_number)
+        );
+        CREATE INDEX IF NOT EXISTS idx_asset_versions_asset ON asset_versions(asset_id);"
     ).map_err(|e| format!("创建数据表失败: {}", e))?;
 
     Ok(())
@@ -1212,6 +1228,133 @@ pub fn get_asset_ids_without_embedding_new_only(conn: &Connection, limit: u32) -
       .filter_map(|r| r.ok())
       .collect();
     Ok(rows)
+}
+
+// ---- Asset Version CRUD ----
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AssetVersion {
+    pub id: i64,
+    pub asset_id: i64,
+    pub version_number: i32,
+    pub label: String,
+    pub file_path: String,
+    pub file_size: i64,
+    pub width: u32,
+    pub height: u32,
+    pub thumb_path: String,
+    pub created_at: i64,
+}
+
+pub fn get_asset_versions(conn: &Connection, asset_id: i64) -> Result<Vec<AssetVersion>, String> {
+    let mut stmt = conn.prepare(
+        "SELECT id, asset_id, version_number, label, file_path, file_size, width, height, thumb_path, created_at
+         FROM asset_versions WHERE asset_id = ?1 ORDER BY version_number DESC"
+    ).map_err(|e| e.to_string())?;
+    let versions = stmt.query_map(params![asset_id], |row| {
+        Ok(AssetVersion {
+            id: row.get(0)?,
+            asset_id: row.get(1)?,
+            version_number: row.get(2)?,
+            label: row.get(3)?,
+            file_path: row.get(4)?,
+            file_size: row.get(5)?,
+            width: row.get::<_, u32>(6).unwrap_or(0),
+            height: row.get::<_, u32>(7).unwrap_or(0),
+            thumb_path: row.get(8)?,
+            created_at: row.get(9)?,
+        })
+    }).map_err(|e| e.to_string())?
+      .filter_map(|r| r.ok())
+      .collect();
+    Ok(versions)
+}
+
+pub fn add_asset_version(
+    conn: &Connection,
+    asset_id: i64,
+    file_path: &str,
+    file_size: i64,
+    width: u32,
+    height: u32,
+    thumb_path: &str,
+    label: &str,
+) -> Result<AssetVersion, String> {
+    let max_ver: i32 = conn.query_row(
+        "SELECT COALESCE(MAX(version_number), 0) FROM asset_versions WHERE asset_id = ?1",
+        params![asset_id],
+        |row| row.get(0),
+    ).unwrap_or(0);
+    let new_ver = max_ver + 1;
+
+    conn.execute(
+        "INSERT INTO asset_versions (asset_id, version_number, label, file_path, file_size, width, height, thumb_path)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+        params![asset_id, new_ver, label, file_path, file_size, width, height, thumb_path],
+    ).map_err(|e| format!("添加版本失败: {}", e))?;
+
+    let id = conn.last_insert_rowid();
+    Ok(AssetVersion {
+        id,
+        asset_id,
+        version_number: new_ver,
+        label: label.to_string(),
+        file_path: file_path.to_string(),
+        file_size,
+        width,
+        height,
+        thumb_path: thumb_path.to_string(),
+        created_at: std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs() as i64,
+    })
+}
+
+pub fn delete_asset_version(conn: &Connection, version_id: i64) -> Result<(), String> {
+    conn.execute("DELETE FROM asset_versions WHERE id = ?1", params![version_id])
+        .map_err(|e| format!("删除版本失败: {}", e))?;
+    Ok(())
+}
+
+pub fn rename_asset_version(conn: &Connection, version_id: i64, label: &str) -> Result<(), String> {
+    conn.execute(
+        "UPDATE asset_versions SET label = ?1 WHERE id = ?2",
+        params![label, version_id],
+    ).map_err(|e| format!("重命名版本失败: {}", e))?;
+    Ok(())
+}
+
+pub fn ensure_initial_version(conn: &Connection, asset_id: i64) -> Result<bool, String> {
+    let count: i64 = conn.query_row(
+        "SELECT COUNT(*) FROM asset_versions WHERE asset_id = ?1",
+        params![asset_id],
+        |row| row.get(0),
+    ).unwrap_or(0);
+
+    if count > 0 {
+        return Ok(false);
+    }
+
+    let asset = conn.query_row(
+        "SELECT file_path, file_size, width, height, thumb_path FROM assets WHERE id = ?1",
+        params![asset_id],
+        |row| Ok((
+            row.get::<_, String>(0)?,
+            row.get::<_, i64>(1)?,
+            row.get::<_, u32>(2).unwrap_or(0),
+            row.get::<_, u32>(3).unwrap_or(0),
+            row.get::<_, String>(4)?,
+        )),
+    ).map_err(|e| format!("查询资产失败: {}", e))?;
+
+    conn.execute(
+        "INSERT INTO asset_versions (asset_id, version_number, label, file_path, file_size, width, height, thumb_path)
+         VALUES (?1, 1, '初始版本', ?2, ?3, ?4, ?5, ?6)",
+        params![asset_id, asset.0, asset.1, asset.2, asset.3, asset.4],
+    ).map_err(|e| format!("创建初始版本失败: {}", e))?;
+
+    Ok(true)
 }
 
 pub fn get_all_embeddings(conn: &Connection) -> Result<Vec<(i64, Vec<u8>)>, String> {

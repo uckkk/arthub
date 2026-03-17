@@ -4,7 +4,7 @@ use image::GenericImageView;
 #[cfg(target_os = "windows")]
 use std::os::windows::process::CommandExt;
 use std::path::PathBuf;
-use crate::asset_manager::db::{self, AssetManagerState, AssetQueryParams, AssetQueryResult, FolderInfo, FolderStats, ScanProgress, TagInfo, AssetDetail, SmartFolder};
+use crate::asset_manager::db::{self, AssetManagerState, AssetQueryParams, AssetQueryResult, FolderInfo, FolderStats, ScanProgress, TagInfo, AssetDetail, SmartFolder, AssetVersion};
 use crate::asset_manager::scanner;
 use crate::asset_manager::thumbnail;
 use crate::asset_manager::team;
@@ -595,6 +595,111 @@ pub fn asset_batch_rename(
         }
     }
     Ok(count)
+}
+
+// ============================================================
+// Asset Version Management
+// ============================================================
+
+/// 获取资产的所有版本
+#[tauri::command]
+pub fn asset_get_versions(
+    state: tauri::State<'_, AssetManagerState>,
+    asset_id: i64,
+) -> Result<Vec<AssetVersion>, String> {
+    let conn = state.db.lock().map_err(|e| e.to_string())?;
+    db::get_asset_versions(&conn, asset_id)
+}
+
+/// 添加资产版本（拖入新图时调用）
+#[tauri::command]
+pub fn asset_add_version(
+    state: tauri::State<'_, AssetManagerState>,
+    asset_id: i64,
+    file_path: String,
+    label: String,
+) -> Result<AssetVersion, String> {
+    let conn = state.db.lock().map_err(|e| e.to_string())?;
+
+    db::ensure_initial_version(&conn, asset_id)?;
+
+    let path = std::path::Path::new(&file_path);
+    let file_size = path.metadata().map(|m| m.len() as i64).unwrap_or(0);
+
+    let (width, height) = if let Ok(img) = image::open(path) {
+        let dims = img.dimensions();
+        (dims.0, dims.1)
+    } else {
+        (0, 0)
+    };
+
+    let thumb_path = {
+        let td = state.thumb_dir.lock().map_err(|e| e.to_string())?;
+        match thumbnail::generate_thumbnail(&file_path, &td, 300) {
+            Ok(result) => result.thumb_path,
+            Err(_) => String::new(),
+        }
+    };
+
+    let version = db::add_asset_version(&conn, asset_id, &file_path, file_size, width, height, &thumb_path, &label)?;
+
+    conn.execute(
+        "UPDATE assets SET file_path = ?1, file_size = ?2, width = ?3, height = ?4, thumb_path = ?5, modified_at = strftime('%s','now')
+         WHERE id = ?6",
+        rusqlite::params![file_path, file_size, width, height, thumb_path, asset_id],
+    ).map_err(|e| format!("更新资产失败: {}", e))?;
+
+    Ok(version)
+}
+
+/// 删除版本
+#[tauri::command]
+pub fn asset_delete_version(
+    state: tauri::State<'_, AssetManagerState>,
+    version_id: i64,
+) -> Result<(), String> {
+    let conn = state.db.lock().map_err(|e| e.to_string())?;
+    db::delete_asset_version(&conn, version_id)
+}
+
+/// 重命名版本
+#[tauri::command]
+pub fn asset_rename_version(
+    state: tauri::State<'_, AssetManagerState>,
+    version_id: i64,
+    label: String,
+) -> Result<(), String> {
+    let conn = state.db.lock().map_err(|e| e.to_string())?;
+    db::rename_asset_version(&conn, version_id, &label)
+}
+
+/// 切换到指定版本（更新 assets 表的文件信息）
+#[tauri::command]
+pub fn asset_switch_version(
+    state: tauri::State<'_, AssetManagerState>,
+    asset_id: i64,
+    version_id: i64,
+) -> Result<(), String> {
+    let conn = state.db.lock().map_err(|e| e.to_string())?;
+    let ver = conn.query_row(
+        "SELECT file_path, file_size, width, height, thumb_path FROM asset_versions WHERE id = ?1 AND asset_id = ?2",
+        rusqlite::params![version_id, asset_id],
+        |row| Ok((
+            row.get::<_, String>(0)?,
+            row.get::<_, i64>(1)?,
+            row.get::<_, u32>(2).unwrap_or(0),
+            row.get::<_, u32>(3).unwrap_or(0),
+            row.get::<_, String>(4)?,
+        )),
+    ).map_err(|e| format!("版本不存在: {}", e))?;
+
+    conn.execute(
+        "UPDATE assets SET file_path = ?1, file_size = ?2, width = ?3, height = ?4, thumb_path = ?5, modified_at = strftime('%s','now')
+         WHERE id = ?6",
+        rusqlite::params![ver.0, ver.1, ver.2, ver.3, ver.4, asset_id],
+    ).map_err(|e| format!("切换版本失败: {}", e))?;
+
+    Ok(())
 }
 
 /// 后台颜色索引：提取未索引资产的主色（在阻塞线程中执行，避免阻塞 async 运行时）
